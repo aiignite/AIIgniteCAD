@@ -25,6 +25,7 @@ model User {
   projectVersions  ProjectVersion[]
   chatSessions     ChatSession[]
   llmModels        LLMModel[]
+  assistants        Assistant[]
 
   @@map("users")
 }
@@ -268,4 +269,25 @@ model LLMModel {
   @@index([provider])
   @@index([isActive])
   @@map("llm_models")
+}
+
+// AI助手表 - 特定的AI助手角色
+model Assistant {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  name        String
+  icon        String   // Material Symbols icon name
+  description String   @db.Text
+  color       String   // Tailwind color class
+  prompt      String?  @db.Text // Custom prompt for this assistant
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isActive])
+  @@map("assistants")
 }

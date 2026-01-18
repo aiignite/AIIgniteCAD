@@ -37,11 +37,9 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     const [editName, setEditName] = useState("");
 
     // LLM Models State
-    const [llmModels, setLlmModels] = useState<LLMModel[]>([
-        { id: '1', name: 'Gemini 1.5 Pro', provider: 'Google', status: 'Active' },
-        { id: '2', name: 'Llama 3 Local', provider: 'Ollama', status: 'Inactive' },
-        { id: '3', name: 'Claude 3.5 Sonnet', provider: 'Anthropic', status: 'Inactive' },
-    ]);
+    const [llmModels, setLlmModels] = useState<LLMModel[]>([]);
+    const [showAddModel, setShowAddModel] = useState(false);
+    const [newModel, setNewModel] = useState({ name: '', provider: 'Google' as const, modelId: '', apiKey: '', isActive: true });
 
     // Assistants State
     const [assistants, setAssistants] = useState<Assistant[]>([
@@ -50,12 +48,118 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         { id: 'electrical', name: 'Electrical Check', icon: 'electrical_services', desc: 'Wiring compliance', color: 'text-yellow-400' },
         { id: 'safety', name: 'Safety Inspector', icon: 'health_and_safety', desc: 'Egress paths', color: 'text-red-400' },
     ]);
+    const [editingAssistant, setEditingAssistant] = useState<Assistant | null>(null);
+    const [assistantForm, setAssistantForm] = useState({ name: '', icon: 'psychology', desc: '', color: 'text-cad-primary' });
 
     // UI State
     const [activeDropdown, setActiveDropdown] = useState<string | null>(null); // ID of item with open menu
     const [inputValue, setInputValue] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
+
+    // Load LLM models on mount
+    useEffect(() => {
+        loadLLMModels();
+        loadAssistants();
+    }, []);
+
+    const loadLLMModels = async () => {
+        try {
+            const { models } = await (await import('../services/apiService')).apiService.getLLMModels();
+            setLlmModels(models.map(m => ({
+                id: m.id,
+                name: m.name,
+                provider: m.provider,
+                status: m.isActive ? 'Active' : 'Inactive',
+            })));
+        } catch (error) {
+            console.error('Failed to load LLM models:', error);
+        }
+    };
+
+    const loadAssistants = async () => {
+        try {
+            const { assistants } = await (await import('../services/apiService')).apiService.getAssistants();
+            setAssistants(assistants);
+        } catch (error) {
+            console.error('Failed to load assistants:', error);
+        }
+    };
+
+    const handleAddLLMModel = async () => {
+        try {
+            await (await import('../services/apiService')).apiService.createLLMModel(newModel);
+            await loadLLMModels();
+            setShowAddModel(false);
+            setNewModel({ name: '', provider: 'Google', modelId: '', apiKey: '', isActive: true });
+        } catch (error: any) {
+            alert(error.message || 'Failed to add model');
+        }
+    };
+
+    const handleDeleteLLMModel = async (id: string) => {
+        try {
+            await (await import('../services/apiService')).apiService.deleteLLMModel(id);
+            await loadLLMModels();
+        } catch (error: any) {
+            alert(error.message || 'Failed to delete model');
+        }
+    };
+
+    const handleEditAssistant = (assistant: Assistant) => {
+        setEditingAssistant(assistant);
+        setAssistantForm({
+            name: assistant.name,
+            icon: assistant.icon,
+            desc: assistant.desc,
+            color: assistant.color,
+        });
+    };
+
+    const handleSaveAssistant = async () => {
+        if (!editingAssistant) return;
+
+        try {
+            const api = await import('../services/apiService');
+
+            if (editingAssistant.id?.toString().length < 10) {
+                await api.apiService.createAssistant({
+                    name: assistantForm.name,
+                    icon: assistantForm.icon,
+                    description: assistantForm.desc,
+                    color: assistantForm.color,
+                    prompt: '',
+                    isActive: true,
+                });
+            } else {
+                await api.apiService.updateAssistant(editingAssistant.id, {
+                    name: assistantForm.name,
+                    icon: assistantForm.icon,
+                    description: assistantForm.desc,
+                    color: assistantForm.color,
+                });
+            }
+            await loadAssistants();
+            setEditingAssistant(null);
+        } catch (error: any) {
+            alert(error.message || 'Failed to save assistant');
+        }
+    };
+
+    const handleDeleteAssistant = async (id: string) => {
+        try {
+            const api = await import('../services/apiService');
+            await api.apiService.deleteAssistant(id);
+            setAssistants(prev => prev.filter(a => a.id !== id));
+        } catch (error: any) {
+            alert(error.message || 'Failed to delete assistant');
+        }
+    };
+
+    const handleCreateAssistant = () => {
+        setEditingAssistant({ id: '', name: '', icon: 'psychology', desc: '', color: 'text-cad-primary' } as Assistant);
+        setAssistantForm({ name: '', icon: 'psychology', desc: '', color: 'text-cad-primary' });
+    };
     
     // Chat State
     const [messages, setMessages] = useState<ChatMessage[]>([
@@ -480,22 +584,90 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             <div className="flex flex-col h-full bg-cad-bg">
                 <div className="flex items-center justify-between p-4 border-b border-cad-border bg-cad-panel">
                     <h3 className="text-sm font-bold text-cad-text">LLM Models</h3>
-                    <button className="flex items-center justify-center size-6 rounded hover:bg-cad-text/10 text-gray-400 hover:text-cad-text transition-colors" title="Add Model">
+                    <button onClick={() => setShowAddModel(true)} className="flex items-center justify-center size-6 rounded hover:bg-cad-text/10 text-gray-400 hover:text-cad-text transition-colors" title="Add Model">
                         <span className="material-symbols-outlined text-[20px]">add</span>
                     </button>
                 </div>
+
+                {showAddModel && (
+                    <div className="p-4 border-b border-cad-border bg-cad-panel">
+                        <div className="space-y-3">
+                            <div>
+                                <label className="text-[10px] text-cad-muted font-medium">Name</label>
+                                <input
+                                    type="text"
+                                    value={newModel.name}
+                                    onChange={(e) => setNewModel({...newModel, name: e.target.value})}
+                                    className="w-full h-8 bg-white dark:bg-black/20 border border-cad-border rounded px-2 text-xs text-cad-text"
+                                    placeholder="Model name"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] text-cad-muted font-medium">Provider</label>
+                                <select
+                                    value={newModel.provider}
+                                    onChange={(e) => setNewModel({...newModel, provider: e.target.value as any})}
+                                    className="w-full h-8 bg-white dark:bg-black/20 border border-cad-border rounded px-2 text-xs text-cad-text"
+                                >
+                                    <option value="Google">Google</option>
+                                    <option value="Anthropic">Anthropic</option>
+                                    <option value="OpenAI">OpenAI</option>
+                                    <option value="Ollama">Ollama</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-[10px] text-cad-muted font-medium">Model ID</label>
+                                <input
+                                    type="text"
+                                    value={newModel.modelId}
+                                    onChange={(e) => setNewModel({...newModel, modelId: e.target.value})}
+                                    className="w-full h-8 bg-white dark:bg-black/20 border border-cad-border rounded px-2 text-xs text-cad-text"
+                                    placeholder="e.g., gemini-1.5-pro"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] text-cad-muted font-medium">API Key (Optional)</label>
+                                <input
+                                    type="password"
+                                    value={newModel.apiKey}
+                                    onChange={(e) => setNewModel({...newModel, apiKey: e.target.value})}
+                                    className="w-full h-8 bg-white dark:bg-black/20 border border-cad-border rounded px-2 text-xs text-cad-text"
+                                    placeholder="••••••••••••••"
+                                />
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={handleAddLLMModel}
+                                    className="flex-1 py-2 px-4 bg-cad-primary text-white text-xs font-bold rounded hover:bg-cad-primaryHover transition-colors"
+                                >
+                                    Add Model
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setShowAddModel(false);
+                                        setNewModel({ name: '', provider: 'Google', modelId: '', apiKey: '', isActive: true });
+                                    }}
+                                    className="flex-1 py-2 px-4 bg-cad-border/50 text-cad-text text-xs font-bold rounded hover:bg-cad-border/70 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <div className="flex-1 overflow-y-auto p-2">
                     {llmModels.map((model) => (
                         <div key={model.id} className="group relative flex items-center justify-between p-3 rounded-lg hover:bg-cad-text/5 border border-transparent hover:border-cad-border mb-2 transition-all">
                              <div className="flex items-center gap-3">
-                                 <div className={`size-2 rounded-full ${model.status === 'Active' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-gray-600'}`}></div>
-                                 <div className="flex flex-col">
-                                     <span className="text-xs font-bold text-cad-text">{model.name}</span>
-                                     <span className="text-[10px] text-cad-muted">{model.provider}</span>
-                                 </div>
+                                  <div className={`size-2 rounded-full ${model.status === 'Active' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-gray-600'}`}></div>
+                                  <div className="flex flex-col">
+                                      <span className="text-xs font-bold text-cad-text">{model.name}</span>
+                                      <span className="text-[10px] text-cad-muted">{model.provider}</span>
+                                  </div>
                              </div>
-                             
-                             <button 
+
+                             <button
                                 onClick={(e) => handleDropdownToggle(e, model.id)}
                                 className="opacity-0 group-hover:opacity-100 p-1 hover:bg-cad-text/10 rounded text-gray-400 hover:text-cad-text transition-opacity"
                              >
@@ -503,9 +675,9 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                              </button>
 
                              {activeDropdown === model.id && (
-                                <DropdownMenu 
-                                    onEdit={() => console.log('Edit', model.id)} 
-                                    onDelete={() => setLlmModels(prev => prev.filter(m => m.id !== model.id))} 
+                                <DropdownMenu
+                                    onEdit={() => console.log('Edit', model.id)}
+                                    onDelete={() => handleDeleteLLMModel(model.id)}
                                 />
                              )}
                         </div>
@@ -520,10 +692,59 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             <div className="flex flex-col h-full bg-cad-bg">
                 <div className="flex items-center justify-between p-4 border-b border-cad-border bg-cad-panel">
                     <h3 className="text-sm font-bold text-cad-text">Assistants</h3>
-                    <button className="flex items-center justify-center size-6 rounded hover:bg-cad-text/10 text-gray-400 hover:text-cad-text transition-colors" title="Create Assistant">
+                    <button onClick={() => {
+                        setEditingAssistant(null);
+                        setAssistantForm({ name: '', icon: 'psychology', desc: '', color: 'text-cad-primary' });
+                    }} className="flex items-center justify-center size-6 rounded hover:bg-cad-text/10 text-gray-400 hover:text-cad-text transition-colors" title="Create Assistant">
                         <span className="material-symbols-outlined text-[20px]">add</span>
                     </button>
                 </div>
+
+                {editingAssistant && (
+                    <div className="p-4 border-b border-cad-border bg-cad-panel">
+                        <h4 className="text-xs font-bold text-cad-text mb-3">
+                            {editingAssistant.name ? `Edit ${editingAssistant.name}` : 'Create New Assistant'}
+                        </h4>
+                        <div className="space-y-3">
+                            <div>
+                                <label className="text-[10px] text-cad-muted font-medium">Name</label>
+                                <input
+                                    type="text"
+                                    value={assistantForm.name}
+                                    onChange={(e) => setAssistantForm({...assistantForm, name: e.target.value})}
+                                    className="w-full h-8 bg-white dark:bg-black/20 border border-cad-border rounded px-2 text-xs text-cad-text"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] text-cad-muted font-medium">Description</label>
+                                <input
+                                    type="text"
+                                    value={assistantForm.desc}
+                                    onChange={(e) => setAssistantForm({...assistantForm, desc: e.target.value})}
+                                    className="w-full h-8 bg-white dark:bg-black/20 border border-cad-border rounded px-2 text-xs text-cad-text"
+                                />
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={editingAssistant.name ? handleSaveAssistant : handleCreateAssistant}
+                                    className="flex-1 py-2 px-4 bg-cad-primary text-white text-xs font-bold rounded hover:bg-cad-primaryHover transition-colors"
+                                >
+                                    {editingAssistant.name ? 'Save' : 'Create'}
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setEditingAssistant(null);
+                                        setAssistantForm({ name: '', icon: 'psychology', desc: '', color: 'text-cad-primary' });
+                                    }}
+                                    className="flex-1 py-2 px-4 bg-cad-border/50 text-cad-text text-xs font-bold rounded hover:bg-cad-border/70 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <div className="grid grid-cols-1 gap-3 p-4">
                     {assistants.map(a => (
                          <div key={a.id} className="relative group bg-cad-panel border border-cad-border p-3 rounded-lg hover:border-cad-primary transition-all flex items-start gap-3">
@@ -537,7 +758,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                                 </div>
                             </div>
 
-                            <button 
+                            <button
                                 onClick={(e) => handleDropdownToggle(e, a.id)}
                                 className="opacity-0 group-hover:opacity-100 absolute top-2 right-2 p-1 hover:bg-cad-text/10 rounded text-gray-400 hover:text-cad-text transition-opacity"
                             >
@@ -545,9 +766,9 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                             </button>
 
                             {activeDropdown === a.id && (
-                                <DropdownMenu 
-                                    onEdit={() => console.log('Edit Assistant', a.id)} 
-                                    onDelete={() => setAssistants(prev => prev.filter(item => item.id !== a.id))} 
+                                <DropdownMenu
+                                    onEdit={() => handleEditAssistant(a)}
+                                    onDelete={() => setAssistants(prev => prev.filter(item => item.id !== a.id))}
                                 />
                              )}
                          </div>

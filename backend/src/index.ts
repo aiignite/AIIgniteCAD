@@ -99,28 +99,39 @@ app.get("/api", (req: Request, res: Response) => {
 });
 
 // Authentication routes
-// app.use('/api/auth', authRoutes);
+import authRoutes from "./routes/auth";
+app.use('/api/auth', authRoutes);
 
 // Project routes
-// app.use('/api/projects', projectRoutes);
+import projectRoutes from "./routes/projects";
+app.use('/api/projects', projectRoutes);
 
-// Block routes
-// app.use('/api/blocks', blockRoutes);
-
-// Block reference routes
-// app.use('/api/block-references', blockReferenceRoutes);
-
-// Element routes
-// app.use('/api/elements', elementRoutes);
-
-// Layer routes
-// app.use('/api/layers', layerRoutes);
-
-// Version routes
-// app.use('/api/versions', versionRoutes);
+// LLM routes
+import llmRoutes from "./routes/llm";
+app.use('/api/llm', llmRoutes);
 
 // Chat routes
-// app.use('/api/chat', chatRoutes);
+import chatRoutes from "./routes/chat";
+app.use('/api/chat', chatRoutes);
+
+// Assistant routes
+import assistantRoutes from "./routes/assistants";
+app.use('/api/assistants', assistantRoutes);
+
+// Block routes (to be implemented)
+// app.use('/api/blocks', blockRoutes);
+
+// Block reference routes (to be implemented)
+// app.use('/api/block-references', blockReferenceRoutes);
+
+// Element routes (to be implemented)
+// app.use('/api/elements', elementRoutes);
+
+// Layer routes (to be implemented)
+// app.use('/api/layers', layerRoutes);
+
+// Version routes (to be implemented)
+// app.use('/api/versions', versionRoutes);
 
 // ============================================================================
 // WEBSOCKET HANDLERS

@@ -6,9 +6,11 @@ import { RightPanel } from './components/RightPanel';
 import { Footer } from './components/Footer';
 import { LoginPage } from './components/LoginPage';
 import { ToolType, SidePanelMode, CADElement, Point, DrawingSettings, ProjectFile } from './types';
+import { apiService } from './services/apiService';
 
 function App() {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [currentUser, setCurrentUser] = useState<any>(null);
     const [activeTool, setActiveTool] = useState<ToolType>(ToolType.SELECT);
     const [sideMode, setSideMode] = useState<SidePanelMode>(SidePanelMode.CHAT);
     
@@ -23,11 +25,7 @@ function App() {
     const [elements, setElements] = useState<CADElement[]>(initialElements);
     
     // --- FILE MANAGEMENT ---
-    const [files, setFiles] = useState<ProjectFile[]>([
-        { id: 'f1', name: 'Ground Floor Plan.dxf', lastModified: '2023-10-25 14:30', elements: initialElements },
-        { id: 'f2', name: 'Electrical Layout.dxf', lastModified: '2023-10-24 09:15', elements: [] },
-        { id: 'f3', name: 'HVAC Section A.dxf', lastModified: '2023-10-22 18:45', elements: [] },
-    ]);
+    const [files, setFiles] = useState<ProjectFile[]>([]);
 
     // --- DRAWING SETTINGS (Coordinate System & Dimensions) ---
     const [drawingSettings, setDrawingSettings] = useState<DrawingSettings>({
@@ -49,6 +47,7 @@ function App() {
 
     // --- UI STATE ---
     const [notification, setNotification] = useState<string | null>(null);
+    const [loading, setLoading] = useState(false);
     const [showTextModal, setShowTextModal] = useState(false);
     const [textInputPos, setTextInputPos] = useState<Point | null>(null);
     const [textInputValue, setTextInputValue] = useState("");
@@ -56,6 +55,57 @@ function App() {
     const showNotification = (msg: string) => {
         setNotification(msg);
         setTimeout(() => setNotification(null), 3000);
+    };
+
+    // Load user and projects on mount
+    useEffect(() => {
+        if (apiService.isAuthenticated()) {
+            loadUserAndProjects();
+        }
+    }, []);
+
+    const loadUserAndProjects = async () => {
+        try {
+            setLoading(true);
+            const userData = await apiService.getCurrentUser();
+            setCurrentUser(userData.user);
+
+            const projectsData = await apiService.getProjects();
+            setFiles(projectsData.projects);
+            setIsLoggedIn(true);
+        } catch (error) {
+            console.error('Failed to load user data:', error);
+            apiService.clearToken();
+            setIsLoggedIn(false);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleLogin = async (email: string, password: string) => {
+        try {
+            setLoading(true);
+            const data = await apiService.login(email, password);
+            setCurrentUser(data.user);
+            await loadUserAndProjects();
+        } catch (error: any) {
+            showNotification(error.message || 'Login failed');
+            throw error;
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleLogout = async () => {
+        try {
+            await apiService.logout();
+            setCurrentUser(null);
+            setFiles([]);
+            setIsLoggedIn(false);
+            showNotification('Logged out successfully');
+        } catch (error: any) {
+            console.error('Logout error:', error);
+        }
     };
 
     // --- HISTORY LOGIC ---
@@ -302,42 +352,60 @@ function App() {
     };
 
     // File Management Logic
-    const handleLoadFile = (file: ProjectFile) => {
-        // In a real app, this would fetch data. Here we mock switching content.
-        // For simplicity, we just notify. If we wanted to persist changes to files, we'd need more complex state.
-        // Let's just load the 'elements' from the file if it has them.
-        if (file.elements.length > 0) {
-            commitAction(file.elements);
-        } else {
-            commitAction([]);
+    const handleLoadFile = async (file: ProjectFile) => {
+        try {
+            await apiService.openProject(file.id);
+            const projectData = await apiService.getProject(file.id);
+            if (projectData.project.elements) {
+                commitAction(projectData.project.elements);
+            } else {
+                commitAction([]);
+            }
+            showNotification(`Loaded ${file.name}`);
+        } catch (error: any) {
+            showNotification(error.message || 'Failed to load file');
         }
-        showNotification(`Loaded ${file.name}`);
     };
 
-    const handleCreateFile = (name: string) => {
-        const newFile: ProjectFile = {
-            id: Math.random().toString(36).substr(2, 9),
-            name: name,
-            lastModified: new Date().toLocaleString(),
-            elements: []
-        };
-        setFiles(prev => [newFile, ...prev]);
-        // Optionally switch to it immediately
-        commitAction([]);
-        showNotification(`Created ${name}`);
+    const handleCreateFile = async (name: string) => {
+        try {
+            const data = await apiService.createProject(name);
+            const newFile: ProjectFile = {
+                id: data.project.id,
+                name: data.project.name,
+                lastModified: data.project.createdAt,
+                elementCount: 0,
+            };
+            setFiles(prev => [newFile, ...prev]);
+            commitAction([]);
+            showNotification(`Created ${name}`);
+        } catch (error: any) {
+            showNotification(error.message || 'Failed to create file');
+        }
     };
 
-    const handleRenameFile = (id: string, newName: string) => {
-        setFiles(prev => prev.map(f => f.id === id ? { ...f, name: newName } : f));
+    const handleRenameFile = async (id: string, newName: string) => {
+        try {
+            await apiService.updateProject(id, { name: newName });
+            setFiles(prev => prev.map(f => f.id === id ? { ...f, name: newName } : f));
+            showNotification('File renamed');
+        } catch (error: any) {
+            showNotification(error.message || 'Failed to rename file');
+        }
     };
 
-    const handleDeleteFile = (id: string) => {
-        setFiles(prev => prev.filter(f => f.id !== id));
-        showNotification("File deleted");
+    const handleDeleteFile = async (id: string) => {
+        try {
+            await apiService.deleteProject(id);
+            setFiles(prev => prev.filter(f => f.id !== id));
+            showNotification("File deleted");
+        } catch (error: any) {
+            showNotification(error.message || 'Failed to delete file');
+        }
     };
 
     if (!isLoggedIn) {
-        return <LoginPage onLogin={() => setIsLoggedIn(true)} />;
+        return <LoginPage onLogin={handleLogin} loading={loading} />;
     }
 
     return (
@@ -373,11 +441,13 @@ function App() {
                 </div>
             )}
             
-            <Header 
-                elements={elements} 
-                onImport={handleImport} 
-                onUndo={handleUndo} 
+            <Header
+                elements={elements}
+                onImport={handleImport}
+                onUndo={handleUndo}
                 onRedo={handleRedo}
+                currentUser={currentUser}
+                onLogout={handleLogout}
             />
             <div className="flex flex-1 overflow-hidden relative">
                 <Toolbar activeTool={activeTool} onToolSelect={setActiveTool} />

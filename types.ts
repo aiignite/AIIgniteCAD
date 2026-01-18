@@ -147,13 +147,14 @@ export interface ProjectFile {
     description?: string;
     lastModified: string;
     lastOpened?: string;
-    elements: CADElement[];
+    elements?: CADElement[];
     blockReferences?: BlockReference[]; // 块引用
     blockDefinitions?: BlockDefinition[]; // 项目中的块定义
     layers?: Layer[]; // 图层
     thumbnail?: string;
     userId?: string;
     isDeleted?: boolean;
+    elementCount?: number;
 }
 
 // 项目版本/历史快照

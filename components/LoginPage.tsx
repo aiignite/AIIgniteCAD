@@ -1,22 +1,23 @@
 import React, { useState } from 'react';
 
 interface LoginPageProps {
-    onLogin: () => void;
+    onLogin: (email: string, password: string) => Promise<void>;
+    loading?: boolean;
 }
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
+export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, loading }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState('');
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setIsLoading(true);
-        // Simulate network delay
-        setTimeout(() => {
-            setIsLoading(false);
-            onLogin();
-        }, 800);
+        setError('');
+        try {
+            await onLogin(email, password);
+        } catch (err) {
+            console.error('Login failed:', err);
+        }
     };
 
     return (
@@ -141,12 +142,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                             </div>
                         </div>
 
-                        <button 
+                        <button
                             type="submit"
-                            disabled={isLoading}
+                            disabled={loading}
                             className="w-full py-3 px-4 bg-gradient-to-r from-[#137fec] to-[#0b63c1] hover:from-[#0b63c1] hover:to-[#094a8f] text-white font-bold rounded-lg shadow-lg shadow-blue-500/20 transform transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                         >
-                            {isLoading ? (
+                            {loading ? (
                                 <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
                             ) : (
                                 <>
@@ -155,6 +156,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                                 </>
                             )}
                         </button>
+
+                        {error && (
+                            <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
+                                {error}
+                            </div>
+                        )}
                     </form>
 
                     <div className="text-center text-sm">
