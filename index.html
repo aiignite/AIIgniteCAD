@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Ignite CAD</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600&family=Space+Grotesk:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Noto Sans', 'sans-serif'],
+                        mono: ['monospace'],
+                        display: ['Space Grotesk', 'sans-serif'],
+                    },
+                    colors: {
+                        cad: {
+                            bg: 'var(--cad-bg)',
+                            panel: 'var(--cad-panel)',
+                            border: 'var(--cad-border)',
+                            primary: '#137fec',
+                            primaryHover: '#3b8df5',
+                            text: 'var(--cad-text)',
+                            muted: 'var(--cad-muted)',
+                            grid: 'var(--cad-grid)'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --cad-bg: #ffffff;
+            --cad-panel: #f6f8fa;
+            --cad-border: #d0d7de;
+            --cad-text: #24292f;
+            --cad-muted: #57606a;
+            --cad-grid: #eaeef2;
+        }
+        .dark {
+            --cad-bg: #0d1116;
+            --cad-panel: #161b22;
+            --cad-border: #283039;
+            --cad-text: #e6edf3;
+            --cad-muted: #8b949e;
+            --cad-grid: #1f2933;
+        }
+
+        body {
+            background-color: var(--cad-bg);
+            color: var(--cad-text);
+            overflow: hidden;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--cad-panel); 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--cad-border); 
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--cad-muted); 
+        }
+        
+        .bg-grid-pattern {
+            background-size: 40px 40px;
+            background-image:
+                linear-gradient(to right, var(--cad-grid) 1px, transparent 1px),
+                linear-gradient(to bottom, var(--cad-grid) 1px, transparent 1px);
+        }
+        
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            font-size: 20px; 
+        }
+        .material-symbols-outlined.filled {
+            font-variation-settings: 'FILL' 1;
+        }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.37.0",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body>
+    <div id="root"></div>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
