@@ -42,13 +42,31 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                                         <stop offset="0%" stopColor="#137fec"/>
                                         <stop offset="100%" stopColor="#0b63c1"/>
                                     </linearGradient>
+                                    
+                                    <radialGradient id="login-halo-gradient" cx="100" cy="110" r="60" gradientUnits="userSpaceOnUse">
+                                        <stop offset="20%" stopColor="white" stopOpacity="0.3"/>
+                                        <stop offset="100%" stopColor="white" stopOpacity="0"/>
+                                    </radialGradient>
+                                    
                                     <mask id="login-fire-mask">
                                         <path d="M100 142 C 78 142, 70 115, 88 92 C 98 80, 115 65, 105 40 C 128 65, 138 100, 122 128 C 115 140, 110 142, 100 142Z" fill="white" />
                                         <path d="M101 142 C 94 130, 92 115, 96 100 C 100 85, 108 75, 106 40 H 102 C 104 75, 96 85, 92 100 C 88 115, 90 130, 97 142 Z" fill="black" />
                                     </mask>
                                 </defs>
+
                                 <rect width="200" height="200" rx="40" fill="url(#login-bg-gradient)"/>
+                                
+                                <path d="M100 148 C 65 148, 55 115, 80 85 C 95 65, 125 55, 105 25 C 135 55, 150 95, 130 125 C 120 142, 115 148, 100 148Z" fill="url(#login-halo-gradient)" />
+                                
                                 <path d="M100 142 C 78 142, 70 115, 88 92 C 98 80, 115 65, 105 40 C 128 65, 138 100, 122 128 C 115 140, 110 142, 100 142Z" fill="white" mask="url(#login-fire-mask)" />
+                                
+                                <g>
+                                    <path d="M 70 165 H 130" stroke="#E0F2FE" strokeWidth="2.2" strokeLinecap="round" />
+                                    <path d="M 70 161 V 169" stroke="#E0F2FE" strokeWidth="2.2" strokeLinecap="round" />
+                                    <path d="M 130 161 V 169" stroke="#E0F2FE" strokeWidth="2.2" strokeLinecap="round" />
+                                    <rect x="94" y="159" width="12" height="12" stroke="#E0F2FE" strokeWidth="2" fill="none" strokeLinejoin="round" />
+                                </g>
+                                
                                 <circle cx="100.5" cy="138" r="3" fill="white" />
                             </svg>
                         </div>
@@ -104,7 +122,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                             <div className="space-y-2">
                                 <div className="flex items-center justify-between">
                                     <label htmlFor="password" classNa="text-sm font-semibold">Password</label>
-                                    <a href="#" className="text-xs font-semibold text-[#137fec] hover:text-[#3b8df5]">Forgot password?</a>
+                                    <a href="#" className="text-xs font-semibold text-[#3b82f6] hover:text-[#2563eb]">Forgot password?</a>
                                 </div>
                                 <div className="relative">
                                     <input 
@@ -126,7 +144,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                         <button 
                             type="submit"
                             disabled={isLoading}
-                            className="w-full py-3 px-4 bg-gradient-to-r from-[#f97316] to-[#ea580c] hover:from-[#ea580c] hover:to-[#c2410c] text-white font-bold rounded-lg shadow-lg shadow-orange-500/20 transform transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                            className="w-full py-3 px-4 bg-gradient-to-r from-[#137fec] to-[#0b63c1] hover:from-[#0b63c1] hover:to-[#094a8f] text-white font-bold rounded-lg shadow-lg shadow-blue-500/20 transform transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                         >
                             {isLoading ? (
                                 <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
@@ -141,7 +159,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
 
                     <div className="text-center text-sm">
                         <span className="text-gray-500">Don't have an account yet?</span>{' '}
-                        <a href="#" className="font-bold text-[#f97316] hover:underline">Create Account</a>
+                        <a href="#" className="font-bold text-[#3b82f6] hover:underline">Create Account</a>
                     </div>
                     
                     <div className="flex justify-between items-center text-[10px] text-gray-400 uppercase tracking-wider pt-8">

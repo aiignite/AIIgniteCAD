@@ -1,0 +1,14 @@
+node_modules
+npm-debug.log
+.env
+.env.local
+dist
+.git
+.gitignore
+.vscode
+.idea
+*.md
+coverage
+.DS_Store
+*.log
+prisma/migrations

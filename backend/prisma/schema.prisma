@@ -1,0 +1,271 @@
+// Prisma Schema for AIIgniteCAD
+// PostgreSQL Database with full Blocks support
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 用户表
+model User {
+  id            String   @id @default(uuid())
+  username      String   @unique
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  projects         Project[]
+  blockDefinitions BlockDefinition[]
+  projectVersions  ProjectVersion[]
+  chatSessions     ChatSession[]
+  llmModels        LLMModel[]
+
+  @@map("users")
+}
+
+// 项目/文件表
+model Project {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  name         String
+  description  String?   @db.Text
+  thumbnail    String?   @db.Text
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  lastOpenedAt DateTime? @map("last_opened_at")
+  isDeleted    Boolean   @default(false) @map("is_deleted")
+
+  // Relations
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  elements         Element[]
+  blockReferences  BlockReference[]
+  layers           Layer[]
+  drawingSettings  DrawingSettings?
+  projectVersions  ProjectVersion[]
+  chatSessions     ChatSession[]
+  blockDefinitions BlockDefinition[]
+
+  @@index([userId])
+  @@index([updatedAt])
+  @@index([lastOpenedAt])
+  @@map("projects")
+}
+
+// 图纸设置表
+model DrawingSettings {
+  id            String   @id @default(uuid())
+  projectId     String   @unique @map("project_id")
+  units         String   @default("mm")
+  gridSpacing   Decimal  @default(10) @map("grid_spacing") @db.Decimal(10, 2)
+  snapDistance  Decimal  @default(5) @map("snap_distance") @db.Decimal(10, 2)
+  dimScale      Decimal  @default(1) @map("dim_scale") @db.Decimal(10, 2)
+  dimPrecision  Int      @default(2) @map("dim_precision")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("drawing_settings")
+}
+
+// 图层表
+model Layer {
+  id           String   @id @default(uuid())
+  projectId    String   @map("project_id")
+  name         String
+  color        String
+  isVisible    Boolean  @default(true) @map("is_visible")
+  isLocked     Boolean  @default(false) @map("is_locked")
+  lineType     String   @default("CONTINUOUS") @map("line_type")
+  lineWeight   Decimal? @map("line_weight") @db.Decimal(5, 2)
+  displayOrder Int      @default(0) @map("display_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  elements        Element[]
+  blockReferences BlockReference[]
+
+  @@index([projectId])
+  @@index([displayOrder])
+  @@map("layers")
+}
+
+// 块定义表 - 核心功能！
+model BlockDefinition {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  projectId   String?  @map("project_id") // NULL表示全局块
+  name        String
+  description String?  @db.Text
+  basePointX  Decimal  @map("base_point_x") @db.Decimal(15, 6)
+  basePointY  Decimal  @map("base_point_y") @db.Decimal(15, 6)
+  thumbnail   String?  @db.Text
+  isPublic    Boolean  @default(false) @map("is_public")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project         Project?         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  blockElements   BlockElement[]
+  blockReferences BlockReference[]
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([name])
+  @@index([isPublic])
+  @@map("block_definitions")
+}
+
+// 块内部元素表 - 组成块的图形
+model BlockElement {
+  id                String   @id @default(uuid())
+  blockDefinitionId String   @map("block_definition_id")
+  elementData       Json     @map("element_data") // 存储完整的CADElement JSON
+  displayOrder      Int      @default(0) @map("display_order")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  // Relations
+  blockDefinition BlockDefinition @relation(fields: [blockDefinitionId], references: [id], onDelete: Cascade)
+
+  @@index([blockDefinitionId])
+  @@index([displayOrder])
+  @@map("block_elements")
+}
+
+// 块引用表 - 在图纸中插入的块实例
+model BlockReference {
+  id                String   @id @default(uuid())
+  projectId         String   @map("project_id")
+  blockDefinitionId String   @map("block_definition_id")
+  layerId           String?  @map("layer_id")
+  insertionPointX   Decimal  @map("insertion_point_x") @db.Decimal(15, 6)
+  insertionPointY   Decimal  @map("insertion_point_y") @db.Decimal(15, 6)
+  rotationAngle     Decimal  @default(0) @map("rotation_angle") @db.Decimal(10, 4)
+  scaleX            Decimal  @default(1) @map("scale_x") @db.Decimal(10, 4)
+  scaleY            Decimal  @default(1) @map("scale_y") @db.Decimal(10, 4)
+  properties        Json?    // 可覆盖的属性
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  isDeleted         Boolean  @default(false) @map("is_deleted")
+
+  // Relations
+  project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  blockDefinition BlockDefinition @relation(fields: [blockDefinitionId], references: [id], onDelete: Restrict)
+  layer           Layer?          @relation(fields: [layerId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([blockDefinitionId])
+  @@index([layerId])
+  @@map("block_references")
+}
+
+// 图形元素表
+model Element {
+  id           String   @id @default(uuid())
+  projectId    String   @map("project_id")
+  layerId      String?  @map("layer_id")
+  elementType  String   @map("element_type") // LINE, CIRCLE, etc.
+  geometryData Json     @map("geometry_data") // 完整的几何数据
+  properties   Json?    // 颜色、线宽等属性
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  isDeleted    Boolean  @default(false) @map("is_deleted")
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  layer   Layer?  @relation(fields: [layerId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([layerId])
+  @@index([elementType])
+  @@index([isDeleted])
+  @@map("elements")
+}
+
+// 项目版本/历史表
+model ProjectVersion {
+  id             String   @id @default(uuid())
+  projectId      String   @map("project_id")
+  versionNumber  Int      @map("version_number")
+  snapshotData   Json     @map("snapshot_data") // 完整的项目快照
+  commitMessage  String?  @db.Text @map("commit_message")
+  createdBy      String   @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, versionNumber])
+  @@index([projectId])
+  @@index([createdAt])
+  @@map("project_versions")
+}
+
+// 聊天会话表
+model ChatSession {
+  id        String   @id @default(uuid())
+  projectId String   @map("project_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  project  Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+
+  @@index([projectId])
+  @@index([userId])
+  @@map("chat_sessions")
+}
+
+// 聊天消息表
+model ChatMessage {
+  id          String   @id @default(uuid())
+  sessionId   String   @map("session_id")
+  senderType  String   @map("sender_type") // 'user' or 'ai'
+  messageType String   @map("message_type") // 'text' or 'action'
+  content     String   @db.Text
+  metadata    Json?    // AI操作的详细信息
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([createdAt])
+  @@map("chat_messages")
+}
+
+// AI模型配置表
+model LLMModel {
+  id               String   @id @default(uuid())
+  userId           String?  @map("user_id") // NULL表示系统级别
+  name             String
+  provider         String   // 'Google', 'Ollama', 'Anthropic', 'OpenAI'
+  modelId          String   @map("model_id")
+  apiKeyEncrypted  String?  @map("api_key_encrypted") @db.Text
+  isActive         Boolean  @default(true) @map("is_active")
+  configuration    Json?    // 额外配置
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([provider])
+  @@index([isActive])
+  @@map("llm_models")
+}
