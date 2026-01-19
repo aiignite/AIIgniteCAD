@@ -15,6 +15,9 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       where: {
         userId,
       },
+      include: {
+        llmModel: true,
+      },
       orderBy: {
         createdAt: "asc",
       },
@@ -34,7 +37,16 @@ router.get("/", async (req: AuthRequest, res: Response) => {
 router.post("/", async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
-    const { name, icon, description, color, prompt, isActive } = req.body;
+    const {
+      name,
+      icon,
+      description,
+      color,
+      prompt,
+      isActive,
+      isPublic,
+      llmModelId,
+    } = req.body;
 
     const assistant = await prisma.assistant.create({
       data: {
@@ -45,6 +57,8 @@ router.post("/", async (req: AuthRequest, res: Response) => {
         color: color || "text-cad-primary",
         prompt,
         isActive: isActive ?? true,
+        isPublic: isPublic ?? false,
+        llmModelId,
       },
     });
 
@@ -66,7 +80,16 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.user!.id;
-    const { name, icon, description, color, prompt, isActive } = req.body;
+    const {
+      name,
+      icon,
+      description,
+      color,
+      prompt,
+      isActive,
+      isPublic,
+      llmModelId,
+    } = req.body;
 
     const assistant = await prisma.assistant.updateMany({
       where: {
@@ -80,6 +103,8 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
         color,
         prompt,
         isActive,
+        isPublic,
+        llmModelId,
       },
     });
 
@@ -92,6 +117,9 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
 
     const updatedAssistant = await prisma.assistant.findUnique({
       where: { id },
+      include: {
+        llmModel: true,
+      },
     });
 
     return res.json({

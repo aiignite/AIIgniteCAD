@@ -1,0 +1,248 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --cad-bg: #ffffff;
+  --cad-panel: #f6f8fa;
+  --cad-border: #d0d7de;
+  --cad-text: #24292f;
+  --cad-muted: #57606a;
+  --cad-grid: #eaeef2;
+}
+
+.dark {
+  --cad-bg: #0d1116;
+  --cad-panel: #161b22;
+  --cad-border: #283039;
+  --cad-text: #e6edf3;
+  --cad-muted: #8b949e;
+  --cad-grid: #1f2933;
+}
+
+body {
+  background-color: var(--cad-bg);
+  color: var(--cad-text);
+  overflow: hidden;
+  transition:
+    background-color 0.3s,
+    color 0.3s;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--cad-panel);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--cad-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--cad-muted);
+}
+
+.bg-grid-pattern {
+  background-size: 40px 40px;
+  background-image:
+    linear-gradient(to right, var(--cad-grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--cad-grid) 1px, transparent 1px);
+}
+
+.material-symbols-outlined {
+  font-variation-settings:
+    "FILL" 0,
+    "wght" 400,
+    "GRAD" 0,
+    "opsz" 24;
+  font-size: 20px;
+}
+
+.material-symbols-outlined.filled {
+  font-variation-settings: "FILL" 1;
+}
+
+/* Custom Range Slider Styles */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* Slider Track */
+input[type="range"]::-webkit-slider-track {
+  background: var(--cad-border);
+  height: 6px;
+  border-radius: 3px;
+}
+
+input[type="range"]::-moz-range-track {
+  background: var(--cad-border);
+  height: 6px;
+  border-radius: 3px;
+}
+
+/* Slider Thumb */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 16px;
+  width: 16px;
+  border-radius: 50%;
+  background: #137fec;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-top: -5px;
+}
+
+input[type="range"]::-moz-range-thumb {
+  height: 16px;
+  width: 16px;
+  border-radius: 50%;
+  background: #137fec;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dark input[type="range"]::-webkit-slider-thumb {
+  border-color: #0d1116;
+}
+
+.dark input[type="range"]::-moz-range-thumb {
+  border-color: #0d1116;
+}
+
+/* Hover Effects */
+input[type="range"]::-webkit-slider-thumb:hover {
+  background: #0f6bd4;
+  transform: scale(1.1);
+  box-shadow: 0 2px 6px rgba(19, 127, 236, 0.4);
+}
+
+input[type="range"]::-moz-range-thumb:hover {
+  background: #0f6bd4;
+  transform: scale(1.1);
+  box-shadow: 0 2px 6px rgba(19, 127, 236, 0.4);
+}
+
+/* Active/Dragging Effects */
+input[type="range"]:active::-webkit-slider-thumb {
+  background: #0a4fa0;
+  transform: scale(1.15);
+  box-shadow: 0 3px 8px rgba(19, 127, 236, 0.6);
+}
+
+input[type="range"]:active::-moz-range-thumb {
+  background: #0a4fa0;
+  transform: scale(1.15);
+  box-shadow: 0 3px 8px rgba(19, 127, 236, 0.6);
+}
+
+/* Focus Styles */
+input[type="range"]:focus {
+  outline: none;
+}
+
+input[type="range"]:focus::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px rgba(19, 127, 236, 0.2);
+}
+
+input[type="range"]:focus::-moz-range-thumb {
+  box-shadow: 0 0 0 3px rgba(19, 127, 236, 0.2);
+}
+
+/* Progress Fill Effect */
+input[type="range"]::-webkit-slider-track {
+  background: linear-gradient(
+    to right,
+    #137fec 0%,
+    #137fec var(--value, 0%),
+    var(--cad-border) var(--value, 0%),
+    var(--cad-border) 100%
+  );
+}
+
+/* Markdown Body Styles */
+.markdown-body {
+  word-wrap: break-word;
+  font-family: inherit;
+}
+
+.markdown-body h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--cad-border);
+  padding-bottom: 0.3rem;
+  color: var(--cad-text);
+}
+
+.markdown-body h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-top: 1.25rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--cad-border);
+  padding-bottom: 0.3rem;
+  color: var(--cad-text);
+}
+
+.markdown-body h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  color: var(--cad-text);
+}
+
+.markdown-body p {
+  margin-top: 0.6rem;
+  margin-bottom: 0.6rem;
+  line-height: 1.6;
+}
+
+.markdown-body ul {
+  list-style-type: disc !important;
+  padding-left: 1.5rem !important;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.markdown-body ol {
+  list-style-type: decimal !important;
+  padding-left: 1.5rem !important;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.markdown-body li {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.markdown-body blockquote {
+  padding: 0.5rem 1rem;
+  color: var(--cad-muted);
+  border-left: 0.25rem solid var(--cad-primary);
+  background: rgba(19, 127, 236, 0.05);
+  margin: 1rem 0;
+  border-radius: 0 4px 4px 0;
+}
+
+.markdown-body code {
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+}

@@ -100,23 +100,27 @@ app.get("/api", (req: Request, res: Response) => {
 
 // Authentication routes
 import authRoutes from "./routes/auth";
-app.use('/api/auth', authRoutes);
+app.use("/api/auth", authRoutes);
 
 // Project routes
 import projectRoutes from "./routes/projects";
-app.use('/api/projects', projectRoutes);
+app.use("/api/projects", projectRoutes);
 
 // LLM routes
 import llmRoutes from "./routes/llm";
-app.use('/api/llm', llmRoutes);
+app.use("/api/llm", llmRoutes);
 
 // Chat routes
 import chatRoutes from "./routes/chat";
-app.use('/api/chat', chatRoutes);
+app.use("/api/chat", chatRoutes);
+
+// LLM Chat routes
+import llmChatRoutes from "./routes/llmChat";
+app.use("/api/llm", llmChatRoutes);
 
 // Assistant routes
 import assistantRoutes from "./routes/assistants";
-app.use('/api/assistants', assistantRoutes);
+app.use("/api/assistants", assistantRoutes);
 
 // Block routes (to be implemented)
 // app.use('/api/blocks', blockRoutes);

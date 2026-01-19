@@ -263,7 +263,8 @@ model LLMModel {
   updatedAt        DateTime @updatedAt @map("updated_at")
 
   // Relations
-  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assistants  Assistant[]
 
   @@index([userId])
   @@index([provider])
@@ -273,21 +274,26 @@ model LLMModel {
 
 // AI助手表 - 特定的AI助手角色
 model Assistant {
-  id          String   @id @default(uuid())
-  userId      String   @map("user_id")
-  name        String
-  icon        String   // Material Symbols icon name
-  description String   @db.Text
-  color       String   // Tailwind color class
-  prompt      String?  @db.Text // Custom prompt for this assistant
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  llmModelId   String?  @map("llm_model_id") // 关联的LLM模型
+  name         String
+  icon         String   // Material Symbols icon name
+  description  String   @db.Text
+  color        String   // Tailwind color class
+  prompt       String?  @db.Text // Custom prompt for this assistant
+  isPublic     Boolean  @default(false) @map("is_public") // 是否公开
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   // Relations
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  llmModel LLMModel?   @relation(fields: [llmModelId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([isActive])
+  @@index([llmModelId])
+  @@index([isPublic])
   @@map("assistants")
 }
