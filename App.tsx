@@ -524,17 +524,6 @@ function App() {
         }));
         commitAction([...elements.map((el) => ({ ...el, selected: false })), ...mirrored]);
       }
-    }        // Since we resolved by ID, we are modifying unless 'mirrored' contains new IDs.
-        // But 'Transform.mirrorElements' returns elements with SAME IDs as input.
-        // So default is Modify. If Copy is desired, AI should use COPY operation with Mirror transform? 
-        // Or we assume "MIRROR" means Modify.
-        
-        const updates = new Map(mirrored.map((e) => [e.id, e]));
-        const newEls = elements.map((el) => updates.has(el.id) ? updates.get(el.id)! : el);
-        const existingIds = new Set(elements.map(e => e.id));
-        const brandNew = mirrored.filter(e => !existingIds.has(e.id));
-        commitAction([...newEls, ...brandNew]);
-      }
     }
   };
 

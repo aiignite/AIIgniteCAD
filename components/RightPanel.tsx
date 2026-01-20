@@ -880,6 +880,23 @@ User Request: ${userMsg.text}`;
     }
   };
 
+  const handleClearChat = () => {
+    if (confirm("Are you sure you want to clear the chat history?")) {
+      setMessages([
+        {
+          id: Date.now().toString(),
+          sender: "ai",
+          text: "Chat cleared. I'm ready to help.",
+          type: "text",
+          timestamp: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        },
+      ]);
+    }
+  };
+
   // --- PROPERTY UPDATE LOGIC ---
   const handlePropChange = (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -2198,7 +2215,7 @@ User Request: ${userMsg.text}`;
             <span
               className={`material-symbols-outlined ${selectedAssistant ? selectedAssistant.color : "text-cad-primary"} text-[24px]`}
             >
-              {selectedAssistant ? selectedAssistant.icon : "psychology"}
+              {selectedAssistant ? selectedAssistant.icon : "architecture"}
             </span>
           </div>
           <div className="flex-1 min-w-0">
@@ -2215,7 +2232,7 @@ User Request: ${userMsg.text}`;
               }}
               className="w-full text-sm font-bold text-cad-text leading-none bg-transparent border-0 p-0 focus:ring-0 cursor-pointer"
             >
-              <option value="">AI CAD Designer (Design Mode)</option>
+              <option value="">AI CAD Designer</option>
               {assistants.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name}
@@ -2229,9 +2246,20 @@ User Request: ${userMsg.text}`;
             </p>
           </div>
         </div>
-        <span className="text-[9px] bg-cad-primary/20 text-cad-primary px-1.5 py-0.5 rounded font-mono border border-cad-primary/30 shrink-0">
-          {selectedAssistant ? "ASSISTANT" : "CAD MODE"}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handleClearChat}
+            className="p-1.5 hover:bg-cad-text/10 text-cad-muted hover:text-red-500 rounded transition-colors"
+            title="Clear Chat History"
+          >
+            <span className="material-symbols-outlined text-[18px]">
+              delete_sweep
+            </span>
+          </button>
+          <span className="text-[9px] bg-cad-primary/20 text-cad-primary px-1.5 py-0.5 rounded font-mono border border-cad-primary/30">
+            {selectedAssistant ? "ASSISTANT" : "CAD MODE"}
+          </span>
+        </div>
       </div>
 
       <div
@@ -2265,10 +2293,10 @@ User Request: ${userMsg.text}`;
         )}
       </div>
 
-      <div className="p-3 bg-cad-panel border-t border-cad-border">
-        <div className="relative">
+      <div className="p-4 bg-cad-panel border-t border-cad-border">
+        <div className="relative group bg-white dark:bg-[#0d1116] border border-cad-border rounded-lg outline-none focus-within:ring-1 focus-within:ring-cad-primary focus-within:border-cad-primary transition-all">
           <textarea
-            className="w-full bg-white dark:bg-[#0d1116] border border-cad-border rounded-lg pl-3 pr-10 py-2 text-sm text-cad-text placeholder-gray-500 focus:ring-1 focus:ring-cad-primary focus:border-cad-primary outline-none resize-none"
+            className="w-full bg-transparent border-0 rounded-lg pl-3 pr-20 py-3 text-sm text-cad-text placeholder-gray-500 focus:ring-0 resize-none min-h-[44px]"
             placeholder={
               selectedAssistant
                 ? `Ask ${selectedAssistant.name}...`
@@ -2284,20 +2312,31 @@ User Request: ${userMsg.text}`;
               }
             }}
           />
-          <button
-            onClick={handleSend}
-            disabled={isLoading && !isGenerating}
-            className={`absolute right-2 bottom-2 p-1.5 ${
-              isGenerating
-                ? "bg-red-500 hover:bg-red-600"
-                : "bg-cad-primary hover:bg-blue-600"
-            } text-white rounded-md transition-colors flex items-center justify-center shadow-lg disabled:opacity-50 disabled:cursor-not-allowed`}
-            title={isGenerating ? "Stop generation" : "Send message"}
-          >
-            <span className="material-symbols-outlined text-[16px]">
-              {isGenerating ? "stop" : "send"}
-            </span>
-          </button>
+          <div className="absolute right-2 bottom-2 flex items-center gap-1">
+            <button
+              onClick={handleClearChat}
+              className="p-1.5 text-cad-muted hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors flex items-center justify-center pointer-events-auto"
+              title="Clear Chat"
+            >
+              <span className="material-symbols-outlined text-[18px]">
+                delete
+              </span>
+            </button>
+            <button
+              onClick={handleSend}
+              disabled={isLoading && !isGenerating}
+              className={`p-1.5 ${
+                isGenerating
+                  ? "text-red-500 hover:bg-red-500/10"
+                  : "text-cad-primary hover:bg-cad-primary/10"
+              } rounded-md transition-colors flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed`}
+              title={isGenerating ? "Stop generation" : "Send message"}
+            >
+              <span className="material-symbols-outlined text-[20px]">
+                {isGenerating ? "stop_circle" : "send"}
+              </span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
