@@ -11,6 +11,7 @@ interface CanvasProps {
     setElements: React.Dispatch<React.SetStateAction<CADElement[]>>;
     onCommitAction: (elements: CADElement[]) => void;
     onRequestTextEntry: (pos: Point) => void;
+    onRequestAdvancedShape?: (tool: ToolType, pos: Point) => void;
     drawingSettings: DrawingSettings;
     orthoMode: boolean;
     snapMode: boolean;
@@ -48,6 +49,15 @@ const getSnapPoints = (element: CADElement): Point[] => {
         points.push(element.start);
     } else if (element.type === 'LWPOLYLINE' && element.points) {
         points.push(...element.points);
+    } else if ((element.type === 'GEAR' || element.type === 'SPIRAL' || element.type === 'SPRING' || element.type === 'ELLIPSE') && element.points) {
+        // For advanced shapes, add center and some key points
+        if (element.center) points.push(element.center);
+        // Add a few sample points from the shape
+        if (element.points.length > 0) {
+            points.push(element.points[0]);
+            if (element.points.length > 1) points.push(element.points[Math.floor(element.points.length / 2)]);
+            if (element.points.length > 2) points.push(element.points[element.points.length - 1]);
+        }
     }
     return points;
 };
@@ -136,6 +146,13 @@ const isPointOnElement = (rawPt: Point, el: CADElement): boolean => {
         const mid = { x: (el.start.x + el.end.x)/2, y: (el.start.y + el.end.y)/2 };
         return dist(rawPt, mid) < 20;
     }
+    // Advanced shapes - check polyline segments
+    if ((el.type === 'GEAR' || el.type === 'SPIRAL' || el.type === 'SPRING' || el.type === 'ELLIPSE') && el.points) {
+        for (let i = 0; i < el.points.length - 1; i++) {
+            if (distToSeg(rawPt, el.points[i], el.points[i+1]) < 5) return true;
+        }
+        return false;
+    }
     return false;
 };
 
@@ -150,7 +167,7 @@ const getArrowPath = (tip: Point, angle: number, size: number) => {
 
 export const Canvas: React.FC<CanvasProps> = ({ 
     elements, activeTool, onAddElement, onUpdateElement, onBulkUpdate, setElements,
-    onCommitAction, onRequestTextEntry,
+    onCommitAction, onRequestTextEntry, onRequestAdvancedShape,
     drawingSettings, orthoMode, snapMode, gridMode, onNotification, onBlockDrop
 }) => {
     const svgRef = useRef<SVGSVGElement>(null);
@@ -273,6 +290,14 @@ export const Canvas: React.FC<CanvasProps> = ({
         // --- Complex Feature Placeholders ---
         if ([ToolType.HATCH].includes(activeTool)) {
             onNotification(`Tool '${activeTool}' is complex and requires backend implementation.`);
+            return;
+        }
+
+        // --- Advanced Shape Tools ---
+        if ([ToolType.GEAR, ToolType.POLYGON, ToolType.ELLIPSE, ToolType.SPIRAL, ToolType.SPRING, ToolType.INVOLUTE].includes(activeTool)) {
+            if (onRequestAdvancedShape) {
+                onRequestAdvancedShape(activeTool, pt);
+            }
             return;
         }
 
@@ -840,6 +865,11 @@ export const Canvas: React.FC<CanvasProps> = ({
                         }
                         if (el.type === 'DIMENSION') {
                             return renderDimension(el, !!isSelected);
+                        }
+                        // Advanced shapes - render as polylines
+                        if ((el.type === 'GEAR' || el.type === 'SPIRAL' || el.type === 'SPRING' || el.type === 'ELLIPSE') && el.points) {
+                            const pts = el.points.map(p => `${p.x},${p.y}`).join(' ');
+                            return <polyline key={el.id} points={pts} fill="none" {...style} transform={transform} vectorEffect="non-scaling-stroke" />;
                         }
                         return null;
                     })}

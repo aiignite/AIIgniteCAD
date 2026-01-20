@@ -14,6 +14,13 @@ export enum ToolType {
   ROTATE = "ROTATE",
   DIMENSION = "DIMENSION",
   MEASURE = "MEASURE",
+  // Advanced shapes
+  GEAR = "GEAR",
+  INVOLUTE = "INVOLUTE",
+  SPIRAL = "SPIRAL",
+  SPRING = "SPRING",
+  POLYGON = "POLYGON",
+  ELLIPSE = "ELLIPSE",
 }
 
 export enum SidePanelMode {
@@ -50,18 +57,22 @@ export interface CADElement {
     | "TEXT"
     | "DIMENSION"
     | "ARC"
-    | "BLOCK_REFERENCE";
+    | "BLOCK_REFERENCE"
+    | "ELLIPSE"
+    | "GEAR"
+    | "SPIRAL"
+    | "SPRING";
   layer: string;
   color: string; // Hex or AutoCAD color index
   selected?: boolean;
   // Geometry properties
   start?: Point;
   end?: Point; // For Line, Dimension
-  center?: Point; // For Circle, Arc
+  center?: Point; // For Circle, Arc, Ellipse, Gear
   radius?: number; // For Circle, Arc
   width?: number; // For Rect
   height?: number; // For Rect
-  points?: Point[]; // For Polyline
+  points?: Point[]; // For Polyline, Spiral, Spring
   text?: string; // For Text
   fontSize?: number; // For Text
   // Dimension specific
@@ -72,6 +83,23 @@ export interface CADElement {
   clockwise?: boolean; // Direction of the arc
   // Block reference specific
   blockReferenceId?: string; // Reference to BlockReference
+  // Ellipse specific
+  radiusX?: number;
+  radiusY?: number;
+  rotation?: number; // Rotation angle in degrees
+  // Gear specific
+  numTeeth?: number; // Number of teeth
+  module?: number; // Module (size of teeth)
+  pressureAngle?: number; // Pressure angle in degrees (typically 20)
+  addendum?: number; // Tooth height above pitch circle
+  dedendum?: number; // Tooth depth below pitch circle
+  // Spiral specific
+  turns?: number; // Number of turns
+  radiusIncrement?: number; // How much radius increases per turn
+  // Spring specific
+  coils?: number; // Number of coils
+  wireRadius?: number; // Radius of the wire
+  springRadius?: number; // Radius of the spring coil
 }
 
 export interface BlockCategory {
@@ -274,4 +302,80 @@ export interface LLMModel {
     [key: string]: any;
   };
   status: "Active" | "Inactive";
+}
+
+// Voice-driven CAD command schema
+export type CadAction =
+  | "draw"
+  | "modify"
+  | "constrain"
+  | "feature"
+  | "query"
+  | "view"
+  | "undo"
+  | "redo";
+
+export type CadEntity =
+  | "line"
+  | "circle"
+  | "rect"
+  | "polyline"
+  | "arc"
+  | "ellipse"
+  | "gear"
+  | "spiral"
+  | "spring"
+  | "profile"
+  | "solid"
+  | "face"
+  | "edge";
+
+export interface CadCommand {
+  id: string;
+  action: CadAction;
+  entity?: CadEntity;
+  params?: Record<string, any>;
+  targets?: string[];
+  units?: UnitType;
+  tolerance?: number;
+  layer?: string;
+  style?: {
+    color?: string;
+    lineType?: string;
+    lineWeight?: number;
+  };
+  meta?: {
+    source: "voice" | "text" | "script";
+    confidence?: number;
+    transcript?: string;
+  };
+}
+
+export interface CadDiff {
+  added: CADElement[];
+  updated: CADElement[];
+  removed: string[];
+}
+
+export interface CadResult {
+  ok: boolean;
+  error?: { code: string; message: string; detail?: any };
+  elements?: CADElement[];
+  diff?: CadDiff;
+  summary?: string;
+  needsClarification?: { fields: string[]; question: string };
+}
+
+export interface NeedsClarification {
+  needsClarification: true;
+  fields: string[];
+  question: string;
+  transcript?: string;
+}
+
+export interface VoiceCommandContext {
+  transcript: string;
+  confidence: number;
+  timestamp: number;
+  locale?: string;
 }

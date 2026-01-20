@@ -104,6 +104,52 @@ export const Toolbar: React.FC<ToolbarProps> = ({ activeTool, onToolSelect }) =>
                         >
                             <span className="material-symbols-outlined text-[18px]">texture</span> Hatch
                         </button>
+                        
+                        <div className="h-px bg-cad-border my-1"></div>
+                        
+                        <div className="text-[10px] font-bold text-cad-muted uppercase px-2 py-1">Advanced Shapes</div>
+                        <button 
+                            onClick={() => { onToolSelect(ToolType.GEAR); setShowOverflow(false); }}
+                            className={`flex items-center gap-3 px-2 py-1.5 rounded text-xs transition-colors
+                            ${activeTool === ToolType.GEAR ? 'bg-cad-primary/10 text-cad-primary' : 'text-cad-text hover:bg-cad-text/5'}`}
+                        >
+                            <span className="material-symbols-outlined text-[18px]">settings</span> Gear
+                        </button>
+                        <button 
+                            onClick={() => { onToolSelect(ToolType.POLYGON); setShowOverflow(false); }}
+                            className={`flex items-center gap-3 px-2 py-1.5 rounded text-xs transition-colors
+                            ${activeTool === ToolType.POLYGON ? 'bg-cad-primary/10 text-cad-primary' : 'text-cad-text hover:bg-cad-text/5'}`}
+                        >
+                            <span className="material-symbols-outlined text-[18px]">hexagon</span> Polygon
+                        </button>
+                        <button 
+                            onClick={() => { onToolSelect(ToolType.ELLIPSE); setShowOverflow(false); }}
+                            className={`flex items-center gap-3 px-2 py-1.5 rounded text-xs transition-colors
+                            ${activeTool === ToolType.ELLIPSE ? 'bg-cad-primary/10 text-cad-primary' : 'text-cad-text hover:bg-cad-text/5'}`}
+                        >
+                            <span className="material-symbols-outlined text-[18px]">circle</span> Ellipse
+                        </button>
+                        <button 
+                            onClick={() => { onToolSelect(ToolType.SPIRAL); setShowOverflow(false); }}
+                            className={`flex items-center gap-3 px-2 py-1.5 rounded text-xs transition-colors
+                            ${activeTool === ToolType.SPIRAL ? 'bg-cad-primary/10 text-cad-primary' : 'text-cad-text hover:bg-cad-text/5'}`}
+                        >
+                            <span className="material-symbols-outlined text-[18px]">water_voc</span> Spiral
+                        </button>
+                        <button 
+                            onClick={() => { onToolSelect(ToolType.SPRING); setShowOverflow(false); }}
+                            className={`flex items-center gap-3 px-2 py-1.5 rounded text-xs transition-colors
+                            ${activeTool === ToolType.SPRING ? 'bg-cad-primary/10 text-cad-primary' : 'text-cad-text hover:bg-cad-text/5'}`}
+                        >
+                            <span className="material-symbols-outlined text-[18px]">toys</span> Spring
+                        </button>
+                        <button 
+                            onClick={() => { onToolSelect(ToolType.INVOLUTE); setShowOverflow(false); }}
+                            className={`flex items-center gap-3 px-2 py-1.5 rounded text-xs transition-colors
+                            ${activeTool === ToolType.INVOLUTE ? 'bg-cad-primary/10 text-cad-primary' : 'text-cad-text hover:bg-cad-text/5'}`}
+                        >
+                            <span className="material-symbols-outlined text-[18px]">show_chart</span> Involute
+                        </button>
                     </div>
                 )}
             </div>

@@ -7,6 +7,7 @@ import { Footer } from "./components/Footer";
 import { LoginPage } from "./components/LoginPage";
 import { RegisterPage } from "./components/RegisterPage";
 import { WelcomeModal } from "./components/WelcomeModal";
+import { AdvancedShapeModal } from "./components/AdvancedShapeModal";
 import {
   ToolType,
   SidePanelMode,
@@ -23,6 +24,14 @@ import { indexedDBService } from "./services/indexedDBService";
 import { getBlock, insertBlockReference } from "./services/blockService";
 import { parseDXF } from "./services/dxfService";
 import * as Transform from "./lib/transform";
+import {
+  generateGear,
+  generatePolygon,
+  generateEllipse,
+  generateSpiral,
+  generateSpring,
+  generateInvolute
+} from "./services/advancedShapesService";
 
 function App() {
   const startupRef = useRef(false);
@@ -100,6 +109,9 @@ function App() {
   const [showTextModal, setShowTextModal] = useState(false);
   const [textInputPos, setTextInputPos] = useState<Point | null>(null);
   const [textInputValue, setTextInputValue] = useState("");
+  const [showAdvancedShapeModal, setShowAdvancedShapeModal] = useState(false);
+  const [pendingShapePosition, setPendingShapePosition] = useState<Point | null>(null);
+  const [pendingShapeTool, setPendingShapeTool] = useState<ToolType | null>(null);
 
   const showNotification = (msg: string) => {
     setNotification(msg);
@@ -688,6 +700,110 @@ function App() {
     setActiveTool(ToolType.SELECT);
   };
 
+  // Advanced Shape Tool Logic
+  const handleRequestAdvancedShape = (tool: ToolType, pos: Point) => {
+    setPendingShapePosition(pos);
+    setPendingShapeTool(tool);
+    setShowAdvancedShapeModal(true);
+  };
+
+  const confirmAdvancedShape = (params: any) => {
+    if (!pendingShapePosition || !pendingShapeTool) {
+      setShowAdvancedShapeModal(false);
+      return;
+    }
+
+    let newElement: CADElement | null = null;
+
+    try {
+      switch (pendingShapeTool) {
+        case ToolType.GEAR:
+          newElement = generateGear(
+            pendingShapePosition,
+            params.numTeeth || 20,
+            params.module || 5,
+            params.pressureAngle || 20,
+            "#8b949e",
+            "0"
+          );
+          break;
+        
+        case ToolType.POLYGON:
+          newElement = generatePolygon(
+            pendingShapePosition,
+            100, // Default radius, could be made adjustable
+            params.sides || 6,
+            params.rotation || 0,
+            "#8b949e",
+            "0"
+          );
+          break;
+        
+        case ToolType.ELLIPSE:
+          newElement = generateEllipse(
+            pendingShapePosition,
+            params.radiusX || 100,
+            params.radiusY || 60,
+            params.rotation || 0,
+            "#8b949e",
+            "0"
+          );
+          break;
+        
+        case ToolType.SPIRAL:
+          newElement = generateSpiral(
+            pendingShapePosition,
+            params.startRadius || 20,
+            params.turns || 3,
+            params.radiusIncrement || 30,
+            "#8b949e",
+            "0"
+          );
+          break;
+        
+        case ToolType.SPRING:
+          // For spring, we need start and end points
+          // Using pendingShapePosition as start and a default end point
+          const endPoint = { 
+            x: pendingShapePosition.x + 200, 
+            y: pendingShapePosition.y 
+          };
+          newElement = generateSpring(
+            pendingShapePosition,
+            endPoint,
+            params.coils || 8,
+            params.springRadius || 20,
+            "#8b949e",
+            "0"
+          );
+          break;
+        
+        case ToolType.INVOLUTE:
+          newElement = generateInvolute(
+            pendingShapePosition,
+            params.baseRadius || 50,
+            params.turns || 2,
+            "#8b949e",
+            "0"
+          );
+          break;
+      }
+
+      if (newElement) {
+        handleAddElement(newElement);
+        showNotification(`${pendingShapeTool} created successfully`);
+      }
+    } catch (error) {
+      console.error("Error creating advanced shape:", error);
+      showNotification("Failed to create shape");
+    }
+
+    setShowAdvancedShapeModal(false);
+    setPendingShapePosition(null);
+    setPendingShapeTool(null);
+    setActiveTool(ToolType.SELECT);
+  };
+
   const handleSave = useCallback(async () => {
     if (!activeFile) return;
 
@@ -965,6 +1081,19 @@ function App() {
         </div>
       )}
 
+      {/* ADVANCED SHAPE MODAL */}
+      {showAdvancedShapeModal && pendingShapeTool && (
+        <AdvancedShapeModal
+          tool={pendingShapeTool}
+          onConfirm={confirmAdvancedShape}
+          onCancel={() => {
+            setShowAdvancedShapeModal(false);
+            setPendingShapePosition(null);
+            setPendingShapeTool(null);
+          }}
+        />
+      )}
+
       {notification && (
         <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-top-4 fade-in duration-300">
           <div className="bg-cad-panel/90 border border-cad-primary/50 text-cad-text px-4 py-2 rounded-lg shadow-lg shadow-black/20 flex items-center gap-2 backdrop-blur-sm">
@@ -998,6 +1127,7 @@ function App() {
           setElements={setElements}
           onCommitAction={commitAction}
           onRequestTextEntry={handleRequestTextEntry}
+          onRequestAdvancedShape={handleRequestAdvancedShape}
           drawingSettings={drawingSettings}
           orthoMode={orthoMode}
           snapMode={snapMode}

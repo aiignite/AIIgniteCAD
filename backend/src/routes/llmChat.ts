@@ -365,7 +365,7 @@ async function streamChatWithAnthropic(
       },
       body: JSON.stringify({
         model: modelId,
-        max_tokens: 1024,
+        max_tokens: 128000,
         messages: [
           {
             role: "user",
