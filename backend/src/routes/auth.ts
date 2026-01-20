@@ -5,6 +5,87 @@ import { hashPassword, comparePassword, generateToken, AuthRequest } from "../mi
 
 const router = Router();
 
+async function createDefaultWorkspaceForUser(userId: string) {
+    try {
+        const projectCount = await prisma.project.count({ where: { userId } });
+        if (projectCount > 0) return;
+
+        const project = await prisma.project.create({
+            data: {
+                userId,
+                name: "My First Project",
+                description: "A starter project created for you. Start designing with the AI CAD Designer.",
+            },
+        });
+
+        // Create default drawing settings (schema defaults will apply where appropriate)
+        await prisma.drawingSettings.create({
+            data: {
+                projectId: project.id,
+            },
+        });
+
+        // Create a default layer
+        await prisma.layer.create({
+            data: {
+                projectId: project.id,
+                name: "Default",
+                color: "#000000",
+                displayOrder: 0,
+            },
+        });
+
+        // Create a default AI assistant for the user if they don't have one
+        const assistantCount = await prisma.assistant.count({ where: { userId } });
+        if (assistantCount === 0) {
+            // Find or create a system-level default LLM model
+            let defaultModel = await prisma.lLMModel.findFirst({
+                where: { userId: null }
+            });
+
+            if (!defaultModel) {
+                // Create system-level default LLM model
+                defaultModel = await prisma.lLMModel.create({
+                    data: {
+                        userId: null,
+                        name: "Gemini 2.0 Flash",
+                        provider: "Google",
+                        modelId: "gemini-2.0-flash-exp",
+                        apiKeyEncrypted: process.env.GEMINI_API_KEY || null,
+                        isActive: true,
+                    },
+                });
+                console.log("Created system-level default LLM model");
+            }
+
+            await prisma.assistant.create({
+                data: {
+                    userId,
+                    name: "AI CAD Designer",
+                    icon: "engineering",
+                    description: "An AI assistant tuned for CAD operations and layout.",
+                    color: "text-cad-primary",
+                    prompt: `You are an expert AI CAD Designer.\nThe canvas coordinate system is: X increases right, Y increases down. Default size is 800x600.\nYou should analyze user requests and output a JSON action structure when appropriate.`,
+                    isActive: true,
+                    llmModelId: defaultModel.id,
+                },
+            });
+        }
+
+        // Create an initial chat session for this project
+        await prisma.chatSession.create({
+            data: {
+                projectId: project.id,
+                userId,
+            },
+        });
+
+        console.log("Default workspace created for user:", userId);
+    } catch (err) {
+        console.error("Failed to create default workspace:", err);
+    }
+}
+
 // Register new user
 router.post(
   "/register",
@@ -62,6 +143,9 @@ router.post(
         },
       });
 
+      // Initialize basic AI CAD Designer for this new user (create default project, layers, assistant)
+      await createDefaultWorkspaceForUser(user.id);
+
       const token = generateToken(user);
 
       return res.status(201).json({
@@ -117,6 +201,9 @@ router.post(
           message: "Invalid email or password",
         });
       }
+
+      // Ensure the user has a default AI CAD workspace on login
+      await createDefaultWorkspaceForUser(user.id);
 
       const token = generateToken({
         id: user.id,

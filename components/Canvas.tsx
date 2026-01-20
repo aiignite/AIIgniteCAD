@@ -16,6 +16,7 @@ interface CanvasProps {
     snapMode: boolean;
     gridMode: boolean;
     onNotification: (msg: string) => void;
+    onBlockDrop?: (blockId: string, position: Point) => void;
 }
 
 // Helper types
@@ -150,7 +151,7 @@ const getArrowPath = (tip: Point, angle: number, size: number) => {
 export const Canvas: React.FC<CanvasProps> = ({ 
     elements, activeTool, onAddElement, onUpdateElement, onBulkUpdate, setElements,
     onCommitAction, onRequestTextEntry,
-    drawingSettings, orthoMode, snapMode, gridMode, onNotification
+    drawingSettings, orthoMode, snapMode, gridMode, onNotification, onBlockDrop
 }) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const [viewBox, setViewBox] = useState({ x: 0, y: 0, w: 800, h: 600 });
@@ -168,7 +169,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     const [dimPoints, setDimPoints] = useState<Point[]>([]); // Start, End for Dimension
 
     // Helpers
-    const getSVGPoint = (e: React.MouseEvent): Point => {
+    const getSVGPoint = (e: React.MouseEvent | React.DragEvent): Point => {
         if (!svgRef.current) return { x: 0, y: 0 };
         const CTM = svgRef.current.getScreenCTM();
         if (!CTM) return { x: 0, y: 0 };
@@ -236,6 +237,19 @@ export const Canvas: React.FC<CanvasProps> = ({
         setDimPoints([]);
         setDragMode(null);
     }, [activeTool]);
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        const blockId = e.dataTransfer.getData('blockId');
+        if (blockId && onBlockDrop) {
+            const pt = getSVGPoint(e);
+            onBlockDrop(blockId, pt);
+        }
+    };
+
+    const handleDragOver = (e: React.DragEvent) => {
+         e.preventDefault(); // enable drop
+    };
 
     const handleMouseDown = (e: React.MouseEvent) => {
         const rawPt = getSVGPoint(e);
@@ -744,7 +758,12 @@ export const Canvas: React.FC<CanvasProps> = ({
             {activeTool === ToolType.POLYLINE && <div className="absolute top-12 left-4 bg-cad-primary/80 border border-cad-primary rounded px-3 py-1 text-xs text-white z-10">Click to add points, Enter to finish</div>}
             {activeTool === ToolType.DIMENSION && <div className="absolute top-12 left-4 bg-cad-primary/80 border border-cad-primary rounded px-3 py-1 text-xs text-white z-10">{dimPoints.length === 0 ? "Click Start Point" : dimPoints.length === 1 ? "Click End Point" : "Set Distance"}</div>}
 
-            <div className="w-full h-full" id="drawing-surface">
+            <div 
+                className="w-full h-full" 
+                id="drawing-surface"
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+            >
                 <svg 
                     ref={svgRef}
                     className="w-full h-full block"

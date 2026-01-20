@@ -10,6 +10,7 @@ import dotenv from "dotenv";
 import { PrismaClient } from "@prisma/client";
 import http from "http";
 import { Server as SocketIOServer } from "socket.io";
+import { execSync } from "child_process";
 
 // Load environment variables
 dotenv.config();
@@ -118,24 +119,13 @@ app.use("/api/chat", chatRoutes);
 import llmChatRoutes from "./routes/llmChat";
 app.use("/api/llm", llmChatRoutes);
 
+// Block routes
+import blockRoutes from "./routes/blocks";
+app.use("/api/blocks", blockRoutes);
+
 // Assistant routes
 import assistantRoutes from "./routes/assistants";
 app.use("/api/assistants", assistantRoutes);
-
-// Block routes (to be implemented)
-// app.use('/api/blocks', blockRoutes);
-
-// Block reference routes (to be implemented)
-// app.use('/api/block-references', blockReferenceRoutes);
-
-// Element routes (to be implemented)
-// app.use('/api/elements', elementRoutes);
-
-// Layer routes (to be implemented)
-// app.use('/api/layers', layerRoutes);
-
-// Version routes (to be implemented)
-// app.use('/api/versions', versionRoutes);
 
 // ============================================================================
 // WEBSOCKET HANDLERS
@@ -259,15 +249,37 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 
 async function startServer() {
   try {
-    // Connect to database
-    await prisma.$connect();
-    console.log("✓ Connected to PostgreSQL database");
+    // Wait for database to be ready with retry logic
+    let retries = 30; // 30 retries = 30 seconds max
+    while (retries > 0) {
+      try {
+        await prisma.$connect();
+        console.log("✓ Connected to PostgreSQL database");
+        break;
+      } catch (error) {
+        retries--;
+        if (retries === 0) {
+          throw error;
+        }
+        console.log(`Database not ready, retrying... (${retries} attempts left)`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+
+    // Run database migrations (deploy mode for production)
+    try {
+      execSync('npx prisma migrate deploy', { stdio: 'inherit' });
+      console.log("✓ Database migrations applied");
+    } catch (error) {
+      console.error("Warning: Failed to apply migrations:", error);
+      // Continue anyway - schema might already be in sync
+    }
 
     // Start server
     server.listen(PORT, () => {
       console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       console.log(`🚀 AIIgniteCAD Backend Server`);
-      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
       console.log(`HTTP Server: http://localhost:${PORT}`);
       console.log(`WebSocket Server: ws://localhost:${PORT}`);

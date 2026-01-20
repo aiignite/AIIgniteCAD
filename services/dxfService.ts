@@ -13,12 +13,13 @@ export const exportToDXF = (elements: CADElement[]): string => {
         } else if (el.type === 'CIRCLE' && el.center && el.radius) {
             dxf += `0\nCIRCLE\n8\n${el.layer}\n10\n${el.center.x}\n20\n${el.center.y}\n40\n${el.radius}\n`;
         } else if (el.type === 'RECTANGLE' && el.start && el.width && el.height) {
-            // Export rectangle as LWPOLYLINE
-            dxf += `0\nLWPOLYLINE\n8\n${el.layer}\n90\n4\n70\n1\n`;
+            // Export rectangle as LWPOLYLINE with explicit closing
+            dxf += `0\nLWPOLYLINE\n8\n${el.layer}\n90\n5\n70\n1\n`;
             dxf += `10\n${el.start.x}\n20\n${el.start.y}\n`;
             dxf += `10\n${el.start.x + el.width}\n20\n${el.start.y}\n`;
             dxf += `10\n${el.start.x + el.width}\n20\n${el.start.y + el.height}\n`; 
             dxf += `10\n${el.start.x}\n20\n${el.start.y + el.height}\n`;
+            dxf += `10\n${el.start.x}\n20\n${el.start.y}\n`;
         } else if (el.type === 'TEXT' && el.start && el.text) {
             dxf += `0\nTEXT\n8\n${el.layer}\n10\n${el.start.x}\n20\n${el.start.y}\n40\n${el.fontSize || 12}\n1\n${el.text}\n`;
         } else if (el.type === 'LWPOLYLINE' && el.points) {

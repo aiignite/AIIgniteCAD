@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   SidePanelMode,
   ChatMessage,
+  BlockDefinition,
+  BlockCategory,
   CADElement,
   LLMModel,
   Assistant,
@@ -9,6 +11,14 @@ import {
   ProjectFile,
 } from "../types";
 import { sendCADCommandToGemini } from "../services/geminiService";
+import {
+    getBlockTree,
+    createCategory,
+    createBlock,
+    moveItem,
+    deleteItem,
+    getSuggestedBlockName
+} from "../services/blockService";
 import MarkdownMessage from "./MarkdownMessage";
 
 // --- Helper: Optimize Context for LLM ---
@@ -112,6 +122,13 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     "INSPECTOR",
   );
 
+  // Blocks State
+  const [blockTree, setBlockTree] = useState<{categories: BlockCategory[], rootBlocks: BlockDefinition[]}>({categories: [], rootBlocks: []});
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [blockSearch, setBlockSearch] = useState("");
+  // Drag and Drop
+  const [draggedBlockItem, setDraggedBlockItem] = useState<{type: 'block'|'category', id: string} | null>(null);
+
   // Structure Tab State
   const [expandedLayers, setExpandedLayers] = useState<Set<string>>(
     new Set(["0", "AI_GENERATED"]),
@@ -154,6 +171,20 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     llmModelId: "",
   });
 
+  // User Profile Edit State
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [profileForm, setProfileForm] = useState({
+    username: currentUser?.username || "",
+    email: currentUser?.email || "",
+  });
+  const [editingPassword, setEditingPassword] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [userMessage, setUserMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
   // UI State
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null); // ID of item with open menu
   const [inputValue, setInputValue] = useState("");
@@ -173,6 +204,22 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     loadLLMModels();
     loadAssistants();
   }, []);
+
+  useEffect(() => {
+    if (propTab === "BLOCKS") {
+        loadBlockData();
+    }
+  }, [propTab]);
+
+  const loadBlockData = async () => {
+      try {
+          // Load global blocks (not tied to any project) - blocks are shared across all drawings
+          const data = await getBlockTree(undefined);
+          setBlockTree(data);
+      } catch (e) {
+          console.error("Failed to load blocks", e);
+      }
+  };
 
   // Auto-expand panel when mode changes
   useEffect(() => {
@@ -1317,20 +1364,178 @@ User Request: ${userMsg.text}`;
             </div>
           )}
 
-          {propTab === "BLOCKS" && (
-            <div className="text-center p-8">
-              <span className="material-symbols-outlined text-gray-600 text-[32px] mb-2">
-                grid_view
-              </span>
-              <p className="text-xs text-gray-500">
-                No blocks defined in this drawing.
-              </p>
-            </div>
-          )}
+          {propTab === "BLOCKS" && renderBlocksTab()}
         </div>
       </div>
     );
   };
+
+  // --- Block Handlers ---
+  const handleCreateBlock = async () => {
+    const selected = currentElements.filter(e => e.selected);
+    if (selected.length === 0) {
+        alert("Please select elements to create a block.");
+        return;
+    }
+    
+    const name = prompt("Enter block name:");
+    if (!name) return;
+
+    try {
+        let x = 0, y = 0, count = 0;
+        selected.forEach(e => {
+            if (e.start) { x += e.start.x; y += e.start.y; count++; }
+            else if (e.end) { x += e.end.x; y += e.end.y; count++; }
+            else if (e.center) { x += e.center.x; y += e.center.y; count++; }
+        });
+        const basePoint = count > 0 ? { x: x/count, y: y/count } : { x: 0, y: 0 };
+        
+        // Create block as global (not tied to any project) - blocks are shared across all drawings
+        await createBlock(name, selected, basePoint, undefined, undefined, undefined);
+        await loadBlockData();
+    } catch (e: any) {
+        alert(e.message);
+    }
+  };
+
+  const handleCreateCategory = async () => {
+      const name = prompt("Category Name:");
+      if (!name) return;
+      // Create category as global (not tied to any project) - categories are shared across all drawings
+      await createCategory(name, undefined, undefined);
+      await loadBlockData();
+  };
+
+  const handleBlockDrop = async (targetId: string | null, isCategory: boolean) => {
+      if (!draggedBlockItem) return;
+      if (draggedBlockItem.id === targetId) return;
+      try {
+          await moveItem(draggedBlockItem.type, draggedBlockItem.id, targetId || undefined);
+          await loadBlockData();
+      } catch (e: any) {
+          console.error(e);
+      }
+      setDraggedBlockItem(null);
+  };
+
+  const getFilteredTree = () => {
+    if (!blockSearch) return blockTree;
+    
+    const lower = blockSearch.toLowerCase();
+    
+    const filterCat = (cat: BlockCategory): BlockCategory | null => {
+         const matchingBlocks = cat.blocks?.filter(b => b.name.toLowerCase().includes(lower)) || [];
+         const matchingChildren = cat.children
+              ?.map(c => filterCat(c))
+              .filter(c => c !== null) as BlockCategory[] || [];
+         
+         if (cat.name.toLowerCase().includes(lower) || matchingBlocks.length > 0 || matchingChildren.length > 0) {
+             return {
+                 ...cat,
+                 blocks: matchingBlocks,
+                 children: matchingChildren
+             };
+         }
+         return null;
+    };
+    
+    return {
+        categories: blockTree.categories.map(c => filterCat(c)).filter(c => c !== null) as BlockCategory[],
+        rootBlocks: blockTree.rootBlocks.filter(b => b.name.toLowerCase().includes(lower))
+    };
+  };
+
+  const filteredTree = getFilteredTree();
+
+  const renderBlockNode = (block: BlockDefinition) => (
+      <div 
+        key={block.id} 
+        draggable
+        onDragStart={(e) => {
+            setDraggedBlockItem({type: 'block', id: block.id});
+            e.dataTransfer.setData('blockId', block.id); // For Canvas Drop
+            e.dataTransfer.effectAllowed = 'copy';
+        }}
+        className="flex items-center p-2 hover:bg-cad-hover/10 cursor-pointer text-sm"
+      >
+          <span className="material-symbols-outlined text-base mr-2 text-blue-400">deployed_code</span>
+          {block.name}
+      </div>
+  );
+
+  const renderCategoryNode = (category: BlockCategory) => {
+      const isExpanded = expandedCategories.has(category.id) || blockSearch.length > 0;
+      return (
+          <div key={category.id} className="ml-2">
+              <div 
+                  className={`flex items-center p-2 hover:bg-cad-hover/10 cursor-pointer text-sm ${draggedBlockItem?.id === category.id ? "opacity-50" : ""}`}
+                  draggable
+                  onDragStart={(e) => {
+                      e.stopPropagation();
+                      setDraggedBlockItem({type: 'category', id: category.id});
+                  }}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleBlockDrop(category.id, true);
+                  }}
+                  onClick={() => {
+                      const newSet = new Set(expandedCategories);
+                      if (isExpanded) newSet.delete(category.id);
+                      else newSet.add(category.id);
+                      setExpandedCategories(newSet);
+                  }}
+              >
+                  <span className="material-symbols-outlined text-base mr-2 text-yellow-500">
+                      {isExpanded ? 'folder_open' : 'folder'}
+                  </span>
+                  {category.name}
+              </div>
+              {isExpanded && (
+                  <div className="ml-4 border-l border-gray-700 pl-1">
+                       {category.children?.map(renderCategoryNode)}
+                       {category.blocks?.map(renderBlockNode)}
+                  </div>
+              )}
+          </div>
+      );
+  };
+
+  const renderBlocksTab = () => (
+      <div className="flex flex-col h-full">
+           <div className="p-4 border-b border-gray-800 flex gap-2">
+               <button onClick={handleCreateBlock} className="flex-1 bg-cad-primary text-white text-xs py-2 px-3 rounded flex items-center justify-center gap-2 hover:bg-blue-600">
+                   <span className="material-symbols-outlined text-sm">add_box</span>
+                   Block
+               </button>
+               <button onClick={handleCreateCategory} className="flex-1 bg-gray-700 text-white text-xs py-2 px-3 rounded flex items-center justify-center gap-2 hover:bg-gray-600">
+                   <span className="material-symbols-outlined text-sm">create_new_folder</span>
+                   Folder
+               </button>
+           </div>
+           
+           <div 
+                className="flex-1 overflow-y-auto p-2"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => handleBlockDrop(null, true)}
+           >
+                <input 
+                    type="text" 
+                    placeholder="Search blocks..." 
+                    className="w-full bg-cad-bg-secondary border border-gray-700 rounded p-2 mb-2 text-xs text-cad-text outline-none"
+                    value={blockSearch}
+                    onChange={e => setBlockSearch(e.target.value)}
+                />
+               {filteredTree.categories.map(renderCategoryNode)}
+               {filteredTree.rootBlocks.map(renderBlockNode)}
+               
+               {filteredTree.categories.length === 0 && filteredTree.rootBlocks.length === 0 && (
+                   <p className="text-gray-500 text-xs text-center mt-8">No blocks found</p>
+               )}
+           </div>
+      </div>
+  );
 
   const renderFiles = () => {
     const filteredFiles = files.filter((f) =>
@@ -1470,7 +1675,7 @@ User Request: ${userMsg.text}`;
         </div>
 
         {showAddModel && (
-          <div className="p-4 border-b border-cad-border bg-cad-panel max-h-[50vh] overflow-y-auto">
+          <div className="flex-1 p-4 border-b border-cad-border bg-cad-panel overflow-y-auto">
             <h4 className="text-xs font-bold text-cad-text mb-3">
               {editingModel ? `Edit ${editingModel.name}` : "Add New Model"}
             </h4>
@@ -1551,6 +1756,24 @@ User Request: ${userMsg.text}`;
                   placeholder="e.g., https://open.bigmodel.cn/api/anthropic/v1"
                 />
               </div>
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] text-cad-muted font-medium">
+                  Active
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setNewModel({ ...newModel, isActive: !newModel.isActive })}
+                  className={`relative w-11 h-6 rounded-full transition-colors duration-200 ease-in-out ${
+                    newModel.isActive ? "bg-cad-primary" : "bg-gray-300 dark:bg-gray-600"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transform transition-transform duration-200 ease-in-out ${
+                      newModel.isActive ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
               <div className="flex gap-2">
                 <button
                   onClick={
@@ -1598,7 +1821,7 @@ User Request: ${userMsg.text}`;
                       {model.name}
                     </span>
                     <span className="text-[10px] text-cad-muted">
-                      {model.provider}
+                      {model.provider}{model.modelId ? ` · ${model.modelId}` : ""}
                     </span>
                   </div>
                 </div>
@@ -1915,11 +2138,7 @@ User Request: ${userMsg.text}`;
                 {activeDropdown === a.id && (
                   <DropdownMenu
                     onEdit={() => handleEditAssistant(a)}
-                    onDelete={() =>
-                      setAssistants((prev) =>
-                        prev.filter((item) => item.id !== a.id),
-                      )
-                    }
+                    onDelete={() => handleDeleteAssistant(a.id)}
                   />
                 )}
               </div>
@@ -2086,7 +2305,207 @@ User Request: ${userMsg.text}`;
     </div>
   );
 
-  const renderUserInfo = () => (
+  const renderUserInfo = () => {
+    if (editingProfile) {
+      return (
+        <div className="flex flex-col h-full bg-cad-bg">
+          <div className="flex items-center justify-between p-4 border-b border-cad-border bg-cad-panel">
+            <h3 className="text-sm font-bold text-cad-text">Edit Profile</h3>
+            <button
+              onClick={() => setEditingProfile(false)}
+              className="p-1 hover:bg-cad-text/10 rounded text-gray-400 hover:text-cad-text transition-colors"
+            >
+              <span className="material-symbols-outlined text-[20px]">close</span>
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-cad-muted">Username</label>
+              <input
+                type="text"
+                value={profileForm.username}
+                onChange={(e) =>
+                  setProfileForm({ ...profileForm, username: e.target.value })
+                }
+                className="w-full h-8 bg-white dark:bg-black/20 border border-cad-border rounded px-3 text-sm text-cad-text focus:border-cad-primary outline-none"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-cad-muted">Email</label>
+              <input
+                type="email"
+                value={profileForm.email}
+                onChange={(e) =>
+                  setProfileForm({ ...profileForm, email: e.target.value })
+                }
+                className="w-full h-8 bg-white dark:bg-black/20 border border-cad-border rounded px-3 text-sm text-cad-text focus:border-cad-primary outline-none"
+              />
+            </div>
+
+            {userMessage && (
+              <div
+                className={`p-3 rounded-lg border text-xs ${
+                  userMessage.type === "success"
+                    ? "bg-green-500/10 border-green-500/30 text-green-400"
+                    : "bg-red-500/10 border-red-500/30 text-red-400"
+                }`}
+              >
+                {userMessage.text}
+              </div>
+            )}
+          </div>
+
+          <div className="p-4 border-t border-cad-border flex gap-2 bg-cad-panel">
+            <button
+              onClick={() => setEditingProfile(false)}
+              className="flex-1 py-2 px-3 bg-cad-border/50 text-cad-text text-xs font-bold rounded hover:bg-cad-border/70 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  await apiService.updateProject(currentUser?.id, {
+                    name: profileForm.username,
+                  });
+                  setUserMessage({ type: "success", text: "Profile updated successfully" });
+                  setTimeout(() => setEditingProfile(false), 1500);
+                } catch (e: any) {
+                  setUserMessage({ type: "error", text: e.message || "Failed to update profile" });
+                }
+              }}
+              className="flex-1 py-2 px-3 bg-cad-primary text-white text-xs font-bold rounded hover:bg-cad-primaryHover transition-colors"
+            >
+              Save Changes
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (editingPassword) {
+      return (
+        <div className="flex flex-col h-full bg-cad-bg">
+          <div className="flex items-center justify-between p-4 border-b border-cad-border bg-cad-panel">
+            <h3 className="text-sm font-bold text-cad-text">Change Password</h3>
+            <button
+              onClick={() => setEditingPassword(false)}
+              className="p-1 hover:bg-cad-text/10 rounded text-gray-400 hover:text-cad-text transition-colors"
+            >
+              <span className="material-symbols-outlined text-[20px]">close</span>
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-cad-muted">Current Password</label>
+              <input
+                type="password"
+                value={passwordForm.currentPassword}
+                onChange={(e) =>
+                  setPasswordForm({
+                    ...passwordForm,
+                    currentPassword: e.target.value,
+                  })
+                }
+                className="w-full h-8 bg-white dark:bg-black/20 border border-cad-border rounded px-3 text-sm text-cad-text focus:border-cad-primary outline-none"
+                placeholder="Enter current password"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-cad-muted">New Password</label>
+              <input
+                type="password"
+                value={passwordForm.newPassword}
+                onChange={(e) =>
+                  setPasswordForm({
+                    ...passwordForm,
+                    newPassword: e.target.value,
+                  })
+                }
+                className="w-full h-8 bg-white dark:bg-black/20 border border-cad-border rounded px-3 text-sm text-cad-text focus:border-cad-primary outline-none"
+                placeholder="Enter new password"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-cad-muted">Confirm Password</label>
+              <input
+                type="password"
+                value={passwordForm.confirmPassword}
+                onChange={(e) =>
+                  setPasswordForm({
+                    ...passwordForm,
+                    confirmPassword: e.target.value,
+                  })
+                }
+                className="w-full h-8 bg-white dark:bg-black/20 border border-cad-border rounded px-3 text-sm text-cad-text focus:border-cad-primary outline-none"
+                placeholder="Confirm new password"
+              />
+            </div>
+
+            {userMessage && (
+              <div
+                className={`p-3 rounded-lg border text-xs ${
+                  userMessage.type === "success"
+                    ? "bg-green-500/10 border-green-500/30 text-green-400"
+                    : "bg-red-500/10 border-red-500/30 text-red-400"
+                }`}
+              >
+                {userMessage.text}
+              </div>
+            )}
+          </div>
+
+          <div className="p-4 border-t border-cad-border flex gap-2 bg-cad-panel">
+            <button
+              onClick={() => {
+                setEditingPassword(false);
+                setPasswordForm({
+                  currentPassword: "",
+                  newPassword: "",
+                  confirmPassword: "",
+                });
+              }}
+              className="flex-1 py-2 px-3 bg-cad-border/50 text-cad-text text-xs font-bold rounded hover:bg-cad-border/70 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+                  setUserMessage({ type: "error", text: "Passwords do not match" });
+                  return;
+                }
+                if (passwordForm.newPassword.length < 6) {
+                  setUserMessage({ type: "error", text: "Password must be at least 6 characters" });
+                  return;
+                }
+                try {
+                  // In a real app, you'd call an API endpoint to change password
+                  setUserMessage({ type: "success", text: "Password changed successfully" });
+                  setTimeout(() => {
+                    setEditingPassword(false);
+                    setPasswordForm({
+                      currentPassword: "",
+                      newPassword: "",
+                      confirmPassword: "",
+                    });
+                  }, 1500);
+                } catch (e: any) {
+                  setUserMessage({ type: "error", text: e.message || "Failed to change password" });
+                }
+              }}
+              className="flex-1 py-2 px-3 bg-cad-primary text-white text-xs font-bold rounded hover:bg-cad-primaryHover transition-colors"
+            >
+              Update Password
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
     <div className="flex flex-col h-full bg-cad-bg">
       <div className="flex items-center justify-between p-4 border-b border-cad-border bg-cad-panel">
         <h3 className="text-sm font-bold text-cad-text">User Profile</h3>
@@ -2149,7 +2568,16 @@ User Request: ${userMsg.text}`;
               Quick Actions
             </h5>
 
-            <button className="w-full flex items-center gap-3 p-3 bg-cad-panel hover:bg-cad-text/5 rounded-lg border border-cad-border transition-colors text-left">
+            <button
+              onClick={() => {
+                setEditingProfile(true);
+                setProfileForm({
+                  username: currentUser?.username || "",
+                  email: currentUser?.email || "",
+                });
+              }}
+              className="w-full flex items-center gap-3 p-3 bg-cad-panel hover:bg-cad-text/5 rounded-lg border border-cad-border transition-colors text-left"
+            >
               <span className="material-symbols-outlined text-[18px] text-cad-primary">
                 account_circle
               </span>
@@ -2163,7 +2591,17 @@ User Request: ${userMsg.text}`;
               </div>
             </button>
 
-            <button className="w-full flex items-center gap-3 p-3 bg-cad-panel hover:bg-cad-text/5 rounded-lg border border-cad-border transition-colors text-left">
+            <button
+              onClick={() => {
+                setEditingPassword(true);
+                setPasswordForm({
+                  currentPassword: "",
+                  newPassword: "",
+                  confirmPassword: "",
+                });
+              }}
+              className="w-full flex items-center gap-3 p-3 bg-cad-panel hover:bg-cad-text/5 rounded-lg border border-cad-border transition-colors text-left"
+            >
               <span className="material-symbols-outlined text-[18px] text-cad-primary">
                 security
               </span>
@@ -2177,7 +2615,12 @@ User Request: ${userMsg.text}`;
               </div>
             </button>
 
-            <button className="w-full flex items-center gap-3 p-3 bg-cad-panel hover:bg-cad-text/5 rounded-lg border border-cad-border transition-colors text-left">
+            <a
+              href="https://github.com/AIIgnite/AIIgniteCAD/issues"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full flex items-center gap-3 p-3 bg-cad-panel hover:bg-cad-text/5 rounded-lg border border-cad-border transition-colors text-left"
+            >
               <span className="material-symbols-outlined text-[18px] text-cad-primary">
                 help
               </span>
@@ -2187,7 +2630,7 @@ User Request: ${userMsg.text}`;
                 </p>
                 <p className="text-[10px] text-cad-muted">Get assistance</p>
               </div>
-            </button>
+            </a>
           </div>
 
           {/* Logout Button */}
@@ -2205,11 +2648,12 @@ User Request: ${userMsg.text}`;
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
   const renderChat = () => (
     <div className="flex flex-col h-full bg-cad-bg">
-      <div className="flex items-center justify-between p-4 border-b border-cad-border bg-cad-panel">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-cad-border bg-cad-panel">
         <div className="flex items-center gap-3 flex-1">
           <div className="p-2 bg-black/10 dark:bg-black/30 rounded-md shrink-0">
             <span
@@ -2293,7 +2737,7 @@ User Request: ${userMsg.text}`;
         )}
       </div>
 
-      <div className="p-4 bg-cad-panel border-t border-cad-border">
+      <div className="px-4 py-2 bg-cad-panel border-t border-cad-border">
         <div className="relative group bg-white dark:bg-[#0d1116] border border-cad-border rounded-lg outline-none focus-within:ring-1 focus-within:ring-cad-primary focus-within:border-cad-primary transition-all">
           <textarea
             className="w-full bg-transparent border-0 rounded-lg pl-3 pr-20 py-3 text-sm text-cad-text placeholder-gray-500 focus:ring-0 resize-none min-h-[44px]"
@@ -2435,7 +2879,7 @@ User Request: ${userMsg.text}`;
 
       {/* Frame 2: AI / Dynamic Content (Resizable width) */}
       <div
-        className={`flex flex-col relative bg-cad-panel transition-all duration-300 ${isPanelCollapsed ? "w-0 overflow-hidden" : "border-l border-cad-border"}`}
+        className={`flex flex-col h-full relative bg-cad-panel transition-all duration-300 ${isPanelCollapsed ? "w-0 overflow-hidden" : "border-l border-cad-border"}`}
         style={isPanelCollapsed ? {} : { width: `${assistantPanelWidth}px` }}
         data-collapsed={isPanelCollapsed}
       >

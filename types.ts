@@ -74,6 +74,18 @@ export interface CADElement {
   blockReferenceId?: string; // Reference to BlockReference
 }
 
+export interface BlockCategory {
+  id: string;
+  name: string;
+  parentId?: string;
+  projectId?: string;
+  userId: string;
+  children?: BlockCategory[];
+  blocks?: BlockDefinition[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 // 块定义 - 定义一个可重用的图形单元
 export interface BlockDefinition {
   id: string;
@@ -85,6 +97,7 @@ export interface BlockDefinition {
   isPublic?: boolean; // 是否公开共享
   userId?: string; // 创建者ID
   projectId?: string; // 项目特定块（如果为空则为全局块）
+  categoryId?: string;
   createdAt: string;
   updatedAt: string;
 }
