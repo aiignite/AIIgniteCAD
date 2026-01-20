@@ -315,11 +315,13 @@ class ApiService {
       modelId?: string;
     },
     onChunk?: (chunk: string) => void,
+    signal?: AbortSignal,
   ): Promise<{ message: string; model: string }> {
     const response = await fetch(`${API_BASE_URL}/llm/chat`, {
       method: "POST",
       headers: this.getHeaders(),
       body: JSON.stringify(data),
+      signal,
     });
 
     if (!response.ok) {
@@ -338,6 +340,10 @@ class ApiService {
     let modelName = "";
 
     while (true) {
+      if (signal?.aborted) {
+        reader.cancel();
+        break;
+      }
       const { done, value } = await reader.read();
       if (done) break;
 

@@ -42,7 +42,7 @@ export const sendCADCommandToGemini = async (
                     type: Type.OBJECT,
                     properties: {
                         message: { type: Type.STRING },
-                        operation: { type: Type.STRING, enum: ["ADD", "CLEAR", "DELETE_LAST", "NONE"] },
+                        operation: { type: Type.STRING, enum: ["ADD", "CLEAR", "DELETE_LAST", "COPY", "MOVE", "ROTATE", "MIRROR", "NONE"] },
                         elements: {
                             type: Type.ARRAY,
                             items: {

@@ -230,8 +230,25 @@ export interface ChatMessage {
 
 export interface AIActionResponse {
   message: string;
-  operation?: "ADD" | "CLEAR" | "DELETE_LAST" | "NONE";
+  operation?:
+    | "ADD"
+    | "CLEAR"
+    | "DELETE_LAST"
+    | "NONE"
+    | "ROTATE"
+    | "MIRROR"
+    | "COPY"
+    | "MOVE";
   elements?: CADElement[];
+  params?: {
+    angle?: number;
+    center?: Point;
+    p1?: Point;
+    p2?: Point;
+    dx?: number;
+    dy?: number;
+    [key: string]: any;
+  };
 }
 
 export interface LLMModel {

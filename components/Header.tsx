@@ -9,6 +9,8 @@ interface HeaderProps {
   onRedo?: () => void;
   currentUser?: any;
   onLogout?: () => Promise<void>;
+  fileName?: string;
+  onSave?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -18,6 +20,8 @@ export const Header: React.FC<HeaderProps> = ({
   onRedo,
   currentUser,
   onLogout,
+  fileName = "Untitled.dxf",
+  onSave,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDark, setIsDark] = useState(true);
@@ -176,13 +180,12 @@ export const Header: React.FC<HeaderProps> = ({
             AI Ignite CAD
           </h2>
           <span className="text-[10px] text-cad-muted font-mono transform translate-y-[-1px]">
-            Untitled-1.dxf
+            {fileName}
           </span>
         </div>
       </div>
 
       <div className="flex items-center gap-4">
-
         <div className="flex items-center gap-1 text-cad-muted">
           <button
             onClick={onUndo}
@@ -201,6 +204,13 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         <div className="h-5 w-px bg-cad-border"></div>
+
+        <button
+          onClick={onSave}
+          className="text-cad-muted hover:text-cad-text text-xs font-medium px-2 transition-colors"
+        >
+          Save
+        </button>
 
         <button
           onClick={handleImportClick}

@@ -25,7 +25,7 @@ RUN npx prisma generate
 RUN npx tsc
 
 # 暴露端口
-EXPOSE 3000
+EXPOSE 3410
 
 # 启动脚本 - 确保Prisma客户端已初始化
 CMD ["sh", "-c", "npx prisma generate && npm start"]

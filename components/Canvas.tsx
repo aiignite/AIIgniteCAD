@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { ToolType, CADElement, Point, DrawingSettings } from '../types';
+import * as Transform from '../lib/transform';
 
 interface CanvasProps {
     elements: CADElement[];
@@ -18,7 +19,7 @@ interface CanvasProps {
 }
 
 // Helper types
-type DragMode = 'DRAW' | 'PAN' | 'SELECT_BOX' | 'MOVE_ITEMS' | 'COPY_ITEMS' | 'MIRROR_LINE' | 'MEASURE' | 'DIMENSION_HEIGHT' | 'POLYLINE_ADD' | 'ARC_POINT';
+type DragMode = 'DRAW' | 'PAN' | 'SELECT_BOX' | 'MOVE_ITEMS' | 'COPY_ITEMS' | 'MIRROR_LINE' | 'MEASURE' | 'DIMENSION_HEIGHT' | 'POLYLINE_ADD' | 'ARC_POINT' | 'ROTATE_ITEMS';
 
 // Helper functions for geometry
 const dist = (p1: Point, p2: Point) => Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
@@ -256,8 +257,19 @@ export const Canvas: React.FC<CanvasProps> = ({
         const pt = applyConstraints(rawPt, anchor);
 
         // --- Complex Feature Placeholders ---
-        if ([ToolType.HATCH, ToolType.ROTATE].includes(activeTool)) {
+        if ([ToolType.HATCH].includes(activeTool)) {
             onNotification(`Tool '${activeTool}' is complex and requires backend implementation.`);
+            return;
+        }
+
+        if (activeTool === ToolType.ROTATE) {
+            const selected = elements.filter(el => el.selected);
+            if (selected.length === 0) {
+                onNotification("Select objects first to rotate.");
+                return;
+            }
+            setDragMode('ROTATE_ITEMS');
+            setDrawStart(pt); // Use this as rotation center
             return;
         }
 
@@ -574,6 +586,18 @@ export const Canvas: React.FC<CanvasProps> = ({
                      }
                  }
              }
+        }
+
+        if (dragMode === 'ROTATE_ITEMS' && drawStart) {
+            const angle = Math.atan2(pt.y - drawStart.y, pt.x - drawStart.x) * 180 / Math.PI;
+            const selectedElements = elements.filter(e => e.selected);
+            if (selectedElements.length > 0) {
+                const rotated = Transform.rotateElements(selectedElements, drawStart, angle);
+                const rotatedIds = new Set(rotated.map(r => r.id));
+                const updatedElements = [...elements.filter(el => !rotatedIds.has(el.id)), ...rotated];
+                onCommitAction(updatedElements);
+                onNotification(`Rotated ${selectedElements.length} objects.`);
+            }
         }
 
         // Handle Drawing Completion

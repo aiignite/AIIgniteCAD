@@ -11,16 +11,72 @@ import {
 import { sendCADCommandToGemini } from "../services/geminiService";
 import MarkdownMessage from "./MarkdownMessage";
 
+// --- Helper: Optimize Context for LLM ---
+const prepareContext = (elements: CADElement[]): string => {
+  const MAX_ELEMENTS = 50; // Strict limit to save tokens
+
+  // 1. Prioritize Selected
+  const sorted = [...elements].sort((a, b) =>
+    a.selected === b.selected ? 0 : a.selected ? -1 : 1,
+  );
+
+  // 2. Slice
+  const targetElements = sorted.slice(0, MAX_ELEMENTS);
+
+  if (targetElements.length === 0) return "[]";
+
+  // 3. Simplify
+  const simplified = targetElements.map((el) => {
+    // Helper to round numbers
+    const round = (v: number | undefined) =>
+      v !== undefined ? Number(v.toFixed(2)) : undefined;
+    const roundPt = (p: any) =>
+      p ? { x: round(p.x), y: round(p.y) } : undefined;
+
+    // Build minimal object
+    const obj: any = {
+      id: el.id,
+      type: el.type,
+      // Only include if true/present
+      ...(el.selected && { status: "SELECTED" }),
+      ...(el.layer && el.layer !== "0" && { layer: el.layer }),
+      ...(el.color && { color: el.color }),
+    };
+
+    // Geometry
+    if (el.start) obj.start = roundPt(el.start);
+    if (el.end) obj.end = roundPt(el.end);
+    if (el.center) obj.center = roundPt(el.center);
+    if (el.radius) obj.radius = round(el.radius);
+    if (el.width) obj.width = round(el.width);
+    if (el.height) obj.height = round(el.height);
+    if (el.text) obj.text = el.text;
+    
+    return obj;
+  });
+
+  let result = JSON.stringify(simplified);
+  if (elements.length > MAX_ELEMENTS) {
+    result += `\n... (and ${elements.length - MAX_ELEMENTS} more elements)`;
+  }
+  return result;
+};
+
 interface RightPanelProps {
   mode: SidePanelMode;
   onChangeMode: (mode: SidePanelMode) => void;
   currentElements: CADElement[];
   onUpdateElement: (el: CADElement) => void;
-  onApplyAIAction: (operation: string, elements?: CADElement[]) => void;
+  onApplyAIAction: (
+    operation: string,
+    elements?: CADElement[],
+    params?: any,
+  ) => void;
   drawingSettings: DrawingSettings;
   onUpdateSettings: (settings: DrawingSettings) => void;
   // Files Props
   files: ProjectFile[];
+  activeFileId: string | null;
   onLoadFile: (file: ProjectFile) => void;
   onCreateFile: (name: string) => void;
   onRenameFile: (id: string, newName: string) => void;
@@ -40,6 +96,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   drawingSettings,
   onUpdateSettings,
   files,
+  activeFileId,
   onLoadFile,
   onCreateFile,
   onRenameFile,
@@ -102,8 +159,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [abortController, setAbortController] =
-    useState<AbortController | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
 
   // Assistant panel width state (Frame 2)
@@ -189,10 +245,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       ).apiService.getAssistants();
       console.log("Loaded assistants:", assistants); // 调试日志
       setAssistants(assistants);
-      // 自动选中第一个助手
-      if (assistants.length > 0 && !selectedAssistant) {
-        setSelectedAssistant(assistants[0]);
-      }
+      // Removed auto-select to allow CAD Designer by default
     } catch (error) {
       console.error("Failed to load assistants:", error);
     }
@@ -405,9 +458,9 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   }, [messages]);
 
   const handleStopGeneration = () => {
-    if (abortController) {
-      abortController.abort();
-      setAbortController(null);
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
       setIsGenerating(false);
       setIsLoading(false);
     }
@@ -442,7 +495,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
 
     // 创建新的 AbortController
     const controller = new AbortController();
-    setAbortController(controller);
+    abortControllerRef.current = controller;
 
     try {
       // 如果选中了助手，使用助手的 LLM 模型进行流式聊天
@@ -463,17 +516,29 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         };
         setMessages((prev) => [...prev, initialAiMsg]);
 
+        // 如果是 CAD 助手，注入当前图纸的上下文
+        let messageWithContext = userMsg.text;
+        if (
+          selectedAssistant.id === "cad-designer-id" ||
+          selectedAssistant.name.toLowerCase().includes("cad")
+        ) {
+          const elementContext =
+            currentElements.length > 0
+              ? `\n\n[CONTEXT] Current elements on canvas: ${prepareContext(currentElements)}`
+              : "\n\n[CONTEXT] The canvas is currently empty.";
+
+          messageWithContext = `${userMsg.text}${elementContext}`;
+        }
+
         // 流式接收响应
+        let fullContent = "";
         await api.apiService.chatWithLLM(
           {
-            message: userMsg.text,
+            message: messageWithContext,
             assistantId: selectedAssistant.id,
           },
           (chunk: string) => {
-            // 检查是否已中止
-            if (controller.signal.aborted) {
-              throw new Error("Generation stopped by user");
-            }
+            fullContent += chunk;
             // 实时更新消息内容
             setMessages((prev) =>
               prev.map((msg) =>
@@ -481,44 +546,319 @@ export const RightPanel: React.FC<RightPanelProps> = ({
               ),
             );
           },
+          controller.signal,
         );
+
+        // 如果是 CAD 助手，尝试解析 JSON 并应用
+        if (
+          selectedAssistant.id === "cad-designer-id" ||
+          selectedAssistant.name.toLowerCase().includes("cad")
+        ) {
+          try {
+            console.log("Analyzing AI response for CAD actions...");
+            // 尝试从回答中寻找 JSON 块 - 更加鲁棒的提取方式
+            const jsonRegex = /\{[\s\S]*\}/;
+            const jsonMatch = fullContent.match(jsonRegex);
+            if (jsonMatch) {
+              let jsonStr = jsonMatch[0];
+              // 移除可能的 Markdown 代码块标记 (如果匹配到了代码块外部)
+              if (jsonStr.startsWith("```json")) {
+                jsonStr = jsonStr.replace(/^```json\s*/, "");
+              }
+              if (jsonStr.endsWith("```")) {
+                jsonStr = jsonStr.replace(/\s*```$/, "");
+              }
+
+              const parsed = JSON.parse(jsonStr);
+              const op = parsed.operation?.toUpperCase();
+
+              if (op && op !== "NONE") {
+                console.log("Applying CAD action:", op, parsed.elements);
+                // 处理元素 ID 和默认属性
+                if (parsed.elements && Array.isArray(parsed.elements)) {
+                  parsed.elements = parsed.elements.map((el: any) => {
+                    // 如果模型返回了嵌套的 properties (如 GLM 有时会这样做)，将其拍平到顶层
+                    const rawData = el.properties
+                      ? { ...el, ...el.properties }
+                      : el;
+
+                    const normalized = {
+                      ...rawData,
+                      id: rawData.id || Math.random().toString(36).substr(2, 9),
+                      color: rawData.color || rawData.fill || rawData.stroke || "#137fec",
+                      layer: rawData.layer || "AI_GENERATED",
+                      type: rawData.type?.toUpperCase(),
+                    };
+
+                    // 规范化矩形: 如果有 x, y 但没有 start
+                    if (
+                      normalized.type === "RECTANGLE" &&
+                      !normalized.start &&
+                      normalized.x !== undefined &&
+                      normalized.y !== undefined
+                    ) {
+                      normalized.start = {
+                        x: Number(normalized.x),
+                        y: Number(normalized.y),
+                      };
+                    }
+
+                    // 规范化矩形: 如果有 start 和 end, 计算 width 和 height
+                    if (
+                      normalized.type === "RECTANGLE" &&
+                      normalized.start &&
+                      normalized.end &&
+                      normalized.width === undefined
+                    ) {
+                      normalized.width = normalized.end.x - normalized.start.x;
+                      normalized.height = normalized.end.y - normalized.start.y;
+                    }
+
+                    // 规范化直线: 如果有 x1, y1, x2, y2 但没有 start/end
+                    if (normalized.type === "LINE") {
+                      if (!normalized.start && normalized.x1 !== undefined) {
+                        normalized.start = {
+                          x: Number(normalized.x1),
+                          y: Number(normalized.y1),
+                        };
+                      }
+                      if (!normalized.end && normalized.x2 !== undefined) {
+                        normalized.end = {
+                          x: Number(normalized.x2),
+                          y: Number(normalized.y2),
+                        };
+                      }
+                    }
+
+                    // 规范化圆形: 如果有 cx, cy 但没有 center
+                    if (
+                      normalized.type === "CIRCLE" &&
+                      !normalized.center &&
+                      normalized.cx !== undefined
+                    ) {
+                      normalized.center = {
+                        x: Number(normalized.cx),
+                        y: Number(normalized.cy),
+                      };
+                    }
+
+                    // 规范化圆形: 如果有 center 且没有 radius 但有 end/point, 计算 radius
+                    if (
+                      normalized.type === "CIRCLE" &&
+                      normalized.center &&
+                      normalized.radius === undefined
+                    ) {
+                      const endPt = normalized.end || normalized.point;
+                      if (endPt) {
+                        normalized.radius = Math.sqrt(
+                          Math.pow(endPt.x - normalized.center.x, 2) +
+                            Math.pow(endPt.y - normalized.center.y, 2),
+                        );
+                      }
+                    }
+
+                    return normalized;
+                  });
+                }
+                onApplyAIAction(op, parsed.elements, parsed.params);
+              }
+            }
+          } catch (e) {
+            console.error("Failed to parse CAD action from assistant:", e);
+          }
+        }
 
         setIsLoading(false);
         setIsGenerating(false);
-        setAbortController(null);
+        abortControllerRef.current = null;
       } else {
-        // 没有选中助手时，使用旧的 Gemini API（用于 CAD 操作）
-        const response = await sendCADCommandToGemini(
-          userMsg.text,
-          currentElements,
+        // 没有选中助手时，也改用系统 LLM 进行 CAD 操作
+        // 查找 GLM 模型作为默认
+        const glmModel = llmModels.find((m) =>
+          m.name.toLowerCase().includes("glm"),
         );
+        const modelId = glmModel?.id;
 
-        setIsLoading(false);
-        setIsGenerating(false);
-        setAbortController(null);
+        const api = await import("../services/apiService");
 
-        const aiMsg: ChatMessage = {
-          id: generateId(),
+        // 构造 CAD 专用 Prompt (包含完整状态和指令集)
+        const elementList =
+          currentElements.length > 0
+            ? prepareContext(currentElements)
+            : "[]";
+
+        const cadPrompt = `You are an expert AI CAD Designer. 
+The canvas coordinate system is: X increases right, Y increases down. Default size is 800x600.
+CURRENT CANVAS ELEMENTS: ${elementList}
+
+You can analyze the user request and provide a helpful response in natural language.
+THEN, you MUST provide a JSON object in a markdown code block to perform the action.
+
+JSON Structure:
+1. "message": A short friendly confirmation (e.g., "I have moved the desk to the right.").
+2. "operation": "ADD", "CLEAR", "DELETE_LAST", "COPY", "MOVE", "ROTATE", "MIRROR", or "NONE".
+3. "elements": An array of elements. 
+   - For ADD: Provide the new elements.
+   - For MOVE/COPY/ROTATE/MIRROR: If you want to modify specific existing elements, YOU MUST RETURN THE EXACT "id" OF THOSE ELEMENTS. If you create new elements (like in COPY), new IDs will be generated.
+4. "params": {dx, dy, angle, center:{x,y}, p1:{x,y}, p2:{x,y}} for transformations.
+
+Logic:
+- MODIFY (MOVE/ROTATE/MIRROR) existing elements by returning their objects WITH their original "id".
+- If no elements are specified in JSON, operations will apply to currently SELECTED elements.
+
+Supported types: LINE, RECTANGLE, CIRCLE, TEXT.
+
+User Request: ${userMsg.text}`;
+
+        const aiMsgId = generateId();
+        const initialAiMsg: ChatMessage = {
+          id: aiMsgId,
           sender: "ai",
-          text: response.message,
+          text: "",
           type: "text",
           timestamp: new Date().toLocaleTimeString([], {
             hour: "2-digit",
             minute: "2-digit",
           }),
         };
-        setMessages((prev) => [...prev, aiMsg]);
+        setMessages((prev) => [...prev, initialAiMsg]);
 
-        // 如果返回了操作，执行它
-        if (response.operation && response.operation !== "NONE") {
-          onApplyAIAction(response.operation, response.elements);
+        let fullContent = "";
+        await api.apiService.chatWithLLM(
+          {
+            message: cadPrompt,
+            modelId: modelId,
+          },
+          (chunk: string) => {
+            fullContent += chunk;
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === aiMsgId ? { ...msg, text: msg.text + chunk } : msg,
+              ),
+            );
+          },
+          controller.signal,
+        );
+
+        // 解析 CAD 操作
+        try {
+          const jsonRegex = /\{[\s\S]*\}/;
+          const jsonMatch = fullContent.match(jsonRegex);
+          if (jsonMatch) {
+            let jsonStr = jsonMatch[0];
+            // 移除可能的 Markdown 代码块标记
+            if (jsonStr.startsWith("```json")) {
+              jsonStr = jsonStr.replace(/^```json\s*/, "");
+            }
+            if (jsonStr.endsWith("```")) {
+              jsonStr = jsonStr.replace(/\s*```$/, "");
+            }
+
+            const parsed = JSON.parse(jsonStr);
+            const op = parsed.operation?.toUpperCase();
+
+            if (op && op !== "NONE") {
+              if (parsed.elements && Array.isArray(parsed.elements)) {
+                parsed.elements = parsed.elements.map((el: any) => {
+                  // 如果模型返回了嵌套的 properties，将其拍平
+                  const rawData = el.properties
+                    ? { ...el, ...el.properties }
+                    : el;
+
+                  const normalized = {
+                    ...rawData,
+                    id: rawData.id || Math.random().toString(36).substr(2, 9),
+                    color: rawData.color || "#137fec",
+                    layer: rawData.layer || "AI_GENERATED",
+                    type: rawData.type?.toUpperCase(),
+                  };
+
+                  // 规范化矩形: 如果有 x, y 但没有 start
+                  if (
+                    normalized.type === "RECTANGLE" &&
+                    !normalized.start &&
+                    normalized.x !== undefined &&
+                    normalized.y !== undefined
+                  ) {
+                    normalized.start = {
+                      x: Number(normalized.x),
+                      y: Number(normalized.y),
+                    };
+                  }
+
+                  // 规范化矩形
+                  if (
+                    normalized.type === "RECTANGLE" &&
+                    normalized.start &&
+                    normalized.end &&
+                    normalized.width === undefined
+                  ) {
+                    normalized.width = normalized.end.x - normalized.start.x;
+                    normalized.height = normalized.end.y - normalized.start.y;
+                  }
+
+                  // 规范化直线: 如果有 x1, y1, x2, y2 但没有 start/end
+                  if (normalized.type === "LINE") {
+                    if (!normalized.start && normalized.x1 !== undefined) {
+                      normalized.start = {
+                        x: Number(normalized.x1),
+                        y: Number(normalized.y1),
+                      };
+                    }
+                    if (!normalized.end && normalized.x2 !== undefined) {
+                      normalized.end = {
+                        x: Number(normalized.x2),
+                        y: Number(normalized.y2),
+                      };
+                    }
+                  }
+
+                  // 规范化圆形: 如果有 cx, cy 但没有 center
+                  if (
+                    normalized.type === "CIRCLE" &&
+                    !normalized.center &&
+                    normalized.cx !== undefined
+                  ) {
+                    normalized.center = {
+                      x: Number(normalized.cx),
+                      y: Number(normalized.cy),
+                    };
+                  }
+
+                  // 规范化圆形
+                  if (
+                    normalized.type === "CIRCLE" &&
+                    normalized.center &&
+                    normalized.radius === undefined
+                  ) {
+                    const endPt = normalized.end || normalized.point;
+                    if (endPt) {
+                      normalized.radius = Math.sqrt(
+                        Math.pow(endPt.x - normalized.center.x, 2) +
+                          Math.pow(endPt.y - normalized.center.y, 2),
+                      );
+                    }
+                  }
+
+                  return normalized;
+                });
+              }
+              onApplyAIAction(op, parsed.elements, parsed.params);
+            }
+          }
+        } catch (e) {
+          console.error("Failed to parse CAD action:", e);
         }
+
+        setIsLoading(false);
+        setIsGenerating(false);
+        abortControllerRef.current = null;
       }
     } catch (e: any) {
       console.error(e);
       setIsLoading(false);
       setIsGenerating(false);
-      setAbortController(null);
+      abortControllerRef.current = null;
 
       // 如果是用户主动停止，不显示错误消息
       if (
@@ -1026,9 +1366,19 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             <div
               key={file.id}
               onClick={() => onLoadFile(file)}
-              className="group relative flex items-center p-3 rounded-lg hover:bg-cad-text/5 border border-transparent hover:border-cad-border cursor-pointer transition-all"
+              className={`group relative flex items-center p-3 rounded-lg border cursor-pointer transition-all ${
+                activeFileId === file.id
+                  ? "bg-cad-primary/10 border-cad-primary/30"
+                  : "hover:bg-cad-text/5 border-transparent hover:border-cad-border"
+              }`}
             >
-              <div className="size-8 rounded bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mr-3 text-cad-primary">
+              <div
+                className={`size-8 rounded flex items-center justify-center mr-3 ${
+                  activeFileId === file.id
+                    ? "bg-cad-primary text-white"
+                    : "bg-blue-100 dark:bg-blue-900/30 text-cad-primary"
+                }`}
+              >
                 <span className="material-symbols-outlined text-[20px]">
                   description
                 </span>
@@ -1844,41 +2194,43 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     <div className="flex flex-col h-full bg-cad-bg">
       <div className="flex items-center justify-between p-4 border-b border-cad-border bg-cad-panel">
         <div className="flex items-center gap-3 flex-1">
-          {selectedAssistant && (
-            <>
-              <div className="p-2 bg-black/10 dark:bg-black/30 rounded-md shrink-0">
-                <span
-                  className={`material-symbols-outlined ${selectedAssistant.color} text-[24px]`}
-                >
-                  {selectedAssistant.icon}
-                </span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <select
-                  value={selectedAssistant.id}
-                  onChange={(e) => {
-                    const assistant = assistants.find(
-                      (a) => a.id === e.target.value,
-                    );
-                    if (assistant) setSelectedAssistant(assistant);
-                  }}
-                  className="w-full text-sm font-bold text-cad-text leading-none bg-transparent border-0 p-0 focus:ring-0 cursor-pointer"
-                >
-                  {assistants.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-[10px] text-cad-muted mt-0.5 truncate">
-                  {selectedAssistant.desc}
-                </p>
-              </div>
-            </>
-          )}
+          <div className="p-2 bg-black/10 dark:bg-black/30 rounded-md shrink-0">
+            <span
+              className={`material-symbols-outlined ${selectedAssistant ? selectedAssistant.color : "text-cad-primary"} text-[24px]`}
+            >
+              {selectedAssistant ? selectedAssistant.icon : "psychology"}
+            </span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <select
+              value={selectedAssistant?.id || ""}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === "") {
+                  setSelectedAssistant(null);
+                } else {
+                  const assistant = assistants.find((a) => a.id === val);
+                  if (assistant) setSelectedAssistant(assistant);
+                }
+              }}
+              className="w-full text-sm font-bold text-cad-text leading-none bg-transparent border-0 p-0 focus:ring-0 cursor-pointer"
+            >
+              <option value="">AI CAD Designer (Design Mode)</option>
+              {assistants.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-[10px] text-cad-muted mt-0.5 truncate">
+              {selectedAssistant 
+                ? selectedAssistant.desc 
+                : "Draw shapes and layouts using AI commands"}
+            </p>
+          </div>
         </div>
         <span className="text-[9px] bg-cad-primary/20 text-cad-primary px-1.5 py-0.5 rounded font-mono border border-cad-primary/30 shrink-0">
-          BETA
+          {selectedAssistant ? "ASSISTANT" : "CAD MODE"}
         </span>
       </div>
 
@@ -1976,7 +2328,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   );
 
   // --- COMPONENTS ---
-  const ChatMessageItem = ({ msg }: { msg: ChatMessage }) => {
+  const ChatMessageItem = (props: { msg: ChatMessage; [key: string]: any }) => {
+    const { msg } = props;
     const [copyStatus, setCopyStatus] = useState(false);
 
     const handleCopyMessage = () => {
