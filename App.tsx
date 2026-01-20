@@ -317,6 +317,10 @@ function App() {
       await apiService.logout();
       setCurrentUser(null);
       setFiles([]);
+      setActiveFile(null);
+      setElements([]);
+      setHistory([[]]);
+      setHistoryIndex(0);
       setIsLoggedIn(false);
       showNotification("Logged out successfully");
     } catch (error: any) {

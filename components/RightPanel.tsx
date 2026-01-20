@@ -2366,8 +2366,10 @@ User Request: ${userMsg.text}`;
             <button
               onClick={async () => {
                 try {
-                  await apiService.updateProject(currentUser?.id, {
-                    name: profileForm.username,
+                  const api = await import("../services/apiService");
+                  await api.apiService.updateProfile({
+                    username: profileForm.username,
+                    email: profileForm.email,
                   });
                   setUserMessage({ type: "success", text: "Profile updated successfully" });
                   setTimeout(() => setEditingProfile(false), 1500);
@@ -2482,7 +2484,11 @@ User Request: ${userMsg.text}`;
                   return;
                 }
                 try {
-                  // In a real app, you'd call an API endpoint to change password
+                  const api = await import("../services/apiService");
+                  await api.apiService.changePassword({
+                    currentPassword: passwordForm.currentPassword,
+                    newPassword: passwordForm.newPassword,
+                  });
                   setUserMessage({ type: "success", text: "Password changed successfully" });
                   setTimeout(() => {
                     setEditingPassword(false);
@@ -2691,15 +2697,6 @@ User Request: ${userMsg.text}`;
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={handleClearChat}
-            className="p-1.5 hover:bg-cad-text/10 text-cad-muted hover:text-red-500 rounded transition-colors"
-            title="Clear Chat History"
-          >
-            <span className="material-symbols-outlined text-[18px]">
-              delete_sweep
-            </span>
-          </button>
           <span className="text-[9px] bg-cad-primary/20 text-cad-primary px-1.5 py-0.5 rounded font-mono border border-cad-primary/30">
             {selectedAssistant ? "ASSISTANT" : "CAD MODE"}
           </span>

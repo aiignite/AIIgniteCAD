@@ -14,6 +14,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -205,7 +206,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 <div className="relative">
                   <input
                     id="password"
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     required
                     placeholder="••••••••"
                     className="w-full px-4 py-3 rounded-lg bg-gray-50 dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] focus:border-[#137fec] focus:ring-1 focus:ring-[#137fec] outline-none transition-all placeholder-gray-400"
@@ -214,10 +215,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   />
                   <button
                     type="button"
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
                   >
                     <span className="material-symbols-outlined text-[20px]">
-                      visibility
+                      {showPassword ? "visibility_off" : "visibility"}
                     </span>
                   </button>
                 </div>

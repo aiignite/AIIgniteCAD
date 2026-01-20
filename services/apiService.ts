@@ -133,6 +133,20 @@ class ApiService {
     return this.request<{ user: User }>(`/auth/me`);
   }
 
+  async updateProfile(data: { username?: string; email?: string }) {
+    return this.request<{ user: User; message: string }>(`/auth/profile`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async changePassword(data: { currentPassword: string; newPassword: string }) {
+    return this.request<{ message: string }>(`/auth/change-password`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   async getProjects() {
     return this.request<{ projects: ProjectFile[]; total: number }>(
       `/projects`,

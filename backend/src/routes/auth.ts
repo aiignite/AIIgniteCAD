@@ -289,4 +289,142 @@ router.post("/logout", async (req: AuthRequest, res: Response) => {
   });
 });
 
+// Update user profile
+router.put(
+  "/profile",
+  [
+    body("username").optional().trim().isLength({ min: 3, max: 50 }).withMessage("Username must be 3-50 characters"),
+    body("email").optional().isEmail().withMessage("Invalid email address"),
+  ],
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: "Validation Error",
+          message: errors.array()[0].msg,
+        });
+      }
+
+      const userId = req.user!.id;
+      const { username, email } = req.body;
+
+      // Check if new username/email already exists
+      if (username || email) {
+        const existingUser = await prisma.user.findFirst({
+          where: {
+            OR: [
+              username ? { username } : {},
+              email ? { email } : {},
+            ],
+            NOT: {
+              id: userId,
+            },
+          },
+        });
+
+        if (existingUser) {
+          if (existingUser.username === username) {
+            return res.status(400).json({
+              error: "Bad Request",
+              message: "Username already taken",
+            });
+          }
+          if (existingUser.email === email) {
+            return res.status(400).json({
+              error: "Bad Request",
+              message: "Email already in use",
+            });
+          }
+        }
+      }
+
+      const updatedUser = await prisma.user.update({
+        where: { id: userId },
+        data: {
+          ...(username && { username }),
+          ...(email && { email }),
+        },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          createdAt: true,
+        },
+      });
+
+      return res.json({
+        message: "Profile updated successfully",
+        user: updatedUser,
+      });
+    } catch (error) {
+      console.error("Update profile error:", error);
+      return res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to update profile",
+      });
+    }
+  }
+);
+
+// Change password
+router.post(
+  "/change-password",
+  [
+    body("currentPassword").notEmpty().withMessage("Current password is required"),
+    body("newPassword").isLength({ min: 6 }).withMessage("New password must be at least 6 characters"),
+  ],
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: "Validation Error",
+          message: errors.array()[0].msg,
+        });
+      }
+
+      const userId = req.user!.id;
+      const { currentPassword, newPassword } = req.body;
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (!user) {
+        return res.status(404).json({
+          error: "Not Found",
+          message: "User not found",
+        });
+      }
+
+      const isValidPassword = await comparePassword(currentPassword, user.passwordHash);
+
+      if (!isValidPassword) {
+        return res.status(401).json({
+          error: "Unauthorized",
+          message: "Current password is incorrect",
+        });
+      }
+
+      const newPasswordHash = await hashPassword(newPassword);
+
+      await prisma.user.update({
+        where: { id: userId },
+        data: { passwordHash: newPasswordHash },
+      });
+
+      return res.json({
+        message: "Password changed successfully",
+      });
+    } catch (error) {
+      console.error("Change password error:", error);
+      return res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to change password",
+      });
+    }
+  }
+);
+
 export default router;
