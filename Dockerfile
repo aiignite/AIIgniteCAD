@@ -21,6 +21,9 @@ RUN npm run build
 # 生产阶段 - Nginx服务器
 FROM nginx:alpine
 
+# 安装 wget 用于健康检查
+RUN apk add --no-cache wget
+
 # 复制nginx配置
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 

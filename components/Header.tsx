@@ -24,7 +24,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSave,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isDark, setIsDark] = useState(true);
+  const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
     setIsDark(document.documentElement.classList.contains("dark"));

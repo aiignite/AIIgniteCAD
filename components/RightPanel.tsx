@@ -20,6 +20,7 @@ import {
     getSuggestedBlockName
 } from "../services/blockService";
 import MarkdownMessage from "./MarkdownMessage";
+import PropertyInspector from "./PropertyInspector";
 
 // --- Helper: Optimize Context for LLM ---
 const prepareContext = (elements: CADElement[]): string => {
@@ -1085,200 +1086,16 @@ User Request: ${userMsg.text}`;
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-6">
+        <div className="flex-1 overflow-hidden">
           {propTab === "INSPECTOR" && (
-            <>
-              {/* General Section */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-cad-muted uppercase tracking-wider">
-                    General
-                  </h3>
-                  {selected ? (
-                    <span className="text-[10px] px-1.5 py-0.5 bg-cad-primary/20 text-cad-primary rounded border border-cad-primary/30">
-                      {selected.type}
-                    </span>
-                  ) : (
-                    <span className="text-[10px] text-gray-500 italic">
-                      No Selection
-                    </span>
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-cad-muted font-medium">
-                      COLOR
-                    </label>
-                    <div className="h-8 bg-white dark:bg-black/40 border border-cad-border rounded flex items-center px-2 gap-2 relative group-input">
-                      <input
-                        type="color"
-                        value={selected?.color || "#3b82f6"}
-                        onChange={(e) => handlePropChange(e, "color")}
-                        disabled={!selected}
-                        className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
-                      />
-                      <div
-                        className="size-3 rounded-sm pointer-events-none"
-                        style={{
-                          backgroundColor: selected?.color || "#3b82f6",
-                        }}
-                      ></div>
-                      <span className="text-xs text-cad-text pointer-events-none">
-                        {selected?.color || "ByLayer"}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-cad-muted font-medium">
-                      LAYER
-                    </label>
-                    <div className="h-8 bg-white dark:bg-black/40 border border-cad-border rounded flex items-center px-2 gap-2">
-                      <span className="material-symbols-outlined text-[14px] text-gray-500">
-                        layers
-                      </span>
-                      <input
-                        value={selected?.layer || "0"}
-                        onChange={(e) => handlePropChange(e, "layer")}
-                        disabled={!selected}
-                        className="w-full bg-transparent text-xs text-cad-text outline-none"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="h-px bg-cad-border"></div>
-              {/* Geometry Section */}
-              <div className="space-y-3">
-                <h3 className="text-xs font-bold text-cad-muted uppercase tracking-wider">
-                  Geometry
-                </h3>
-                {selected ? (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-cad-muted font-medium">
-                        Position X
-                      </label>
-                      <input
-                        type="number"
-                        value={(
-                          selected.start?.x ||
-                          selected.center?.x ||
-                          0
-                        ).toFixed(2)}
-                        onChange={(e) => handlePropChange(e, "x", true)}
-                        className="w-full h-8 bg-gray-100 dark:bg-black/20 border border-cad-border rounded px-2 text-xs text-right font-mono text-cad-text focus:border-cad-primary focus:bg-white dark:focus:bg-black/40 outline-none transition-colors"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-cad-muted font-medium">
-                        Position Y
-                      </label>
-                      <input
-                        type="number"
-                        value={(
-                          selected.start?.y ||
-                          selected.center?.y ||
-                          0
-                        ).toFixed(2)}
-                        onChange={(e) => handlePropChange(e, "y", true)}
-                        className="w-full h-8 bg-gray-100 dark:bg-black/20 border border-cad-border rounded px-2 text-xs text-right font-mono text-cad-text focus:border-cad-primary focus:bg-white dark:focus:bg-black/40 outline-none transition-colors"
-                      />
-                    </div>
-                    {(selected.type === "RECTANGLE" ||
-                      selected.width !== undefined) && (
-                      <>
-                        <div className="col-span-2 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <label className="text-[10px] text-cad-muted font-medium">
-                              Width
-                            </label>
-                            <input
-                              type="number"
-                              value={Math.abs(selected.width || 0).toFixed(2)}
-                              onChange={(e) =>
-                                handlePropChange(e, "width", true)
-                              }
-                              className="w-20 h-7 bg-gray-100 dark:bg-black/20 border border-cad-border rounded px-2 text-xs text-right font-mono text-cad-text focus:border-cad-primary focus:bg-white dark:focus:bg-black/40 outline-none transition-colors"
-                            />
-                          </div>
-                          <input
-                            type="range"
-                            min="1"
-                            max="1000"
-                            step="0.1"
-                            value={Math.abs(selected.width || 0)}
-                            onChange={(e) => handlePropChange(e, "width", true)}
-                            className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cad-primary slider-thumb"
-                          />
-                        </div>
-                        <div className="col-span-2 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <label className="text-[10px] text-cad-muted font-medium">
-                              Height
-                            </label>
-                            <input
-                              type="number"
-                              value={Math.abs(selected.height || 0).toFixed(2)}
-                              onChange={(e) =>
-                                handlePropChange(e, "height", true)
-                              }
-                              className="w-20 h-7 bg-gray-100 dark:bg-black/20 border border-cad-border rounded px-2 text-xs text-right font-mono text-cad-text focus:border-cad-primary focus:bg-white dark:focus:bg-black/40 outline-none transition-colors"
-                            />
-                          </div>
-                          <input
-                            type="range"
-                            min="1"
-                            max="1000"
-                            step="0.1"
-                            value={Math.abs(selected.height || 0)}
-                            onChange={(e) =>
-                              handlePropChange(e, "height", true)
-                            }
-                            className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cad-primary slider-thumb"
-                          />
-                        </div>
-                      </>
-                    )}
-                    {selected.type === "CIRCLE" && (
-                      <div className="col-span-2 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[10px] text-cad-muted font-medium">
-                            Radius
-                          </label>
-                          <input
-                            type="number"
-                            value={(selected.radius || 0).toFixed(2)}
-                            onChange={(e) =>
-                              handlePropChange(e, "radius", true)
-                            }
-                            className="w-20 h-7 bg-gray-100 dark:bg-black/20 border border-cad-border rounded px-2 text-xs text-right font-mono text-cad-text focus:border-cad-primary focus:bg-white dark:focus:bg-black/40 outline-none transition-colors"
-                          />
-                        </div>
-                        <input
-                          type="range"
-                          min="1"
-                          max="500"
-                          step="0.1"
-                          value={selected.radius || 0}
-                          onChange={(e) => handlePropChange(e, "radius", true)}
-                          className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cad-primary slider-thumb"
-                        />
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="p-4 bg-cad-bg rounded border border-cad-border/50 text-center">
-                    <span className="text-xs text-cad-muted">
-                      Select an object to view geometry
-                    </span>
-                  </div>
-                )}
-              </div>
-            </>
+            <PropertyInspector
+              selectedElements={currentElements.filter((el) => el.selected)}
+              onUpdateElement={onUpdateElement}
+            />
           )}
 
           {propTab === "STRUCTURE" && (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 p-4 overflow-y-auto h-full">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] text-cad-muted font-bold uppercase">
                   Layers
@@ -1364,7 +1181,9 @@ User Request: ${userMsg.text}`;
             </div>
           )}
 
-          {propTab === "BLOCKS" && renderBlocksTab()}
+          <div className="overflow-y-auto h-full">
+            {propTab === "BLOCKS" && renderBlocksTab()}
+          </div>
         </div>
       </div>
     );
