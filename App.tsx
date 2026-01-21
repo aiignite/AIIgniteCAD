@@ -24,6 +24,7 @@ import { indexedDBService } from "./services/indexedDBService";
 import { getBlock, insertBlockReference } from "./services/blockService";
 import { parseDXF } from "./services/dxfService";
 import * as Transform from "./lib/transform";
+import { generateSineWave, validateCurve } from "./services/curveGenerationService";
 import {
   generateGear,
   generatePolygon,
@@ -573,20 +574,78 @@ function App() {
     aiElements?: CADElement[],
     params?: any,
   ) => {
+    // Normalize AI elements: convert LINE with points to LWPOLYLINE
+    // and validate/correct curve data if needed
+    const normalizedElements = aiElements?.map(el => {
+      if (el.type === 'LINE' && el.points && el.points.length > 0) {
+        // Convert LINE with multiple points to LWPOLYLINE
+        return {
+          ...el,
+          type: 'LWPOLYLINE' as const
+        };
+      }
+
+      // Validate LWPOLYLINE curves for mathematical correctness
+      if (el.type === 'LWPOLYLINE' && el.points && el.points.length > 0) {
+        const validation = validateCurve(el.points);
+        if (!validation.valid) {
+          console.warn('Curve validation issues:', validation.issues);
+          // Try to auto-correct if it looks like a sine wave attempt
+          if (el.points.length > 10) {
+            const xs = el.points.map(p => p.x);
+            const ys = el.points.map(p => p.y);
+            const xMin = Math.min(...xs);
+            const xMax = Math.max(...xs);
+            const yMin = Math.min(...ys);
+            const yMax = Math.max(...ys);
+            const yRange = yMax - yMin;
+            const xRange = xMax - xMin;
+
+            // If it looks like a sine wave (large y oscillation, wide x range)
+            if (yRange > 50 && xRange > 200) {
+              const centerY = (yMin + yMax) / 2;
+              const amplitude = yRange / 2;
+              const wavelength = xRange / 1.5; // Assume ~1.5 waves in range
+              
+              try {
+                const correctedPoints = generateSineWave({
+                  startX: xMin,
+                  endX: xMax,
+                  centerY,
+                  amplitude,
+                  wavelength,
+                  pointCount: Math.max(el.points.length - 1, 50)
+                });
+                
+                return {
+                  ...el,
+                  points: correctedPoints
+                };
+              } catch (e) {
+                console.error('Error correcting curve:', e);
+              }
+            }
+          }
+        }
+      }
+
+      return el;
+    });
+
     if (operation === "CLEAR") {
       commitAction([]);
     } else if (operation === "DELETE_LAST") {
       commitAction(elements.slice(0, -1));
-    } else if (operation === "ADD" && aiElements) {
-      commitAction([...elements, ...aiElements]);
+    } else if (operation === "ADD" && normalizedElements) {
+      commitAction([...elements, ...normalizedElements]);
     } else if (operation === "COPY") {
       // 1. Identify "Source" elements
       // If AI provided elements, map them to current canvas elements to get full state
       // If no AI elements, use selection or all
       let sourceElements: CADElement[] = [];
       
-      if (aiElements && aiElements.length > 0) {
-        sourceElements = aiElements.map(t => elements.find(e => e.id === t.id) || t);
+      if (normalizedElements && normalizedElements.length > 0) {
+        sourceElements = normalizedElements.map(t => elements.find(e => e.id === t.id) || t);
       } else {
         const selected = elements.filter((el) => el.selected);
         sourceElements = selected.length > 0 ? selected : elements;
@@ -614,7 +673,7 @@ function App() {
     } else if (operation === "MOVE") {
       const selected = elements.filter((el) => el.selected);
       // 优先使用 AI 提供的元素，其次是选中的，最后是全部
-      const rawTargets = (aiElements && aiElements.length > 0) ? aiElements : (selected.length > 0 ? selected : elements);
+      const rawTargets = (normalizedElements && normalizedElements.length > 0) ? normalizedElements : (selected.length > 0 ? selected : elements);
       
       // 解析目标元素 (如果 AI 提供了 ID 匹配的，或者是选中的)
       const targets = rawTargets.map(t => elements.find(e => e.id === t.id) || t);
@@ -631,9 +690,9 @@ function App() {
             const existingIds = new Set(elements.map(e => e.id));
             const brandNew = moved.filter(e => !existingIds.has(e.id));
             commitAction([...newEls, ...brandNew]);
-        } else if (aiElements && aiElements.length > 0) {
+        } else if (normalizedElements && normalizedElements.length > 0) {
             // AI 提供了最终位置的元素，且没有偏移量参数
-            const updates = new Map(aiElements.map((e) => [e.id, e]));
+            const updates = new Map(normalizedElements.map((e) => [e.id, e]));
             const newEls = elements.map((el) => updates.has(el.id) ? { ...el, ...updates.get(el.id)! } : el);
             const existingIds = new Set(elements.map(e => e.id));
             const brandNew = aiElements.filter(e => !existingIds.has(e.id));
@@ -642,7 +701,7 @@ function App() {
       }
     } else if (operation === "ROTATE") {
       const selected = elements.filter((el) => el.selected);
-      const rawTargets = (aiElements && aiElements.length > 0) ? aiElements : (selected.length > 0 ? selected : elements);
+      const rawTargets = (normalizedElements && normalizedElements.length > 0) ? normalizedElements : (selected.length > 0 ? selected : elements);
       const targets = rawTargets.map(t => elements.find(e => e.id === t.id) || t);
       
       if (targets.length > 0) {
@@ -658,7 +717,7 @@ function App() {
       }
     } else if (operation === "MIRROR") {
       const selected = elements.filter((el) => el.selected);
-      const rawTargets = (aiElements && aiElements.length > 0) ? aiElements : (selected.length > 0 ? selected : elements);
+      const rawTargets = (normalizedElements && normalizedElements.length > 0) ? normalizedElements : (selected.length > 0 ? selected : elements);
       const targets = rawTargets.map(t => elements.find(e => e.id === t.id) || t);
       
       if (targets.length > 0) {

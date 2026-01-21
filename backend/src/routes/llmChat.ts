@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import { prisma } from "../index";
 import { AuthRequest, authenticate } from "../middleware/auth";
+import { generateCompactCapabilitiesPrompt } from "../services/aiEngine/capabilitiesGenerator";
 
 const router = Router();
 
@@ -14,6 +15,8 @@ router.post("/chat", async (req: AuthRequest, res: Response) => {
 
     // Get LLM model configuration
     let llmModel;
+    let systemPrompt: string | undefined;
+    let isCADAssistant = false;
 
     if (assistantId) {
       // Use assistant's configured LLM model
@@ -27,6 +30,15 @@ router.post("/chat", async (req: AuthRequest, res: Response) => {
       }
 
       llmModel = assistant.llmModel;
+      
+      // Check if this is a CAD assistant
+      if (assistant.id === 'cad-designer-id' || 
+          assistant.name.toLowerCase().includes('cad')) {
+        isCADAssistant = true;
+        // Generate CAD capabilities system prompt
+        systemPrompt = generateCompactCapabilitiesPrompt();
+        console.log('[CAD Assistant] Injecting CAD capabilities into prompt');
+      }
     } else if (modelId) {
       // Use specified model
       llmModel = await prisma.lLMModel.findFirst({
@@ -61,16 +73,16 @@ router.post("/chat", async (req: AuthRequest, res: Response) => {
     // Call LLM based on provider
     switch (llmModel.provider) {
       case "Ollama":
-        await streamChatWithOllama(message, llmModel, res);
+        await streamChatWithOllama(message, llmModel, res, systemPrompt);
         break;
       case "Google":
-        await streamChatWithGoogle(message, llmModel, apiKey, res);
+        await streamChatWithGoogle(message, llmModel, apiKey, res, systemPrompt);
         break;
       case "OpenAI":
-        await streamChatWithOpenAI(message, llmModel, apiKey, res);
+        await streamChatWithOpenAI(message, llmModel, apiKey, res, systemPrompt);
         break;
       case "Anthropic":
-        await streamChatWithAnthropic(message, llmModel, apiKey, res);
+        await streamChatWithAnthropic(message, llmModel, apiKey, res, systemPrompt);
         break;
       default:
         res.write(
@@ -101,14 +113,31 @@ async function streamChatWithOllama(
   message: string,
   model: any,
   res: Response,
+  systemPrompt?: string,
 ): Promise<void> {
   const configuration = model.configuration || {};
   const apiUrl = configuration.apiUrl || "http://localhost:11434";
   const modelId = model.modelId || "qwq";
 
   console.log(`[Ollama] Connecting to ${apiUrl} with model ${modelId}`);
+  if (systemPrompt) {
+    console.log(`[Ollama] Using system prompt (${systemPrompt.length} chars)`);
+  }
 
   try {
+    // Build messages array
+    const messages = [];
+    if (systemPrompt) {
+      messages.push({
+        role: "system",
+        content: systemPrompt,
+      });
+    }
+    messages.push({
+      role: "user",
+      content: message,
+    });
+
     const response = await fetch(`${apiUrl}/api/chat`, {
       method: "POST",
       headers: {
@@ -116,12 +145,7 @@ async function streamChatWithOllama(
       },
       body: JSON.stringify({
         model: modelId,
-        messages: [
-          {
-            role: "user",
-            content: message,
-          },
-        ],
+        messages,
         stream: true,
       }),
     });
@@ -190,13 +214,41 @@ async function streamChatWithGoogle(
   model: any,
   apiKey: string,
   res: Response,
+  systemPrompt?: string,
 ): Promise<void> {
   const apiUrl =
     model.configuration?.apiUrl ||
     "https://generativelanguage.googleapis.com/v1beta/models";
   const modelId = model.modelId || "gemini-pro";
+  
+  if (systemPrompt) {
+    console.log(`[Google] Using system prompt (${systemPrompt.length} chars)`);
+  }
 
   try {
+    // Build contents array - Gemini uses systemInstruction separately
+    const requestBody: any = {
+      contents: [
+        {
+          parts: [
+            {
+              text: message,
+            },
+          ],
+        },
+      ],
+    };
+    
+    if (systemPrompt) {
+      requestBody.systemInstruction = {
+        parts: [
+          {
+            text: systemPrompt,
+          },
+        ],
+      };
+    }
+
     const response = await fetch(
       `${apiUrl}/${modelId}:streamGenerateContent?key=${apiKey}`,
       {
@@ -204,17 +256,7 @@ async function streamChatWithGoogle(
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: message,
-                },
-              ],
-            },
-          ],
-        }),
+        body: JSON.stringify(requestBody),
       },
     );
 
@@ -271,11 +313,29 @@ async function streamChatWithOpenAI(
   model: any,
   apiKey: string,
   res: Response,
+  systemPrompt?: string,
 ): Promise<void> {
   const apiUrl = model.configuration?.apiUrl || "https://api.openai.com/v1";
   const modelId = model.modelId || "gpt-3.5-turbo";
+  
+  if (systemPrompt) {
+    console.log(`[OpenAI] Using system prompt (${systemPrompt.length} chars)`);
+  }
 
   try {
+    // Build messages array
+    const messages = [];
+    if (systemPrompt) {
+      messages.push({
+        role: "system",
+        content: systemPrompt,
+      });
+    }
+    messages.push({
+      role: "user",
+      content: message,
+    });
+
     const response = await fetch(`${apiUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -284,12 +344,7 @@ async function streamChatWithOpenAI(
       },
       body: JSON.stringify({
         model: modelId,
-        messages: [
-          {
-            role: "user",
-            content: message,
-          },
-        ],
+        messages,
         stream: true,
       }),
     });
@@ -351,11 +406,33 @@ async function streamChatWithAnthropic(
   model: any,
   apiKey: string,
   res: Response,
+  systemPrompt?: string,
 ): Promise<void> {
   const apiUrl = model.configuration?.apiUrl || "https://api.anthropic.com";
   const modelId = model.modelId || "claude-3-sonnet-20240229";
+  
+  if (systemPrompt) {
+    console.log(`[Anthropic] Using system prompt (${systemPrompt.length} chars)`);
+  }
 
   try {
+    // Build request body - Anthropic uses system parameter separately
+    const requestBody: any = {
+      model: modelId,
+      max_tokens: 128000,
+      messages: [
+        {
+          role: "user",
+          content: message,
+        },
+      ],
+      stream: true,
+    };
+    
+    if (systemPrompt) {
+      requestBody.system = systemPrompt;
+    }
+
     const response = await fetch(`${apiUrl}/v1/messages`, {
       method: "POST",
       headers: {
@@ -363,17 +440,7 @@ async function streamChatWithAnthropic(
         "x-api-key": apiKey,
         "anthropic-version": "2023-06-01",
       },
-      body: JSON.stringify({
-        model: modelId,
-        max_tokens: 128000,
-        messages: [
-          {
-            role: "user",
-            content: message,
-          },
-        ],
-        stream: true,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {

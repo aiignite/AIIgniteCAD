@@ -29,8 +29,29 @@ export const sendCADCommandToGemini = async (
             
             Supported element types for 'elements':
             - LINE: needs start {x,y} and end {x,y}
+            - LWPOLYLINE: needs points array [{x,y}, {x,y}, ...] for multi-point curves
             - RECTANGLE: needs start {x,y} (top-left), width, height
             - CIRCLE: needs center {x,y}, radius
+            
+            For LWPOLYLINE curves (sine waves, spirals, etc.):
+            Use the mathematical formula to generate 50-100+ evenly spaced points.
+            
+            SINE WAVE FORMULA:
+            y = centerY + amplitude * sin(2π * (x - startX) / wavelength)
+            Where:
+            - centerY = middle y coordinate (default 300)
+            - amplitude = peak height from center (e.g., 100-150)
+            - wavelength = horizontal distance for one complete cycle (e.g., 400-500)
+            - startX = starting x coordinate
+            
+            Example sine wave (x from 50 to 750, y=300 center, 100 amplitude):
+            - Points should start at (50, 300) 
+            - Go DOWN first to (150, 200) at quarter wavelength
+            - Back UP to center at (250, 300)
+            - Go UP to (350, 400) at 3/4 wavelength
+            - Back to center at (450, 300)
+            - Pattern repeats for remaining points
+            Generate 60+ points with even x spacing.
             
             Coordinate system: X increases right, Y increases down (screen coordinates). 
             Center of screen is roughly 400, 300.
@@ -48,7 +69,7 @@ export const sendCADCommandToGemini = async (
                             items: {
                                 type: Type.OBJECT,
                                 properties: {
-                                    type: { type: Type.STRING, enum: ["LINE", "RECTANGLE", "CIRCLE"] },
+                                    type: { type: Type.STRING, enum: ["LINE", "LWPOLYLINE", "RECTANGLE", "CIRCLE"] },
                                     layer: { type: Type.STRING },
                                     start: { 
                                         type: Type.OBJECT,
@@ -57,6 +78,13 @@ export const sendCADCommandToGemini = async (
                                     end: { 
                                         type: Type.OBJECT,
                                         properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } }
+                                    },
+                                    points: {
+                                        type: Type.ARRAY,
+                                        items: {
+                                            type: Type.OBJECT,
+                                            properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } }
+                                        }
                                     },
                                     center: { 
                                         type: Type.OBJECT,
