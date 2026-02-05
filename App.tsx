@@ -8,6 +8,7 @@ import { LoginPage } from "./components/LoginPage";
 import { RegisterPage } from "./components/RegisterPage";
 import { WelcomeModal } from "./components/WelcomeModal";
 import { AdvancedShapeModal } from "./components/AdvancedShapeModal";
+import { HatchModal } from "./components/HatchModal";
 import {
   ToolType,
   SidePanelMode,
@@ -23,6 +24,7 @@ import {
 import { indexedDBService } from "./services/indexedDBService";
 import { getBlock, insertBlockReference } from "./services/blockService";
 import { parseDXF } from "./services/dxfService";
+import { createHatch } from "./services/hatchService";
 import * as Transform from "./lib/transform";
 import { generateSineWave, validateCurve } from "./services/curveGenerationService";
 import {
@@ -113,6 +115,8 @@ function App() {
   const [showAdvancedShapeModal, setShowAdvancedShapeModal] = useState(false);
   const [pendingShapePosition, setPendingShapePosition] = useState<Point | null>(null);
   const [pendingShapeTool, setPendingShapeTool] = useState<ToolType | null>(null);
+  const [showHatchModal, setShowHatchModal] = useState(false);
+  const [selectedForHatch, setSelectedForHatch] = useState<CADElement[]>([]);
 
   const showNotification = (msg: string) => {
     setNotification(msg);
@@ -759,6 +763,31 @@ function App() {
     setActiveTool(ToolType.SELECT);
   };
 
+  const handleRequestHatch = () => {
+    const selected = elements.filter(el => el.selected);
+    if (selected.length === 0) {
+      showNotification("Select boundary elements first (先选择边界元素)");
+      return;
+    }
+    setSelectedForHatch(selected);
+    setShowHatchModal(true);
+  };
+
+  const confirmHatch = (pattern: any, color: string) => {
+    if (selectedForHatch.length > 0) {
+      try {
+        const hatchElement = createHatch(selectedForHatch, pattern, color, "HATCH");
+        handleAddElement(hatchElement);
+        showNotification("Hatch created successfully");
+      } catch (error) {
+        console.error("Error creating hatch:", error);
+        showNotification("Failed to create hatch");
+      }
+    }
+    setShowHatchModal(false);
+    setSelectedForHatch([]);
+  };
+
   // Advanced Shape Tool Logic
   const handleRequestAdvancedShape = (tool: ToolType, pos: Point) => {
     setPendingShapePosition(pos);
@@ -1140,7 +1169,6 @@ function App() {
         </div>
       )}
 
-      {/* ADVANCED SHAPE MODAL */}
       {showAdvancedShapeModal && pendingShapeTool && (
         <AdvancedShapeModal
           tool={pendingShapeTool}
@@ -1149,6 +1177,17 @@ function App() {
             setShowAdvancedShapeModal(false);
             setPendingShapePosition(null);
             setPendingShapeTool(null);
+          }}
+        />
+      )}
+
+      {showHatchModal && (
+        <HatchModal
+          visible={showHatchModal}
+          onConfirm={confirmHatch}
+          onCancel={() => {
+            setShowHatchModal(false);
+            setSelectedForHatch([]);
           }}
         />
       )}
@@ -1187,6 +1226,7 @@ function App() {
           onCommitAction={commitAction}
           onRequestTextEntry={handleRequestTextEntry}
           onRequestAdvancedShape={handleRequestAdvancedShape}
+          onRequestHatch={handleRequestHatch}
           drawingSettings={drawingSettings}
           orthoMode={orthoMode}
           snapMode={snapMode}

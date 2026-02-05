@@ -12,6 +12,9 @@ export enum ToolType {
   TRIM = "TRIM",
   MIRROR = "MIRROR",
   ROTATE = "ROTATE",
+  SCALE = "SCALE",
+  OFFSET = "OFFSET",
+  ARRAY = "ARRAY",
   DIMENSION = "DIMENSION",
   MEASURE = "MEASURE",
   // Advanced shapes
@@ -61,7 +64,8 @@ export interface CADElement {
     | "ELLIPSE"
     | "GEAR"
     | "SPIRAL"
-    | "SPRING";
+    | "SPRING"
+    | "HATCH";
   layer: string;
   color: string; // Hex or AutoCAD color index
   selected?: boolean;
@@ -100,6 +104,31 @@ export interface CADElement {
   coils?: number; // Number of coils
   wireRadius?: number; // Radius of the wire
   springRadius?: number; // Radius of the spring coil
+  // Hatch specific
+  hatchPattern?: HatchPattern; // Pattern configuration
+  hatchAngle?: number; // Pattern rotation angle in degrees
+  hatchScale?: number; // Pattern scale factor
+  hatchColor?: string; // Hatch line color
+}
+
+// Hatch pattern types
+export type HatchPatternType =
+  | "SOLID"           // Solid fill
+  | "HORIZONTAL"       // Horizontal lines
+  | "VERTICAL"         // Vertical lines
+  | "DIAGONAL_RIGHT"   // Diagonal lines (\)
+  | "DIAGONAL_LEFT"    // Diagonal lines (/)
+  | "CROSS"            // Cross hatch (+)
+  | "GRID"             // Grid pattern (#)
+  | "DOT"              // Dot pattern
+  | "ANSI31"          // Standard ANSI 45° lines
+  | "ANSI32"          // Standard ANSI horizontal/vertical
+  | "ISO02W100";      // ISO wide line
+
+export interface HatchPattern {
+  type: HatchPatternType;
+  spacing?: number;     // Line spacing for pattern fills
+  angle?: number;       // Pattern angle in degrees (for custom patterns)
 }
 
 export interface BlockCategory {
