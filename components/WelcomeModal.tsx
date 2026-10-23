@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { ProjectFile } from "../types";
+import { EXAMPLE_DRAWINGS } from "../services/examples";
 
 interface WelcomeModalProps {
     visible: boolean;
@@ -8,8 +9,16 @@ interface WelcomeModalProps {
     onLoadFile: (file: ProjectFile) => void;
     onCreateFile: (name: string) => void;
     onImportFile: () => void;
+    /** 打开内置示例图纸，参数为 EXAMPLE_DRAWINGS 的 id */
+    onOpenExample: (exampleId: string) => void;
     onClose: () => void;
 }
+
+const ONBOARDING_STEPS = [
+    { title: "绘图", detail: "选择直线 / 圆 / 矩形，在画布上点两点即可；也可直接用 AI 对话生成。" },
+    { title: "标注与编辑", detail: "用 DIM 标注尺寸，选中图元后在属性面板精确修改坐标。" },
+    { title: "导出", detail: "工具栏导出 DXF，或打开 PLOT 生成 A4–A0 图框并另存为 PDF。" },
+];
 
 export const WelcomeModal: React.FC<WelcomeModalProps> = ({
     visible,
@@ -18,6 +27,7 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
     onLoadFile,
     onCreateFile,
     onImportFile,
+    onOpenExample,
     onClose,
 }) => {
     const [newFileName, setNewFileName] = useState("");
@@ -199,6 +209,63 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
                                 </div>
                             </div>
                         )}
+                    </section>
+
+                    {/* Onboarding */}
+                    <section className="mb-6">
+                        <h3 className="text-xs font-bold text-cad-muted uppercase tracking-wider mb-3">
+                            三步上手
+                        </h3>
+                        <ol className="grid grid-cols-3 gap-3">
+                            {ONBOARDING_STEPS.map((step, index) => (
+                                <li
+                                    key={step.title}
+                                    className="p-3 bg-cad-bg border border-cad-border rounded-lg"
+                                >
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <span className="flex items-center justify-center size-5 rounded-full bg-cad-primary/15 text-cad-primary text-[11px] font-bold">
+                                            {index + 1}
+                                        </span>
+                                        <span className="text-sm font-bold text-cad-text">
+                                            {step.title}
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] leading-4 text-cad-muted">
+                                        {step.detail}
+                                    </p>
+                                </li>
+                            ))}
+                        </ol>
+                    </section>
+
+                    {/* Examples */}
+                    <section className="mb-6">
+                        <h3 className="text-xs font-bold text-cad-muted uppercase tracking-wider mb-3">
+                            示例图纸
+                        </h3>
+                        <div className="grid grid-cols-3 gap-3">
+                            {EXAMPLE_DRAWINGS.map((example) => (
+                                <button
+                                    key={example.id}
+                                    data-example={example.id}
+                                    onClick={() => {
+                                        onOpenExample(example.id);
+                                        onClose();
+                                    }}
+                                    className="group flex flex-col items-start gap-2 p-3 bg-cad-bg border border-cad-border hover:border-cad-primary/50 rounded-lg transition-all hover:shadow-md text-left"
+                                >
+                                    <span className="material-symbols-outlined text-[22px] text-cad-primary">
+                                        {example.icon}
+                                    </span>
+                                    <span className="text-sm font-bold text-cad-text">
+                                        {example.name}
+                                    </span>
+                                    <span className="text-[11px] leading-4 text-cad-muted">
+                                        {example.description}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
                     </section>
 
                     {/* Recent Files */}

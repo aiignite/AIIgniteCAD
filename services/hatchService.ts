@@ -73,7 +73,7 @@ function extractBoundaryPoints(elements: CADElement[]): Point[] {
       const segments = 16;
 
       for (let i = 0; i <= segments; i++) {
-        let t = i / segments;
+        const t = i / segments;
         let angle;
         if (isClockwise) {
           angle = startAngle + t * (endAngle - startAngle);

@@ -171,7 +171,6 @@ export function createBlockReference(
         rotation,
         scaleX,
         scaleY,
-        selected: false
     };
 }
 

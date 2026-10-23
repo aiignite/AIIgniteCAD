@@ -4,6 +4,11 @@
 import { BlockDefinition, BlockCategory, BlockReference, CADElement, Point } from '../types';
 import { indexedDBService } from './indexedDBService';
 import {
+    buildBlockCatalog,
+    type BlockCatalogEntry,
+    type BlockCatalogResult
+} from '../lib/blockCatalog';
+import {
     createBlockReference,
     explodeBlockReference,
     getBlockReferenceElements,
@@ -15,7 +20,7 @@ import {
     cloneBlockDefinition
 } from '../lib/block';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3410/api";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3225/api";
 
 const getHeaders = () => {
     const token = localStorage.getItem("auth_token");
@@ -29,20 +34,60 @@ const getHeaders = () => {
 // API OPERATIONS (Block Definitions & Categories)
 // ============================================================================
 
-/**
- * Get full block tree (categories and blocks) for user/project
- */
-export async function getBlockTree(projectId?: string): Promise<{categories: BlockCategory[], rootBlocks: BlockDefinition[]}> {
+interface BlockTree {
+    categories: BlockCategory[];
+    rootBlocks: BlockDefinition[];
+}
+
+const EMPTY_TREE: BlockTree = { categories: [], rootBlocks: [] };
+
+/** 块目录缓存有效期：AI 每轮都会取目录，短 TTL 足够挡住重复请求又不至于长期陈旧 */
+const CATALOG_TTL_MS = 60_000;
+const catalogCache = new Map<string, { at: number; entries: BlockCatalogEntry[] }>();
+
+/** 块或分类发生增删改后清空缓存，避免 AI 继续看到旧目录 */
+export function clearBlockCatalogCache(): void {
+    catalogCache.clear();
+}
+
+async function fetchBlockTree(projectId?: string): Promise<{ ok: boolean; tree: BlockTree }> {
      try {
         const res = await fetch(`${API_BASE_URL}/blocks/tree?projectId=${projectId || ''}`, {
             headers: getHeaders()
         });
         if (!res.ok) throw new Error("Failed to fetch blocks");
-        return await res.json();
+        return { ok: true, tree: await res.json() };
      } catch (e) {
          console.error(e);
-         return { categories: [], rootBlocks: [] };
+         return { ok: false, tree: EMPTY_TREE };
      }
+}
+
+/**
+ * Get full block tree (categories and blocks) for user/project
+ */
+export async function getBlockTree(projectId?: string): Promise<BlockTree> {
+     const { tree } = await fetchBlockTree(projectId);
+     return tree;
+}
+
+/**
+ * 供 AI 工具循环使用：把块库拍平成目录，失败时退回空目录而不是中断对话。
+ * ok 字段保留失败信号，让工具结果能说清「块库不可用」而不是「块库为空」。
+ * 目录按项目缓存，避免每一轮 AI 请求都重新拉一次整棵块树。
+ */
+export async function getBlockCatalog(projectId?: string): Promise<BlockCatalogResult> {
+    const key = projectId ?? "";
+    const cached = catalogCache.get(key);
+    if (cached && Date.now() - cached.at < CATALOG_TTL_MS) {
+        return { entries: cached.entries, ok: true };
+    }
+
+    const { ok, tree } = await fetchBlockTree(projectId);
+    const entries = buildBlockCatalog(tree.rootBlocks ?? [], tree.categories ?? []);
+    // 失败或空目录不缓存，避免一次网络抖动让 AI 在一段时间内拿不到任何块
+    if (ok && entries.length > 0) catalogCache.set(key, { at: Date.now(), entries });
+    return { entries, ok };
 }
 
 /**
@@ -63,6 +108,7 @@ export async function createCategory(name: string, parentId?: string, projectId?
         throw new Error(errorData.error || errorData.message || "Failed to create category");
     }
 
+    clearBlockCatalogCache();
     return res.json();
 }
 
@@ -105,6 +151,7 @@ export async function createBlock(
         throw new Error(errorData.error || errorData.message || "Failed to create block");
     }
 
+    clearBlockCatalogCache();
     return res.json();
 }
 
@@ -118,6 +165,7 @@ export async function moveItem(type: 'block' | 'category', id: string, targetCat
         body: JSON.stringify({ type, id, targetCategoryId })
     });
      if (!res.ok) throw new Error("Failed to move item");
+    clearBlockCatalogCache();
 }
 
 /**
@@ -129,6 +177,7 @@ export async function deleteItem(type: 'block' | 'category', id: string): Promis
         headers: getHeaders()
     });
      if (!res.ok) throw new Error("Failed to delete item");
+    clearBlockCatalogCache();
 }
 
 // ============================================================================
@@ -206,7 +255,7 @@ export async function getProjectBlockReferences(
 }
 
 function flattenCategories(categories: BlockCategory[]): BlockDefinition[] {
-    let blocks: BlockDefinition[] = [];
+    const blocks: BlockDefinition[] = [];
     for (const cat of categories) {
         if (cat.blocks) blocks.push(...cat.blocks);
         if (cat.children) blocks.push(...flattenCategories(cat.children));

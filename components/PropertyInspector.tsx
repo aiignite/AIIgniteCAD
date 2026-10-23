@@ -1,9 +1,30 @@
 import React, { useState, useCallback } from "react";
 import { CADElement, Point } from "../types";
 
+/** 属性面板可触发的批量变换操作 */
+export type TransformOperation = "SCALE" | "OFFSET" | "ARRAY";
+
+/** 批量变换参数（按操作类型取用对应字段） */
+export interface TransformParams {
+    /** 缩放倍率 */
+    factor?: number;
+    /** 偏移距离 */
+    distance?: number;
+    /** 阵列行数 */
+    rows?: number;
+    /** 阵列列数 */
+    columns?: number;
+    /** 阵列行间距 */
+    rowSpacing?: number;
+    /** 阵列列间距 */
+    columnSpacing?: number;
+}
+
 interface PropertyInspectorProps {
   selectedElements: CADElement[];
   onUpdateElement: (element: CADElement) => void;
+  /** 触发批量变换（SCALE / OFFSET / ARRAY），由 App 统一提交历史 */
+  onApplyTransform?: (operation: TransformOperation, params: TransformParams) => void;
 }
 
 /**
@@ -14,6 +35,7 @@ interface PropertyInspectorProps {
 export const PropertyInspector: React.FC<PropertyInspectorProps> = ({
   selectedElements,
   onUpdateElement,
+  onApplyTransform,
 }) => {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(["general", "geometry"])
@@ -43,6 +65,11 @@ export const PropertyInspector: React.FC<PropertyInspectorProps> = ({
           elements={selectedElements}
           onUpdateElement={onUpdateElement}
         />
+        {onApplyTransform && (
+          <Section title="变换操作" section="transform" expanded={expandedSections} setExpanded={setExpandedSections}>
+            <TransformOperations onApplyTransform={onApplyTransform} />
+          </Section>
+        )}
       </div>
     );
   }
@@ -114,6 +141,12 @@ export const PropertyInspector: React.FC<PropertyInspectorProps> = ({
         {(element.type === "DIMENSION") && (
           <Section title="标注属性" section="dimension" expanded={expandedSections} setExpanded={setExpandedSections}>
             <DimensionProperties element={element} onUpdateElement={onUpdateElement} />
+          </Section>
+        )}
+
+        {onApplyTransform && (
+          <Section title="变换操作" section="transform" expanded={expandedSections} setExpanded={setExpandedSections}>
+            <TransformOperations onApplyTransform={onApplyTransform} />
           </Section>
         )}
       </div>
@@ -529,6 +562,126 @@ const DimensionProperties: React.FC<{
           onChange={(text) => onUpdateElement({ ...element, text })}
         />
       )}
+    </div>
+  );
+};
+
+// ===== TRANSFORM OPERATIONS =====
+/**
+ * 批量变换入口。
+ * 将 SCALE / OFFSET / ARRAY 从工具栏与命令行延伸到属性面板：
+ * 选中对象后填写参数即可执行，历史由 App 的 commitAction 统一提交。
+ */
+const TransformOperations: React.FC<{
+  onApplyTransform: (operation: TransformOperation, params: TransformParams) => void;
+}> = ({ onApplyTransform }) => {
+  const [factor, setFactor] = useState(2);
+  const [distance, setDistance] = useState(20);
+  const [rows, setRows] = useState(2);
+  const [columns, setColumns] = useState(2);
+  const [rowSpacing, setRowSpacing] = useState(100);
+  const [columnSpacing, setColumnSpacing] = useState(100);
+
+  return (
+    <div className="space-y-3 text-sm">
+      {/* 缩放 */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-cad-text-secondary">缩放倍率:</label>
+          <input
+            type="number"
+            min={0.01}
+            step={0.1}
+            value={factor}
+            onChange={(e) => setFactor(parseFloat(e.target.value) || 0)}
+            className="bg-cad-bg border border-cad-border rounded px-2 py-1 text-xs w-20"
+          />
+        </div>
+        <button
+          onClick={() => factor > 0 && onApplyTransform("SCALE", { factor })}
+          disabled={factor <= 0}
+          className="w-full py-1.5 rounded bg-cad-primary text-white text-xs font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+        >
+          以选中形心缩放
+        </button>
+      </div>
+
+      {/* 偏移 */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-cad-text-secondary">偏移距离:</label>
+          <input
+            type="number"
+            step={1}
+            value={distance}
+            onChange={(e) => setDistance(parseFloat(e.target.value) || 0)}
+            className="bg-cad-bg border border-cad-border rounded px-2 py-1 text-xs w-20"
+          />
+        </div>
+        <button
+          onClick={() => distance !== 0 && onApplyTransform("OFFSET", { distance })}
+          disabled={distance === 0}
+          className="w-full py-1.5 rounded border border-cad-border text-cad-text text-xs font-medium hover:bg-cad-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          偏移并保留原对象
+        </button>
+      </div>
+
+      {/* 矩形阵列 */}
+      <div className="space-y-1.5">
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex items-center justify-between gap-1">
+            <label className="text-cad-text-secondary text-xs">行:</label>
+            <input
+              type="number"
+              min={1}
+              value={rows}
+              onChange={(e) => setRows(Math.max(1, parseInt(e.target.value) || 1))}
+              className="bg-cad-bg border border-cad-border rounded px-1.5 py-1 text-xs w-14"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-1">
+            <label className="text-cad-text-secondary text-xs">列:</label>
+            <input
+              type="number"
+              min={1}
+              value={columns}
+              onChange={(e) => setColumns(Math.max(1, parseInt(e.target.value) || 1))}
+              className="bg-cad-bg border border-cad-border rounded px-1.5 py-1 text-xs w-14"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-1">
+            <label className="text-cad-text-secondary text-xs">行距:</label>
+            <input
+              type="number"
+              value={rowSpacing}
+              onChange={(e) => setRowSpacing(parseFloat(e.target.value) || 0)}
+              className="bg-cad-bg border border-cad-border rounded px-1.5 py-1 text-xs w-14"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-1">
+            <label className="text-cad-text-secondary text-xs">列距:</label>
+            <input
+              type="number"
+              value={columnSpacing}
+              onChange={(e) => setColumnSpacing(parseFloat(e.target.value) || 0)}
+              className="bg-cad-bg border border-cad-border rounded px-1.5 py-1 text-xs w-14"
+            />
+          </div>
+        </div>
+        <button
+          onClick={() =>
+            onApplyTransform("ARRAY", { rows, columns, rowSpacing, columnSpacing })
+          }
+          className="w-full py-1.5 rounded border border-cad-border text-cad-text text-xs font-medium hover:bg-cad-hover transition-colors"
+        >
+          生成矩形阵列
+        </button>
+      </div>
+
+      <p className="text-[10px] text-cad-muted leading-relaxed">
+        缩放与偏移以选中对象的形心为基点；阵列会保留原对象并选中新副本。
+      </p>
     </div>
   );
 };
