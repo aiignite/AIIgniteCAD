@@ -22,6 +22,7 @@ import ImageTraceModal from "./components/ImageTraceModal";
 import FilesModal from "./components/FilesModal";
 import AIAssistantWindow from "./components/ai/AIAssistantWindow";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { ContextMenu, type ContextMenuItem } from "./components/ContextMenu";
 import {
     ToolType,
     SidePanelMode,
@@ -51,8 +52,18 @@ import { summarizeElementTypes } from "./lib/versionDiff";
 import { computeAIActionOutcome } from "./lib/aiActions";
 import { planAIGhostPreview } from "./lib/aiGhost";
 import { useI18n } from "./lib/i18n";
-import { countHiddenObjects, displayableElements } from "./lib/isolation";
+import {
+    countHiddenObjects,
+    displayableElements,
+    isolateIds,
+    mergeHiddenIds,
+} from "./lib/isolation";
+import { groupElements, ungroupElements } from "./lib/groups";
+import { modifierKeyLabel, resolveActionShortcut, resolveToolShortcut } from "./lib/shortcuts";
+import { toolLabel } from "./lib/toolHints";
 import { getViewBox, setViewBox, zoomViewportToBounds } from "./store/viewport";
+import { elementClipboard } from "./store/clipboard";
+import * as Transform from "./lib/transform";
 import { loadNamedViews, saveNamedView as persistNamedView } from "./services/namedViews";
 import type { TurnMeta } from "./hooks/useAIChat";
 import {
@@ -96,7 +107,7 @@ const stripLegacySelection = (elements: CADElement[]): CADElement[] =>
     });
 
 function App() {
-    const { t } = useI18n();
+    const { t, locale } = useI18n();
     const startupRef = useRef(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const propertyCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -220,6 +231,27 @@ function App() {
         () => countHiddenObjects(elements, hiddenObjectIds),
         [elements, hiddenObjectIds],
     );
+    /** 右键上下文菜单：菜单项在打开瞬间按当前选择集生成 */
+    const [contextMenu, setContextMenu] = useState<{
+        x: number;
+        y: number;
+        items: ContextMenuItem[];
+    } | null>(null);
+
+    /** 弹窗打开时不响应单键快捷键，避免误触切换工具 */
+    const modalOpen =
+        showTextModal ||
+        showAdvancedShapeModal ||
+        showHatchModal ||
+        showVersionHistory ||
+        showPlot ||
+        showQuickSelect ||
+        showImageTrace ||
+        showFiles ||
+        showWelcomeModal ||
+        aiPreview !== null ||
+        pendingDeleteIds !== null ||
+        activeTool === ToolType.ARRAY;
 
     /** AI 落图后让受影响图元脉冲一次，帮用户定位"改在了哪里" */
     const flashElements = useCallback((ids: string[]) => {
@@ -503,6 +535,39 @@ function App() {
         [snapMode, gridMode, orthoMode, polarMode, canvasDispatch, t],
     );
 
+    /** 复制选中的图元到剪贴板 */
+    const handleCopySelection = useCallback(() => {
+        const selected = getElements().filter((el) => selectedIds.has(el.id));
+        if (selected.length === 0) {
+            showNotification(t("notify.copyNothing"));
+            return;
+        }
+        elementClipboard.write(selected);
+        showNotification(t("notify.copied", { count: selected.length }));
+    }, [getElements, selectedIds, showNotification, t]);
+
+    /**
+     * 粘贴剪贴板中的图元。
+     * 副本重新生成 id 并脱离组合，因此粘贴后可逐个单独选中移动。
+     * 连续粘贴按步进逐次错开，避免多次粘贴的副本完全重叠。
+     */
+    const handlePasteClipboard = useCallback(() => {
+        const buffer = elementClipboard.read();
+        if (buffer.length === 0) {
+            showNotification(t("notify.clipboardEmpty"));
+            return;
+        }
+        const view = getViewBox();
+        const step = elementClipboard.nextPasteStep();
+        const copies = Transform.copyElements(buffer, {
+            x: view.w * 0.02 * step,
+            y: view.h * 0.02 * step,
+        });
+        commitAction([...getElements(), ...copies]);
+        setSelection(copies.map((el) => el.id));
+        showNotification(t("notify.pasted", { count: copies.length }));
+    }, [commitAction, getElements, setSelection, showNotification, t]);
+
     /** 删除当前选择集：达到阈值时要求显式确认，避免误删整片图形 */
     const requestDeleteSelection = useCallback(() => {
         if (activeTool !== ToolType.SELECT || selectedIds.size === 0) return;
@@ -515,6 +580,72 @@ function App() {
         clearSelection();
         showNotification(t("notify.deleted", { count: ids.size }));
     }, [activeTool, selectedIds, commitAction, getElements, clearSelection, showNotification, t]);
+
+    /** 把选中的图元聚为一个组合 */
+    const handleGroupSelection = useCallback(() => {
+        if (selectedIds.size < 2) {
+            showNotification(t("notify.groupNeedMore"));
+            return;
+        }
+        commitAction(groupElements(getElements(), selectedIds));
+        showNotification(t("notify.grouped", { count: selectedIds.size }));
+    }, [commitAction, getElements, selectedIds, showNotification, t]);
+
+    /** 解散选中图元所在的组合 */
+    const handleUngroupSelection = useCallback(() => {
+        const current = getElements();
+        const next = ungroupElements(current, selectedIds);
+        if (next === current) {
+            showNotification(t("notify.notGrouped"));
+            return;
+        }
+        commitAction(next);
+        showNotification(t("notify.ungrouped"));
+    }, [commitAction, getElements, selectedIds, showNotification, t]);
+
+    /** 隐藏选中图元：只改视图态，不进撤销历史 */
+    const handleHideSelection = useCallback(() => {
+        if (selectedIds.size === 0) return;
+        const ids = getElements()
+            .filter((el) => selectedIds.has(el.id))
+            .map((el) => el.id);
+        setHiddenIds(mergeHiddenIds(hiddenObjectIds, ids));
+        clearSelection();
+        showNotification(t("notify.hidden", { count: ids.length }));
+    }, [clearSelection, getElements, hiddenObjectIds, selectedIds, showNotification, t]);
+
+    /** 隔离：隐藏除选择集以外的全部可见图元 */
+    const handleIsolateSelection = useCallback(() => {
+        if (selectedIds.size === 0) return;
+        setHiddenIds(isolateIds(getElements(), canvasState.hiddenLayers, selectedIds));
+        showNotification(t("notify.isolated", { count: selectedIds.size }));
+    }, [canvasState.hiddenLayers, getElements, selectedIds, showNotification, t]);
+
+    /** 全选：选中所有可见且未锁定的图元 */
+    const handleSelectAll = useCallback(() => {
+        const visible = displayableElements(
+            getElements(),
+            canvasState.hiddenLayers,
+            hiddenObjectIds,
+        ).filter((el) => !canvasState.lockedLayers.includes(el.layer || "0"));
+        setSelection(visible.map((el) => el.id));
+        showNotification(t("notify.selected", { count: visible.length }));
+    }, [
+        canvasState.hiddenLayers,
+        canvasState.lockedLayers,
+        getElements,
+        hiddenObjectIds,
+        setSelection,
+        showNotification,
+        t,
+    ]);
+
+    /** 缩放到全部可见图元 */
+    const handleZoomExtents = useCallback(() => {
+        const visible = displayableElements(getElements(), canvasState.hiddenLayers, hiddenObjectIds);
+        if (visible.length === 0) return;
+        zoomViewportToBounds(Transform.getCombinedBoundingBox(visible));
+    }, [canvasState.hiddenLayers, getElements, hiddenObjectIds]);
 
     /** 显示全部：清除隔离 / 隐藏对象产生的临时隐藏集 */
     const showAllObjects = useCallback(() => {
@@ -536,6 +667,169 @@ function App() {
             nonce: (prev?.nonce ?? 0) + 1,
         }));
     }, [getElements, selectedIds, t]);
+
+    const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
+    /** 右键菜单：按当前选择集组装菜单项 */
+    const openContextMenu = useCallback(
+        (position: { client: Point; world: Point }) => {
+            const mod = modifierKeyLabel();
+            const items: ContextMenuItem[] = [];
+
+            if (selectedIds.size > 0) {
+                items.push(
+                    {
+                        id: "copy",
+                        label: t("context.copy"),
+                        icon: "content_copy",
+                        shortcut: `${mod}+C`,
+                        onSelect: handleCopySelection,
+                    },
+                    {
+                        id: "paste",
+                        label: t("context.paste"),
+                        icon: "content_paste",
+                        shortcut: `${mod}+V`,
+                        onSelect: handlePasteClipboard,
+                    },
+                    {
+                        id: "move",
+                        label: t("context.move"),
+                        icon: "open_with",
+                        separator: true,
+                        onSelect: () => setActiveTool(ToolType.SELECT),
+                    },
+                    {
+                        id: "copyTool",
+                        label: t("context.copyTool"),
+                        icon: "content_copy",
+                        onSelect: () => setActiveTool(ToolType.COPY),
+                    },
+                    {
+                        id: "rotate",
+                        label: t("context.rotate"),
+                        icon: "rotate_right",
+                        onSelect: () => setActiveTool(ToolType.ROTATE),
+                    },
+                    {
+                        id: "scale",
+                        label: t("context.scale"),
+                        icon: "aspect_ratio",
+                        onSelect: () => setActiveTool(ToolType.SCALE),
+                    },
+                    {
+                        id: "mirror",
+                        label: t("context.mirror"),
+                        icon: "flip",
+                        onSelect: () => setActiveTool(ToolType.MIRROR),
+                    },
+                    {
+                        id: "offset",
+                        label: t("context.offset"),
+                        icon: "format_indent_increase",
+                        onSelect: () => setActiveTool(ToolType.OFFSET),
+                    },
+                    {
+                        id: "array",
+                        label: t("context.array"),
+                        icon: "grid_view",
+                        onSelect: () => setActiveTool(ToolType.ARRAY),
+                    },
+                    {
+                        id: "group",
+                        label: t("context.group"),
+                        icon: "group_work",
+                        separator: true,
+                        onSelect: handleGroupSelection,
+                    },
+                    {
+                        id: "ungroup",
+                        label: t("context.ungroup"),
+                        icon: "ungroup",
+                        onSelect: handleUngroupSelection,
+                    },
+                    {
+                        id: "hide",
+                        label: t("context.hide"),
+                        icon: "visibility_off",
+                        onSelect: handleHideSelection,
+                    },
+                    {
+                        id: "isolate",
+                        label: t("context.isolate"),
+                        icon: "center_focus_strong",
+                        onSelect: handleIsolateSelection,
+                    },
+                    {
+                        id: "askAi",
+                        label: t("context.askAi"),
+                        icon: "smart_toy",
+                        separator: true,
+                        onSelect: handleAskAboutSelection,
+                    },
+                    {
+                        id: "delete",
+                        label: t("context.delete"),
+                        icon: "delete",
+                        shortcut: "Del",
+                        danger: true,
+                        onSelect: requestDeleteSelection,
+                    },
+                );
+            } else {
+                items.push(
+                    {
+                        id: "selectAll",
+                        label: t("context.selectAll"),
+                        icon: "select_all",
+                        shortcut: `${mod}+A`,
+                        onSelect: handleSelectAll,
+                    },
+                    {
+                        id: "paste",
+                        label: t("context.paste"),
+                        icon: "content_paste",
+                        shortcut: `${mod}+V`,
+                        onSelect: handlePasteClipboard,
+                    },
+                    {
+                        id: "zoomExtents",
+                        label: t("context.zoomExtents"),
+                        icon: "crop_free",
+                        separator: true,
+                        onSelect: handleZoomExtents,
+                    },
+                );
+                if (hiddenObjectIds.size > 0) {
+                    items.push({
+                        id: "showAll",
+                        label: t("context.showAll"),
+                        icon: "visibility",
+                        onSelect: showAllObjects,
+                    });
+                }
+            }
+
+            setContextMenu({ x: position.client.x, y: position.client.y, items });
+        },
+        [
+            handleAskAboutSelection,
+            handleCopySelection,
+            handleGroupSelection,
+            handleHideSelection,
+            handleIsolateSelection,
+            handlePasteClipboard,
+            handleSelectAll,
+            handleUngroupSelection,
+            handleZoomExtents,
+            hiddenObjectIds.size,
+            requestDeleteSelection,
+            selectedIds.size,
+            setActiveTool,
+            showAllObjects,
+            t,
+        ],
+    );
 
     /** 设计约定面板保存：本地立即生效并随项目同步队列写回服务端 */
     const handleSaveDesignConventions = useCallback(
@@ -572,55 +866,6 @@ function App() {
         },
         [setSelection],
     );
-
-    // Keyboard shortcuts handle undo/redo via store
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            // 输入控件内保留原生编辑行为（命令栏、聊天框、属性编辑）
-            if (isEditableTarget(e.target)) return;
-            const toggled = toggleCanvasMode(e.key);
-            if (toggled) {
-                e.preventDefault();
-                showNotification(
-                    toggled.on
-                        ? t("notify.modeOn", { name: toggled.label })
-                        : t("notify.modeOff", { name: toggled.label }),
-                );
-                return;
-            }
-            if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
-                e.preventDefault();
-                handleUndo();
-            }
-            if (
-                ((e.ctrlKey || e.metaKey) && e.key === "y") ||
-                ((e.ctrlKey || e.metaKey) && e.key === "z" && e.shiftKey)
-            ) {
-                e.preventDefault();
-                handleRedo();
-            }
-            if (e.key === "Delete" || e.key === "Backspace") {
-                if (document.activeElement === document.body) requestDeleteSelection();
-            }
-            if (e.key === "Escape") {
-                if (activeTool !== ToolType.SELECT) {
-                    setActiveTool(ToolType.SELECT);
-                    showNotification(t("notify.commandCancelled"));
-                }
-            }
-        };
-        window.addEventListener("keydown", handleKeyDown);
-        return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [
-        handleUndo,
-        handleRedo,
-        activeTool,
-        requestDeleteSelection,
-        toggleCanvasMode,
-        setActiveTool,
-        showNotification,
-        t,
-    ]);
 
     // Command Line Handler：解析、别名、参数与执行全部委托给命令注册表
     const handleCommand = (cmd: string) => {
@@ -1062,6 +1307,141 @@ function App() {
             showNotification(t("notify.saveFailed", { message: error.message }));
         }
     }, [activeFile, elements, flushPropertyCommit, persistFile, updateFile, showNotification, t]);
+
+    // 全局快捷键：撤销 / 重做 / 复制粘贴 / 删除 / 文件操作 / 绘图辅助开关
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // 输入控件内保留原生编辑行为（命令栏、聊天框、属性编辑）
+            if (isEditableTarget(e.target)) return;
+
+            const toggled = toggleCanvasMode(e.key);
+            if (toggled) {
+                e.preventDefault();
+                showNotification(
+                    toggled.on
+                        ? t("notify.modeOn", { name: toggled.label })
+                        : t("notify.modeOff", { name: toggled.label }),
+                );
+                return;
+            }
+
+            if (e.ctrlKey || e.metaKey) {
+                const key = e.key.toLowerCase();
+                const shift = e.shiftKey;
+
+                if (key === "z" && !shift) {
+                    e.preventDefault();
+                    handleUndo();
+                    return;
+                }
+                if (key === "y" || (key === "z" && shift)) {
+                    e.preventDefault();
+                    handleRedo();
+                    return;
+                }
+                if (key === "c" && !shift) {
+                    e.preventDefault();
+                    handleCopySelection();
+                    return;
+                }
+                if (key === "v" && !shift) {
+                    e.preventDefault();
+                    handlePasteClipboard();
+                    return;
+                }
+                if (key === "a" && !shift) {
+                    e.preventDefault();
+                    handleSelectAll();
+                    return;
+                }
+                // 文件类快捷键：接管浏览器默认的保存 / 打印 / 新建 / 打开
+                if (key === "s") {
+                    e.preventDefault();
+                    void handleSave();
+                    return;
+                }
+                if (key === "p") {
+                    e.preventDefault();
+                    setShowPlot(true);
+                    return;
+                }
+                if (key === "o" || key === "n") {
+                    e.preventDefault();
+                    setShowFiles(true);
+                    return;
+                }
+                return;
+            }
+
+            // 单键换工具 / 动作：沿用 AutoCAD 键位；弹窗打开时让位给弹窗
+            if (!e.altKey && !modalOpen) {
+                const tool = resolveToolShortcut(e.key);
+                if (tool) {
+                    e.preventDefault();
+                    setActiveTool(tool);
+                    showNotification(
+                        t("notify.toolSwitched", { tool: toolLabel(tool, locale) }),
+                    );
+                    return;
+                }
+                const action = resolveActionShortcut(e.key);
+                if (action === "erase") {
+                    e.preventDefault();
+                    requestDeleteSelection();
+                    return;
+                }
+                if (action === "group") {
+                    e.preventDefault();
+                    handleGroupSelection();
+                    return;
+                }
+                if (action === "ungroup") {
+                    e.preventDefault();
+                    handleUngroupSelection();
+                    return;
+                }
+            }
+
+            // 删除不依赖焦点位置：点过工具栏按钮后仍能删掉选中集
+            if (e.key === "Delete" || e.key === "Backspace") {
+                e.preventDefault();
+                requestDeleteSelection();
+                return;
+            }
+            if (e.key === "Escape") {
+                if (contextMenu) {
+                    setContextMenu(null);
+                    return;
+                }
+                if (activeTool !== ToolType.SELECT) {
+                    setActiveTool(ToolType.SELECT);
+                    showNotification(t("notify.commandCancelled"));
+                }
+            }
+        };
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [
+        handleUndo,
+        handleRedo,
+        handleCopySelection,
+        handlePasteClipboard,
+        handleSelectAll,
+        handleGroupSelection,
+        handleUngroupSelection,
+        handleSave,
+        activeTool,
+        contextMenu,
+        locale,
+        modalOpen,
+        requestDeleteSelection,
+        toggleCanvasMode,
+        setActiveTool,
+        setShowFiles,
+        setShowPlot,
+        showNotification,
+        t,
+    ]);
 
     /** 手动保存一个版本；AI 的 save_version 工具复用同一快照结构 */
     const handleSaveVersion = useCallback(async () => {
@@ -1657,6 +2037,7 @@ function App() {
                     onRequestDeleteSelection={requestDeleteSelection}
                     onAskAboutSelection={handleAskAboutSelection}
                     hiddenObjectIds={hiddenObjectIds}
+                    onRequestContextMenu={openContextMenu}
                 />
                 <RightPanel
                     key={currentUser?.id || "no-user"}
@@ -1692,6 +2073,14 @@ function App() {
                     draft={chatDraft}
                 />
             </div>
+            {contextMenu && (
+                <ContextMenu
+                    x={contextMenu.x}
+                    y={contextMenu.y}
+                    items={contextMenu.items}
+                    onClose={closeContextMenu}
+                />
+            )}
             <Footer
                 onCommand={handleCommand}
                 hiddenCount={hiddenCount}

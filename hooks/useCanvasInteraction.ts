@@ -57,6 +57,9 @@ import { finishPolyline } from '../tools/PolylineTool';
 const HIT_APERTURE_PX = 6;
 const GRIP_APERTURE_PX = 8;
 
+/** 右键按下到松开的最大位移：超过则算拖拽平移，不弹上下文菜单 */
+const RIGHT_CLICK_TOLERANCE_PX = 4;
+
 /** 未启用隔离时的隐藏集常量，保持 useMemo 依赖稳定 */
 const NO_HIDDEN: ReadonlySet<string> = new Set();
 
@@ -81,6 +84,8 @@ export interface CanvasInteractionOptions {
     onBlockDrop?: (blockId: string, position: Point) => void;
     /** 隔离 / 隐藏对象的临时隐藏集；既不渲染也不参与捕捉与框选 */
     hiddenObjectIds?: ReadonlySet<string>;
+    /** 右键点击画布（未拖拽）时请求弹出上下文菜单 */
+    onRequestContextMenu?: (payload: { client: Point; world: Point }) => void;
 }
 
 /**
@@ -93,6 +98,7 @@ export function useCanvasInteraction({
     onNotification,
     onBlockDrop,
     hiddenObjectIds = NO_HIDDEN,
+    onRequestContextMenu,
 }: CanvasInteractionOptions) {
     const {
         state,
@@ -327,11 +333,16 @@ export function useCanvasInteraction({
      */
     const clickCycleRef = useRef<ClickCycleState>(EMPTY_CLICK_CYCLE_STATE);
 
+    /** 按下时命中的图元；跨按下 / 松开保留，用于点击后收窄选择集 */
+    const pressTargetRef = useRef<CADElement | undefined>(undefined);
+
     // 拖拽预览与平移合并到每帧一次，避免高频 mousemove 重复渲染整棵画布
     const pointCoalescerRef = useRef<FrameCoalescer<Point> | null>(null);
     const panAccumRef = useRef({ dx: 0, dy: 0 });
     /** 平移增量基准用 ref 同步维护，避免等待 setState 造成重复位移 */
     const panLastClientRef = useRef<Point | null>(null);
+    /** 右键按下的位置：未拖拽的松开视为右键点击，用于弹出上下文菜单 */
+    const rightPressRef = useRef<Point | null>(null);
     const panCoalescerRef = useRef<FrameCoalescer<{ dx: number; dy: number }> | null>(null);
 
     useEffect(() => {
@@ -396,6 +407,7 @@ export function useCanvasInteraction({
         grips,
         findHitElement,
         resolveClickTarget,
+        pressTargetRef,
         worldTolerance,
         queryRect: (minX, minY, maxX, maxY) =>
             spatialIndex.queryRect(minX, minY, maxX, maxY),
@@ -406,6 +418,7 @@ export function useCanvasInteraction({
         setArcPoints,
         setDimPoints,
         setActiveGrip,
+        setActiveTool,
         addElement,
         commitAction,
         setSelection,
@@ -613,8 +626,19 @@ export function useCanvasInteraction({
         // 点击表示用户改为鼠标操作，放弃尚未提交的键盘数值
         setDynamicEdit(null);
 
-        // 平移：PAN 工具左键、任意工具中键、SELECT 工具右键
-        if (activeTool === ToolType.PAN || e.button === 1 || (activeTool === ToolType.SELECT && e.button === 2)) {
+        // 右键不进绘制流程：轻点弹上下文菜单，拖拽仍是平移
+        if (e.button === 2) {
+            rightPressRef.current = { x: e.clientX, y: e.clientY };
+            if (activeTool === ToolType.SELECT || activeTool === ToolType.PAN) {
+                setDragMode('PAN');
+                panLastClientRef.current = { x: e.clientX, y: e.clientY };
+                panAccumRef.current = { dx: 0, dy: 0 };
+            }
+            return;
+        }
+
+        // 平移：PAN 工具左键、任意工具中键
+        if (activeTool === ToolType.PAN || e.button === 1) {
             setDragMode('PAN');
             panLastClientRef.current = { x: e.clientX, y: e.clientY };
             panAccumRef.current = { dx: 0, dy: 0 };
@@ -713,6 +737,19 @@ export function useCanvasInteraction({
         pointCoalescerRef.current?.flush();
         const rawPt = getSVGPoint(e);
         const pt = applyConstraints(rawPt, drawStart || undefined);
+
+        // 右键未拖拽：视为右键点击，弹出上下文菜单
+        const rightPress = rightPressRef.current;
+        rightPressRef.current = null;
+        if (rightPress && onRequestContextMenu) {
+            const travel = Math.hypot(e.clientX - rightPress.x, e.clientY - rightPress.y);
+            if (travel <= RIGHT_CLICK_TOLERANCE_PX) {
+                onRequestContextMenu({
+                    client: { x: e.clientX, y: e.clientY },
+                    world: rawPt,
+                });
+            }
+        }
 
         const tool = getTool(activeTool);
         const result = tool?.onMouseUp?.(buildToolContext(rawPt, pt, {

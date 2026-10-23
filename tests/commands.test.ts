@@ -286,6 +286,48 @@ describe("命令执行", () => {
         expect(h.commits).toHaveLength(0);
     });
 
+    it("GROUP 把选中对象聚为一个组合", () => {
+        const h = createContext({
+            elements: [line("el-1"), line("el-2"), line("el-3")],
+            selectedIds: ["el-1", "el-2"],
+        });
+        const outcome = executeCommand("GROUP", h.ctx);
+
+        const committed = h.commits.at(-1)!;
+        expect(committed[0].groupId).toBeTruthy();
+        expect(committed[0].groupId).toBe(committed[1].groupId);
+        expect(committed[2].groupId).toBeUndefined();
+        expect(outcome.message).toBe("Grouped 2 objects");
+    });
+
+    it("GROUP 少于两个对象时拒绝执行", () => {
+        const h = createContext({ elements: [line("el-1")], selectedIds: ["el-1"] });
+        const outcome = executeCommand("GROUP", h.ctx);
+
+        expect(outcome.error).toBe(true);
+        expect(h.commits).toHaveLength(0);
+    });
+
+    it("UNGROUP 解散选中对象所在的组合", () => {
+        const grouped = { ...line("el-1"), groupId: "grp-1" };
+        const mate = { ...line("el-2"), groupId: "grp-1" };
+        const h = createContext({ elements: [grouped, mate], selectedIds: ["el-1"] });
+        const outcome = executeCommand("UNGROUP", h.ctx);
+
+        const committed = h.commits.at(-1)!;
+        expect(committed[0].groupId).toBeUndefined();
+        expect(committed[1].groupId).toBeUndefined();
+        expect(outcome.message).toBe("Ungrouped the selection");
+    });
+
+    it("UNGROUP 对未组合的对象给出提示", () => {
+        const h = createContext({ elements: [line("el-1")], selectedIds: ["el-1"] });
+        const outcome = executeCommand("UNGROUP", h.ctx);
+
+        expect(outcome.error).toBe(true);
+        expect(h.commits).toHaveLength(0);
+    });
+
     it("ERASE 批量删除被拒绝时等待对话框确认", () => {
         const h = createContext({
             elements: [line()],

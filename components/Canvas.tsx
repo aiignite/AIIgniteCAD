@@ -87,6 +87,8 @@ interface CanvasProps {
     onAskAboutSelection: () => void;
     /** 隔离 / 隐藏对象的临时隐藏集 */
     hiddenObjectIds?: ReadonlySet<string>;
+    /** 右键点击画布：请求弹出上下文菜单 */
+    onRequestContextMenu?: (payload: { client: Point; world: Point }) => void;
 }
 
 /**
@@ -103,6 +105,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     onRequestDeleteSelection,
     onAskAboutSelection,
     hiddenObjectIds,
+    onRequestContextMenu,
 }) => {
     const { state } = useCanvas();
     const { activeTool, drawingSettings, gridMode } = state;
@@ -152,6 +155,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         onNotification,
         onBlockDrop,
         hiddenObjectIds,
+        onRequestContextMenu,
     });
 
     const selectedCount = selectedIds.size;
@@ -513,9 +517,9 @@ export const Canvas: React.FC<CanvasProps> = ({
             {/* 浮动缩放控件 */}
             <div className="absolute top-4 right-4 flex flex-col items-center gap-1">
                 <div className="bg-cad-panel/90 backdrop-blur rounded p-1 shadow-lg border border-cad-border flex flex-col gap-1">
-                    <button className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-cad-text" onClick={() => zoomBy(1 / ZOOM_STEP)} title="放大"><span className="material-symbols-outlined text-lg">add</span></button>
-                    <button className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-cad-text" onClick={() => zoomBy(ZOOM_STEP)} title="缩小"><span className="material-symbols-outlined text-lg">remove</span></button>
-                    <button className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-cad-text" onClick={zoomExtents} title="缩放到范围"><span className="material-symbols-outlined text-lg">crop_free</span></button>
+                    <button className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-cad-text" onClick={() => zoomBy(1 / ZOOM_STEP)} title={t('canvas.zoomIn')}><span className="material-symbols-outlined text-lg">add</span></button>
+                    <button className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-cad-text" onClick={() => zoomBy(ZOOM_STEP)} title={t('canvas.zoomOut')}><span className="material-symbols-outlined text-lg">remove</span></button>
+                    <button className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-cad-text" onClick={zoomExtents} title={t('canvas.zoomExtents')}><span className="material-symbols-outlined text-lg">crop_free</span></button>
                 </div>
             </div>
 

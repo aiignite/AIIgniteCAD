@@ -5,9 +5,11 @@
  * 坐标换算、捕捉约束、命中测试、pan/zoom 与预览仍由 useCanvasInteraction 负责。
  */
 
-import type { CADElement, DragMode, DrawingSettings, Point, ToolType } from "../types";
+import { ToolType } from "../types";
+import type { CADElement, DragMode, DrawingSettings, Point } from "../types";
 import type { GripPoint } from "../lib/grip";
 import { dist } from "../lib/canvasGeometry";
+import { expandToGroups, selectionUnit } from "../lib/groups";
 import { elementsInSelectionRect, getSelectionMode, rectFromPoints } from "../lib/selection";
 import * as Transform from "../lib/transform";
 
@@ -43,6 +45,8 @@ export interface ToolContext {
     findHitElement: (point: Point) => CADElement | undefined;
     /** 重叠图元的点击循环：同一位置短时间重复点击时切换到下一个命中图元 */
     resolveClickTarget?: (point: Point) => CADElement | undefined;
+    /** 按下时命中的图元；跨按下 / 松开保留，用于点击后收窄选择集 */
+    pressTargetRef?: { current: CADElement | undefined };
     worldTolerance: (pixels: number) => number;
     queryRect: (minX: number, minY: number, maxX: number, maxY: number) => CADElement[];
 
@@ -53,6 +57,8 @@ export interface ToolContext {
     setArcPoints: StateSetter<Point[]>;
     setDimPoints: StateSetter<Point[]>;
     setActiveGrip: StateSetter<GripPoint | null>;
+    /** 切换画布工具；拖拽复制完成后回到选择工具 */
+    setActiveTool?: (tool: ToolType) => void;
 
     addElement: (element: CADElement) => void;
     commitAction: (elements: CADElement[]) => void;
@@ -95,6 +101,8 @@ export const getOrthoDelta = (ctx: ToolContext, delta: Point): Point => {
  * 命中解析有两种：
  * - 多选状态下点中已选成员时保留整个选择集（便于整体拖动），不参与点击循环；
  * - 单选状态下按点击循环解析，同一位置短时间重复点击可在重叠图元间切换。
+ *
+ * 组合中的图元按整组处理：点中任一成员即选中整组。
  */
 export function handleSelectionPress(
     ctx: ToolContext,
@@ -105,9 +113,12 @@ export function handleSelectionPress(
         ? ctx.findHitElement(ctx.rawPoint)
         : ctx.resolveClickTarget(ctx.rawPoint);
     if (hit) {
-        if (!ctx.selectedIds.has(hit.id)) {
-            if (ctx.shiftKey) ctx.addToSelection([hit.id]);
-            else ctx.setSelection([hit.id]);
+        if (ctx.pressTargetRef) ctx.pressTargetRef.current = hit;
+        const unit = selectionUnit(ctx.elements, hit.id);
+        const unitSelected = unit.every((id) => ctx.selectedIds.has(id));
+        if (!unitSelected) {
+            if (ctx.shiftKey) ctx.addToSelection(unit);
+            else ctx.setSelection(unit);
         }
         ctx.setDragMode(mode);
         ctx.setDrawStart(ctx.rawPoint);
@@ -119,7 +130,7 @@ export function handleSelectionPress(
     ctx.setDrawStart(ctx.rawPoint);
 }
 
-/** 完成窗口 / 交叉框选 */
+/** 完成窗口 / 交叉框选；组合中的图元按整组计入选择集 */
 export function finishSelectionBox(ctx: ToolContext): void {
     if (!ctx.drawStart) return;
     const rect = rectFromPoints(ctx.drawStart, ctx.rawPoint);
@@ -128,8 +139,9 @@ export function finishSelectionBox(ctx: ToolContext): void {
     const matched = elementsInSelectionRect(candidates, rect, mode)
         .filter((element) => !ctx.lockedLayers.includes(element.layer || "0"))
         .map((element) => element.id);
-    if (ctx.shiftKey) ctx.addToSelection(matched);
-    else ctx.setSelection(matched);
+    const expanded = expandToGroups(ctx.elements, matched);
+    if (ctx.shiftKey) ctx.addToSelection(expanded);
+    else ctx.setSelection(expanded);
 }
 
 /** 完成选中对象的移动 */
@@ -150,6 +162,31 @@ export function finishMove(ctx: ToolContext): void {
     ctx.commitAction(ctx.elements.map((element) => moved.get(element.id) ?? element));
 }
 
+/**
+ * 松开后的收尾：
+ * - 拖拽过：整体移动选中对象；
+ * - 只是点击（未拖拽）已选中的对象：把选择集收窄到该对象或其所在组合，
+ *   使复制 / 粘贴后的多个对象可以逐个单独选中移动。
+ */
+export function finishMoveOrNarrow(ctx: ToolContext): void {
+    if (!ctx.drawStart) return;
+    const target = ctx.pressTargetRef?.current;
+    const dragged = dist(ctx.drawStart, ctx.rawPoint) > ctx.worldTolerance(3);
+    if (!dragged && target) {
+        narrowSelectionTo(ctx, target);
+        return;
+    }
+    finishMove(ctx);
+}
+
+/** 把选择集收窄到目标对象或其所在组合；目标不在选择集内时保持原样 */
+export function narrowSelectionTo(ctx: ToolContext, target: CADElement): void {
+    const unit = selectionUnit(ctx.elements, target.id);
+    if (unit.length >= ctx.selectedIds.size) return;
+    if (!unit.every((id) => ctx.selectedIds.has(id))) return;
+    ctx.setSelection(unit);
+}
+
 /** 完成选中对象的复制，并选中新副本 */
 export function finishCopy(ctx: ToolContext): void {
     if (!ctx.drawStart) return;
@@ -163,6 +200,8 @@ export function finishCopy(ctx: ToolContext): void {
     if (copies.length === 0) return;
     ctx.commitAction([...ctx.elements, ...copies]);
     ctx.setSelection(copies.map((element) => element.id));
+    // 回到选择工具：副本保持选中，随后可逐个单独选中移动
+    ctx.setActiveTool?.(ToolType.SELECT);
 }
 
 /** 判断一次点击是否构成有效拖拽（世界单位） */

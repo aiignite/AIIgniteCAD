@@ -5,7 +5,7 @@
 import { dist } from "../lib/canvasGeometry";
 import { applyGripDrag } from "../lib/grip";
 import type { CanvasTool } from "./BaseTool";
-import { finishMove, finishSelectionBox, handleSelectionPress } from "./BaseTool";
+import { finishMoveOrNarrow, finishSelectionBox, handleSelectionPress } from "./BaseTool";
 
 const SelectTool: CanvasTool = {
     onMouseDown(ctx) {
@@ -29,7 +29,7 @@ const SelectTool: CanvasTool = {
         }
 
         if (ctx.dragMode === "SELECT_BOX") finishSelectionBox(ctx);
-        if (ctx.dragMode === "MOVE_ITEMS") finishMove(ctx);
+        if (ctx.dragMode === "MOVE_ITEMS") finishMoveOrNarrow(ctx);
     },
 };
 

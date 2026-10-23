@@ -54,6 +54,9 @@ function createHarness(options: HarnessOptions = {}) {
     const commits: CADElement[][] = [];
     const textRequests: Point[] = [];
     const advancedRequests: Array<{ tool: ToolType; point: Point }> = [];
+    const toolSwitches: ToolType[] = [];
+    /** 按下时命中的图元；跨按下 / 松开保留 */
+    const pressTargetRef: { current: CADElement | undefined } = { current: undefined };
 
     const ctx: ToolContext = {
         rawPoint: { x: 0, y: 0 },
@@ -79,6 +82,7 @@ function createHarness(options: HarnessOptions = {}) {
         grips: [],
         findHitElement: () => options.hit,
         resolveClickTarget: options.resolveClickTarget,
+        pressTargetRef,
         worldTolerance: () => 1,
         queryRect: () => elements,
         setDragMode: value => {
@@ -102,6 +106,10 @@ function createHarness(options: HarnessOptions = {}) {
         setActiveGrip: value => {
             activeGrip = applyUpdater(value, activeGrip);
             ctx.activeGrip = activeGrip;
+        },
+        setActiveTool: tool => {
+            toolSwitches.push(tool);
+            ctx.activeTool = tool;
         },
         addElement: next => {
             added.push(next);
@@ -169,6 +177,7 @@ function createHarness(options: HarnessOptions = {}) {
         commits,
         textRequests,
         advancedRequests,
+        toolSwitches,
         use,
         moveTo,
         down,
@@ -448,6 +457,80 @@ describe("选择与编辑工具", () => {
         h.moveTo(15, 15);
         h.down();
         expect([...h.selection]).toEqual(["el-1", "el-2"]);
+    });
+
+    it("点击（未拖拽）已选中对象时把选择集收窄到该对象", () => {
+        const first = line(0, 0, 10, 0, "el-1");
+        const second = line(0, 5, 10, 5, "el-2");
+        const h = createHarness({
+            elements: [first, second],
+            selectedIds: ["el-1", "el-2"],
+            hit: first,
+        });
+        h.use(ToolType.SELECT);
+
+        h.click(5, 0);
+
+        expect([...h.selection]).toEqual(["el-1"]);
+        expect(h.commits).toHaveLength(0);
+    });
+
+    it("拖拽已选中的多个对象时仍整体移动", () => {
+        const first = line(0, 0, 10, 0, "el-1");
+        const second = line(0, 5, 10, 5, "el-2");
+        const h = createHarness({
+            elements: [first, second],
+            selectedIds: ["el-1", "el-2"],
+            hit: first,
+        });
+        h.use(ToolType.SELECT);
+
+        h.moveTo(5, 0);
+        h.down();
+        h.moveTo(15, 0);
+        h.up();
+
+        expect(h.elements[0].start).toEqual({ x: 10, y: 0 });
+        expect(h.elements[1].start).toEqual({ x: 10, y: 5 });
+        expect(h.selection.size).toBe(2);
+    });
+
+    it("组合中的图元按整组选中", () => {
+        const grouped = { ...line(0, 0, 10, 0, "el-1"), groupId: "grp-1" };
+        const mate = { ...line(0, 5, 10, 5, "el-2"), groupId: "grp-1" };
+        const h = createHarness({ elements: [grouped, mate], hit: grouped });
+        h.use(ToolType.SELECT);
+
+        h.click(5, 0);
+
+        expect([...h.selection]).toEqual(["el-1", "el-2"]);
+    });
+
+    it("框选组合成员时整组进入选择集", () => {
+        const grouped = { ...line(0, 0, 10, 0, "el-1"), groupId: "grp-1" };
+        const mate = { ...line(0, 5, 10, 5, "el-2"), groupId: "grp-1" };
+        const h = createHarness({ elements: [grouped, mate] });
+        h.use(ToolType.SELECT);
+
+        h.moveTo(-5, -5);
+        h.down();
+        h.moveTo(20, 2);
+        h.up();
+
+        expect([...h.selection]).toEqual(["el-1", "el-2"]);
+    });
+
+    it("COPY 拖拽完成后回到选择工具，副本可逐个单独选中", () => {
+        const target = line(0, 0, 10, 0);
+        const h = createHarness({ elements: [target], selectedIds: ["el-1"], hit: target });
+        h.use(ToolType.COPY);
+
+        h.moveTo(0, 0);
+        h.down();
+        h.moveTo(10, 5);
+        h.up();
+
+        expect(h.toolSwitches).toEqual([ToolType.SELECT]);
     });
 
     it("SELECT 夹点拖拽写回图元并只提交一次历史", () => {
