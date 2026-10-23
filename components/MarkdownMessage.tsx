@@ -1,11 +1,96 @@
-import React, { useState, useEffect, useMemo } from "react";
-// @ts-ignore - 'marked' is loaded via importmap in index.html
+import React, { useState, useMemo } from "react";
 import { marked } from "marked";
+
+// marked 选项只需配置一次，放在模块级避免在 effect 中重复设置
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+});
 
 interface MarkdownMessageProps {
   content: string;
   className?: string;
 }
+
+/** 模型输出可能夹带 HTML（图纸文字、DXF 注释都可能被注入），只允许安全协议 */
+const safeHref = (href: unknown): string | null => {
+  if (typeof href !== "string" || href.length === 0) return null;
+  const trimmed = href.trim();
+  if (/^(javascript|data|vbscript|file):/i.test(trimmed)) return null;
+  return trimmed;
+};
+
+type Token = {
+  type: string;
+  raw?: string;
+  text?: string;
+  tokens?: Token[];
+  items?: Token[];
+  href?: string;
+  title?: string;
+  depth?: number;
+  ordered?: boolean;
+  lang?: string;
+  [key: string]: unknown;
+};
+
+const renderInline = (
+  tokens: Token[] | undefined,
+  keyPrefix = "",
+): React.ReactNode => {
+  if (!tokens || tokens.length === 0) return null;
+
+  return tokens.map((token, index) => {
+    const key = `${keyPrefix}${index}`;
+    const children = () => renderInline(token.tokens, `${key}-`);
+
+    switch (token.type) {
+      case "strong":
+        return <strong key={key}>{children()}</strong>;
+      case "em":
+        return <em key={key}>{children()}</em>;
+      case "del":
+        return <del key={key}>{children()}</del>;
+      case "codespan":
+        return (
+          <code key={key} className="font-mono">
+            {token.text}
+          </code>
+        );
+      case "br":
+        return <br key={key} />;
+      case "link": {
+        const href = safeHref(token.href);
+        const label = children() ?? token.text;
+        return href ? (
+          <a
+            key={key}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-cad-primary underline"
+          >
+            {label}
+          </a>
+        ) : (
+          <span key={key}>{label}</span>
+        );
+      }
+      // 图片会触发外部请求，聊天里只显示替代文字
+      case "image":
+        return <span key={key}>{token.text || token.title || "[图片]"}</span>;
+      case "html":
+        return <span key={key}>{token.text ?? token.raw}</span>;
+      case "escape":
+        return <span key={key}>{token.text}</span>;
+      case "text":
+      default:
+        return token.tokens && token.tokens.length > 0
+          ? <React.Fragment key={key}>{children()}</React.Fragment>
+          : <span key={key}>{String(token.text ?? token.raw ?? "")}</span>;
+    }
+  });
+};
 
 const MarkdownMessage: React.FC<MarkdownMessageProps> = ({
   content,
@@ -13,15 +98,6 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({
 }) => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // 配置 marked 选项
-  useEffect(() => {
-    marked.setOptions({
-      breaks: true,
-      gfm: true,
-    });
-  }, []);
-
-  // 复制功能处理
   const handleCopyCode = (code: string, id: string) => {
     navigator.clipboard.writeText(code).then(() => {
       setCopiedId(id);
@@ -30,13 +106,11 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({
   };
 
   // 使用 useMemo 解析内容，提高性能并处理代码块
-  const tokens = useMemo(() => {
-    return marked.lexer(content);
-  }, [content]);
+  const tokens = useMemo(() => marked.lexer(content) as Token[], [content]);
 
-  const renderToken = (token: any, index: number) => {
+  const renderToken = (token: Token, index: number): React.ReactNode => {
     switch (token.type) {
-      case "heading":
+      case "heading": {
         const headingClasses = [
           "text-2xl font-bold mt-4 mb-2",
           "text-xl font-bold mt-3 mb-2",
@@ -49,12 +123,13 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({
           `h${token.depth}`,
           {
             key: index,
-            className: `${headingClasses[token.depth - 1] || ""} text-cad-text`,
+            className: `${headingClasses[(token.depth ?? 1) - 1] || ""} text-cad-text`,
           },
-          token.text,
+          renderInline(token.tokens) ?? token.text,
         );
+      }
 
-      case "code":
+      case "code": {
         const codeId = `code-${index}`;
         return (
           <div key={index} className="relative group my-3">
@@ -65,7 +140,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({
                 </span>
               )}
               <button
-                onClick={() => handleCopyCode(token.text, codeId)}
+                onClick={() => handleCopyCode(token.text || "", codeId)}
                 className="px-2 py-1 text-[10px] bg-gray-700/80 hover:bg-gray-600 text-white rounded border border-gray-600 transition-all flex items-center gap-1 backdrop-blur-sm"
               >
                 <span className="material-symbols-outlined text-[12px]">
@@ -83,6 +158,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({
             </div>
           </div>
         );
+      }
 
       case "list":
         return (
@@ -90,11 +166,9 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({
             key={index}
             className={`list-${token.ordered ? "decimal" : "disc"} ml-5 my-2 space-y-1`}
           >
-            {token.items.map((item: any, i: number) => (
+            {(token.items ?? []).map((item, i) => (
               <li key={i} className="text-sm text-cad-text leading-relaxed">
-                {item.tokens
-                  ? item.tokens.map((t: any, ti: number) => renderToken(t, ti))
-                  : item.text}
+                {(item.tokens ?? []).map((t, ti) => renderToken(t, ti))}
               </li>
             ))}
           </ul>
@@ -106,22 +180,15 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({
             key={index}
             className="border-l-4 border-cad-primary/50 pl-4 py-1 my-3 italic text-cad-muted bg-cad-primary/5 rounded-r"
           >
-            {token.tokens
-              ? token.tokens.map((t: any, ti: number) => renderToken(t, ti))
-              : token.text}
+            {(token.tokens ?? []).map((t, ti) => renderToken(t, ti))}
           </blockquote>
         );
 
       case "paragraph":
-        // 处理行内加粗、斜体、代码等
         return (
-          <p
-            key={index}
-            className="my-2 text-sm leading-relaxed text-cad-text"
-            dangerouslySetInnerHTML={{
-              __html: marked.parseInline(token.text) as string,
-            }}
-          />
+          <p key={index} className="my-2 text-sm leading-relaxed text-cad-text">
+            {renderInline(token.tokens) ?? token.text}
+          </p>
         );
 
       case "space":
@@ -131,61 +198,45 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({
         return <hr key={index} className="my-4 border-cad-border/50" />;
 
       case "text":
-        // 处理嵌套在其他 token 中的 text
-        if (token.tokens) {
-          return (
-            <span key={index}>
-              {token.tokens.map((t: any, ti: number) => renderToken(t, ti))}
-            </span>
-          );
-        }
-        return (
-          <span
-            key={index}
-            dangerouslySetInnerHTML={{
-              __html: marked.parseInline(token.text) as string,
-            }}
-          />
+        // 块级 text token 可能带行内子 token，也可能只是裸文本
+        return token.tokens && token.tokens.length > 0 ? (
+          <span key={index}>{renderInline(token.tokens)}</span>
+        ) : (
+          <p key={index} className="my-2 text-sm leading-relaxed text-cad-text">
+            {token.text ?? token.raw}
+          </p>
         );
 
       default:
-        // 对于不认识的 token 类型，尝试显示其文本
+        // 不认识的 token 类型按纯文本显示，绝不把原始 HTML 注入 DOM
         return (
-          <div
-            key={index}
-            className="text-sm"
-            dangerouslySetInnerHTML={{
-              __html: marked.parseInline(token.raw || "") as string,
-            }}
-          />
+          <div key={index} className="text-sm text-cad-text whitespace-pre-wrap">
+            {token.raw ?? token.text ?? ""}
+          </div>
         );
     }
   };
 
   return (
     <div className={`markdown-body ${className}`}>
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-                .markdown-body strong { font-weight: 700; color: inherit; }
-                .markdown-body em { font-style: italic; }
-                .markdown-body a { color: #137fec; text-decoration: underline; }
-                .markdown-body a:hover { opacity: 0.8; }
-                .markdown-body code:not(pre code) {
-                    padding: 0.1rem 0.3rem;
-                    background: rgba(128, 128, 128, 0.15);
-                    border-radius: 4px;
-                    font-family: monospace;
-                    font-size: 0.9em;
-                    color: #ef4444;
-                }
-                .dark .markdown-body code:not(pre code) {
-                    background: rgba(255, 255, 255, 0.1);
-                    color: #f87171;
-                }
-            `,
-        }}
-      />
+      <style>{`
+        .markdown-body strong { font-weight: 700; color: inherit; }
+        .markdown-body em { font-style: italic; }
+        .markdown-body a { color: #137fec; text-decoration: underline; }
+        .markdown-body a:hover { opacity: 0.8; }
+        .markdown-body code:not(pre code) {
+            padding: 0.1rem 0.3rem;
+            background: rgba(128, 128, 128, 0.15);
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.9em;
+            color: #ef4444;
+        }
+        .dark .markdown-body code:not(pre code) {
+            background: rgba(255, 255, 255, 0.1);
+            color: #f87171;
+        }
+      `}</style>
       {tokens.map((token, index) => renderToken(token, index))}
     </div>
   );

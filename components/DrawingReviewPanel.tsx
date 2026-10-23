@@ -1,0 +1,233 @@
+import React, { useMemo, useState } from "react";
+import type { CADElement, DesignConventions } from "../types";
+import {
+    REVIEW_ISSUE_LABELS,
+    REVIEW_SEVERITY_LABELS,
+    buildReviewFixPrompt,
+    reviewDrawing,
+    reviewIssueKey,
+    type ReviewIssue,
+    type ReviewSeverity,
+} from "../lib/designReview";
+
+interface DrawingReviewPanelProps {
+    elements: CADElement[];
+    /** 项目设计约定；约定里的图层与字高会参与检查 */
+    conventions?: DesignConventions | null;
+    /** 选中问题相关图元并缩放到包围盒 */
+    onLocate: (issue: ReviewIssue) => void;
+    /** 带着问题摘要切到对话面板；第二个参数是建议预选的图元 */
+    onAskAI: (prompt: string, ids: string[]) => void;
+}
+
+type SeverityFilter = "all" | ReviewSeverity;
+
+const SEVERITY_STYLES: Record<ReviewSeverity, string> = {
+    error: "bg-red-500/10 text-red-500 border-red-500/30",
+    warning: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30",
+    info: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/30",
+};
+
+const FILTERS: Array<{ value: SeverityFilter; label: string }> = [
+    { value: "all", label: "全部" },
+    { value: "error", label: REVIEW_SEVERITY_LABELS.error },
+    { value: "warning", label: REVIEW_SEVERITY_LABELS.warning },
+    { value: "info", label: REVIEW_SEVERITY_LABELS.info },
+];
+
+const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
+    elements,
+    conventions,
+    onLocate,
+    onAskAI,
+}) => {
+    const issues = useMemo(
+        () => reviewDrawing(elements, { conventions: conventions ?? undefined }),
+        [elements, conventions],
+    );
+    const [filter, setFilter] = useState<SeverityFilter>("all");
+    const [ignored, setIgnored] = useState<Set<string>>(new Set());
+
+    /** 图纸变化后已消失的问题不再占用忽略集合 */
+    const activeIgnored = useMemo(() => {
+        const keys = new Set(issues.map(reviewIssueKey));
+        return new Set([...ignored].filter((key) => keys.has(key)));
+    }, [ignored, issues]);
+
+    const counts = useMemo(
+        () =>
+            issues.reduce<Record<ReviewSeverity, number>>(
+                (acc, issue) => {
+                    acc[issue.severity] += 1;
+                    return acc;
+                },
+                { error: 0, warning: 0, info: 0 },
+            ),
+        [issues],
+    );
+
+    const visible = useMemo(
+        () =>
+            issues.filter(
+                (issue) =>
+                    !activeIgnored.has(reviewIssueKey(issue)) &&
+                    (filter === "all" || issue.severity === filter),
+            ),
+        [issues, activeIgnored, filter],
+    );
+
+    const ignoredCount = activeIgnored.size;
+
+    const handleAskAI = () => {
+        if (visible.length === 0) return;
+        const ids = [...new Set(visible.flatMap((issue) => issue.elementIds))].slice(0, 50);
+        onAskAI(buildReviewFixPrompt(visible), ids);
+    };
+
+    const handleIgnore = (issue: ReviewIssue) => {
+        const key = reviewIssueKey(issue);
+        setIgnored((prev) => new Set(prev).add(key));
+    };
+
+    return (
+        <div className="flex flex-col h-full bg-cad-bg">
+            <div className="px-3 py-2 border-b border-cad-border bg-cad-panel space-y-2">
+                <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-cad-text flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[18px] text-cad-primary">
+                            fact_check
+                        </span>
+                        图纸检查
+                    </h3>
+                    <span className="text-[10px] text-cad-muted">
+                        {issues.length === 0 ? "无问题" : `${issues.length} 个问题`}
+                    </span>
+                </div>
+                <p className="text-[10px] text-cad-muted">
+                    确定性规则检查几何退化、重复、文字重叠与图层组织，不上传图纸内容。
+                </p>
+                {conventions && (
+                    <p className="text-[10px] text-cad-primary">
+                        已按项目设计约定检查图层归属与文字字高。
+                    </p>
+                )}
+                <div className="flex flex-wrap items-center gap-1">
+                    {FILTERS.map((item) => {
+                        const count = item.value === "all" ? issues.length : counts[item.value];
+                        return (
+                            <button
+                                key={item.value}
+                                onClick={() => setFilter(item.value)}
+                                className={`px-2 py-0.5 rounded-full border text-[10px] transition-colors ${
+                                    filter === item.value
+                                        ? "border-cad-primary text-cad-primary bg-cad-primary/10"
+                                        : "border-cad-border text-cad-muted hover:text-cad-text"
+                                }`}
+                            >
+                                {item.label} {count}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+                {visible.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-4">
+                        <span className="material-symbols-outlined text-[32px] text-emerald-500">
+                            {issues.length === 0 ? "task_alt" : "filter_alt_off"}
+                        </span>
+                        <p className="text-xs font-semibold text-cad-text">
+                            {issues.length === 0 ? "未发现明显问题" : "当前筛选下没有问题"}
+                        </p>
+                        <p className="text-[10px] text-cad-muted">
+                            {issues.length === 0
+                                ? "继续编辑后会自动重新检查。"
+                                : "切换筛选条件，或让 AI 做更深入的设计评审。"}
+                        </p>
+                    </div>
+                ) : (
+                    visible.map((issue) => {
+                        const key = reviewIssueKey(issue);
+                        const hasTargets = issue.elementIds.length > 0;
+                        return (
+                            <div
+                                key={key}
+                                data-review-issue={issue.code}
+                                className="rounded-lg border border-cad-border bg-cad-panel p-2 space-y-1"
+                            >
+                                <div className="flex items-center gap-1.5">
+                                    <span
+                                        className={`shrink-0 px-1 py-px rounded border text-[9px] ${SEVERITY_STYLES[issue.severity]}`}
+                                    >
+                                        {REVIEW_SEVERITY_LABELS[issue.severity]}
+                                    </span>
+                                    <span className="min-w-0 flex-1 text-[11px] font-semibold text-cad-text">
+                                        {REVIEW_ISSUE_LABELS[issue.code]}
+                                    </span>
+                                    <button
+                                        onClick={() => onLocate(issue)}
+                                        disabled={!hasTargets}
+                                        title={
+                                            hasTargets
+                                                ? "选中并缩放到问题位置"
+                                                : "全局提示，无具体图元"
+                                        }
+                                        className="p-0.5 rounded text-cad-muted hover:text-cad-primary disabled:opacity-30"
+                                    >
+                                        <span className="material-symbols-outlined text-[15px]">
+                                            my_location
+                                        </span>
+                                    </button>
+                                    <button
+                                        onClick={() => handleIgnore(issue)}
+                                        title="忽略这条问题"
+                                        className="p-0.5 rounded text-cad-muted hover:text-cad-text"
+                                    >
+                                        <span className="material-symbols-outlined text-[15px]">
+                                            visibility_off
+                                        </span>
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-cad-muted break-words">
+                                    {issue.message}
+                                </p>
+                                {hasTargets && (
+                                    <p className="text-[9px] font-mono text-cad-muted/80 truncate">
+                                        {issue.elementIds.slice(0, 6).join(", ")}
+                                        {issue.elementIds.length > 6 &&
+                                            ` +${issue.elementIds.length - 6}`}
+                                    </p>
+                                )}
+                            </div>
+                        );
+                    })
+                )}
+            </div>
+
+            <div className="border-t border-cad-border bg-cad-panel p-2 space-y-1.5">
+                <button
+                    onClick={handleAskAI}
+                    disabled={visible.length === 0}
+                    className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded bg-cad-primary text-white text-[11px] font-semibold disabled:opacity-40"
+                >
+                    <span className="material-symbols-outlined text-[16px]">auto_awesome</span>让 AI
+                    修复
+                </button>
+                <div className="flex items-center justify-between text-[9px] text-cad-muted">
+                    <span>AI 只收到问题摘要与相关图元 id</span>
+                    {ignoredCount > 0 && (
+                        <button
+                            onClick={() => setIgnored(new Set())}
+                            className="text-cad-primary hover:underline"
+                        >
+                            恢复忽略 ({ignoredCount})
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default DrawingReviewPanel;
