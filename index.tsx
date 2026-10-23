@@ -4,6 +4,7 @@ import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 import { CanvasProvider } from './store/canvasStore';
 import { AppProvider } from './store/appStore';
+import { I18nProvider } from './lib/i18n';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -13,12 +14,14 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <ErrorBoundary>
-      <AppProvider>
-        <CanvasProvider>
-          <App />
-        </CanvasProvider>
-      </AppProvider>
-    </ErrorBoundary>
+    <I18nProvider>
+      <ErrorBoundary>
+        <AppProvider>
+          <CanvasProvider>
+            <App />
+          </CanvasProvider>
+        </AppProvider>
+      </ErrorBoundary>
+    </I18nProvider>
   </React.StrictMode>
 );
