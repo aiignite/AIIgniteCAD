@@ -26,7 +26,8 @@ model User {
   projectVersions  ProjectVersion[]
   chatSessions     ChatSession[]
   llmModels        LLMModel[]
-  assistants        Assistant[]
+  assistants       Assistant[]
+  aiSkills         AiSkill[]
 
   @@map("users")
 }
@@ -42,6 +43,8 @@ model Project {
   updatedAt    DateTime  @updatedAt @map("updated_at")
   lastOpenedAt DateTime? @map("last_opened_at")
   isDeleted    Boolean   @default(false) @map("is_deleted")
+  // 项目设计约定：标准、单位、字高、精度、图层规则与备注
+  designConventions Json? @map("design_conventions")
 
   // Relations
   user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -58,6 +61,19 @@ model Project {
   @@index([updatedAt])
   @@index([lastOpenedAt])
   @@map("projects")
+}
+
+// 同步请求幂等记录：同一 key 的重复提交只执行一次
+model IdempotencyKey {
+  key       String   @id
+  userId    String   @map("user_id")
+  endpoint  String
+  projectId String?  @map("project_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("idempotency_keys")
 }
 
 // 图纸设置表
@@ -227,7 +243,10 @@ model ProjectVersion {
   projectId      String   @map("project_id")
   versionNumber  Int      @map("version_number")
   snapshotData   Json     @map("snapshot_data") // 完整的项目快照
+  elementCount   Int      @default(0) @map("element_count")
   commitMessage  String?  @db.Text @map("commit_message")
+  // 相对上一版本的增删与图层摘要，供版本列表和 AI 版本记忆使用
+  changeSummary  Json?    @map("change_summary")
   createdBy      String   @map("created_by")
   createdAt      DateTime @default(now()) @map("created_at")
 
@@ -246,16 +265,30 @@ model ChatSession {
   id        String   @id @default(uuid())
   projectId String   @map("project_id")
   userId    String   @map("user_id")
+  title     String?  @db.Text
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  // 会话绑定的助手与模型；置空表示使用解析链默认值
+  assistantId String? @map("assistant_id")
+  modelId     String? @map("model_id")
+
+  // 历史摘要：contextSummaryUpToId 为水位线，早于该 id 的消息不再逐条注入
+  contextSummary       String?   @db.Text @map("context_summary")
+  contextSummaryUpToId String?   @map("context_summary_up_to_id")
+  contextUpdatedAt     DateTime? @map("context_updated_at")
+  lastMessageAt        DateTime? @map("last_message_at")
+
   // Relations
-  project  Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages ChatMessage[]
+  project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assistant Assistant?   @relation(fields: [assistantId], references: [id], onDelete: SetNull)
+  llmModel  LLMModel?    @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  messages  ChatMessage[]
 
   @@index([projectId])
   @@index([userId])
+  @@index([userId, lastMessageAt])
   @@map("chat_sessions")
 }
 
@@ -269,9 +302,23 @@ model ChatMessage {
   metadata    Json?    // AI操作的详细信息
   createdAt   DateTime @default(now()) @map("created_at")
 
+  // Provider 语义角色：user | assistant | tool
+  role   String @default("user")
+  // 客户端幂等键（turnId / turnId:rN:tool:callId），防止续轮重复落库与重复计费
+  clientMessageId String? @map("client_message_id")
+  toolCalls       Json?   @map("tool_calls")
+  toolCallId      String? @map("tool_call_id")
+  toolName        String? @map("tool_name")
+  promptTokens     Int?   @map("prompt_tokens")
+  completionTokens Int?   @map("completion_tokens")
+  traceId         String? @map("trace_id")
+  modelRowId      String? @map("model_row_id")
+  status          String  @default("complete")
+
   // Relations
   session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
+  @@unique([sessionId, clientMessageId])
   @@index([sessionId])
   @@index([createdAt])
   @@map("chat_messages")
@@ -286,17 +333,30 @@ model LLMModel {
   modelId          String   @map("model_id")
   apiKeyEncrypted  String?  @map("api_key_encrypted") @db.Text
   isActive         Boolean  @default(true) @map("is_active")
-  configuration    Json?    // 额外配置
+  configuration    Json?    // 额外配置（apiUrl 等）
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
+  // 解析链与调用参数
+  isDefault            Boolean @default(false) @map("is_default")
+  supportsTools        Boolean @default(true) @map("supports_tools")
+  contextWindow        Int     @default(128000) @map("context_window")
+  maxOutputTokens      Int?    @map("max_output_tokens")
+  temperature          Float?
+  topP                 Float?  @map("top_p")
+  timeoutSeconds       Int     @default(120) @map("timeout_seconds")
+  promptPricePer1k     Float?  @map("prompt_price_per_1k")
+  completionPricePer1k Float?  @map("completion_price_per_1k")
+
   // Relations
-  user        User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  assistants  Assistant[]
+  user         User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assistants   Assistant[]
+  chatSessions ChatSession[]
 
   @@index([userId])
   @@index([provider])
   @@index([isActive])
+  @@index([userId, isDefault])
   @@map("llm_models")
 }
 
@@ -309,19 +369,107 @@ model Assistant {
   icon         String   // Material Symbols icon name
   description  String   @db.Text
   color        String   // Tailwind color class
-  prompt       String?  @db.Text // Custom prompt for this assistant
+  prompt       String?  @db.Text // 助手系统提示词（注入到 Prompt 组装）
   isPublic     Boolean  @default(false) @map("is_public") // 是否公开
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
+  category      String  @default("General")
+  temperature   Float?
+  maxTokens     Int?    @map("max_tokens")
+  maxToolRounds Int     @default(4) @map("max_tool_rounds")
+  // 工具白名单；null 表示使用当前技能允许的默认集合
+  toolNames Json? @map("tool_names")
+
   // Relations
-  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  llmModel LLMModel?   @relation(fields: [llmModelId], references: [id], onDelete: SetNull)
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  llmModel     LLMModel?         @relation(fields: [llmModelId], references: [id], onDelete: SetNull)
+  skills       AssistantSkill[]
+  chatSessions ChatSession[]
 
   @@index([userId])
   @@index([isActive])
   @@index([llmModelId])
   @@index([isPublic])
   @@map("assistants")
+}
+
+// AI技能表 - 提示词与工具子集的按需装配单元
+model AiSkill {
+  id             String   @id @default(uuid())
+  code           String   @unique
+  name           String
+  description    String   @db.Text
+  category       String   @default("General")
+  promptTemplate String   @db.Text @map("prompt_template")
+  toolNames      Json?    @map("tool_names")
+  keywords       Json     @default("[]")
+  selectionTypes Json     @default("[]") @map("selection_types")
+  // 可执行剧本：步骤、完成检查、示例请求与所需上下文
+  steps           Json?    @map("steps")
+  checks          Json?    @map("checks")
+  examples        Json?    @map("examples")
+  requiredContext Json?    @map("required_context")
+  negativeKeywords Json?   @map("negative_keywords")
+  version         Int      @default(1)
+  priority       Int      @default(0)
+  isEnabled      Boolean  @default(true) @map("is_enabled")
+  isSystem       Boolean  @default(false) @map("is_system")
+  userId         String?  @map("user_id") // NULL 表示内置技能
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user     User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bindings AssistantSkill[]
+
+  @@index([userId])
+  @@index([isEnabled])
+  @@index([category])
+  @@map("ai_skills")
+}
+
+// 助手-技能绑定
+model AssistantSkill {
+  assistantId String   @map("assistant_id")
+  skillId     String   @map("skill_id")
+  weight      Int      @default(50)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  assistant Assistant @relation(fields: [assistantId], references: [id], onDelete: Cascade)
+  skill     AiSkill   @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([assistantId, skillId])
+  @@index([skillId])
+  @@map("assistant_skills")
+}
+
+// AI 调用审计与用量台账
+model AiCallLog {
+  id               String   @id @default(uuid())
+  traceId          String   @map("trace_id")
+  userId           String   @map("user_id")
+  projectId        String?  @map("project_id")
+  sessionId        String?  @map("session_id")
+  assistantId      String?  @map("assistant_id")
+  provider         String
+  modelRowId       String?  @map("model_row_id")
+  modelId          String    @map("model_id")
+  status           String   @default("ok") // ok | error | cancelled | rejected
+  errorCode        String?  @map("error_code")
+  round            Int      @default(0)
+  promptTokens     Int      @default(0) @map("prompt_tokens")
+  completionTokens Int      @default(0) @map("completion_tokens")
+  costUsd          Float?   @map("cost_usd")
+  latencyMs        Int      @default(0) @map("latency_ms")
+  toolCallCount    Int      @default(0) @map("tool_call_count")
+  skillCodes       Json?    @map("skill_codes")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([sessionId])
+  @@index([traceId])
+  @@map("ai_call_logs")
 }
