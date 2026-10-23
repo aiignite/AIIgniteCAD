@@ -1,10 +1,19 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import { prisma } from "../index";
+import { prisma } from "../lib/prisma";
+import { logger } from "../lib/logger";
 
-const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key-change-in-production";
+const JWT_SECRET =
+  process.env.JWT_SECRET ||
+  (process.env.NODE_ENV === "production"
+    ? ""
+    : "your-secret-key-change-in-production");
 const JWT_EXPIRES_IN = "7d";
+
+if (!JWT_SECRET) {
+  throw new Error("JWT_SECRET must be set in production");
+}
 
 export interface AuthRequest extends Request {
   user?: {
@@ -81,7 +90,10 @@ export const authenticate = async (
     req.user = user;
     next();
   } catch (error) {
-    console.error("Authentication error:", error);
+    logger.error("Authentication error", {
+      requestId: req.requestId,
+      error,
+    });
     return res.status(500).json({
       error: "Internal Server Error",
       message: "Authentication failed",

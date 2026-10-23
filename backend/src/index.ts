@@ -1,245 +1,225 @@
-// Backend Entry Point for AIIgniteCAD
-// Express server with PostgreSQL, JWT authentication, and WebSocket support
+/**
+ * index.ts — 后端服务入口
+ *
+ * 负责创建 HTTP Server、挂载 WebSocket、执行数据库迁移并监听端口。
+ * Express 应用的装配位于 app.ts，数据库客户端位于 lib/prisma.ts，
+ * 这样测试可以直接引入 app 而不触发端口监听。
+ */
 
-import express, { Express, Request, Response, NextFunction } from "express";
-import cors from "cors";
-import helmet from "helmet";
-import morgan from "morgan";
-import compression from "compression";
-import dotenv from "dotenv";
-import { PrismaClient } from "@prisma/client";
+import "dotenv/config";
 import http from "http";
 import { Server as SocketIOServer } from "socket.io";
 import { execSync } from "child_process";
 
-// Load environment variables
-dotenv.config();
+import app from "./app";
+import { prisma } from "./lib/prisma";
+import { logger } from "./lib/logger";
+import { verifyToken } from "./middleware/auth";
+import { parseAllowedOrigins } from "./lib/cors";
+import {
+  canJoinProject,
+  isUuid,
+  sanitizeCursor,
+  sanitizePatch,
+} from "./lib/collaborationProtocol";
 
-// Initialize Prisma Client
-export const prisma = new PrismaClient({
-  log: ["query", "info", "warn", "error"],
-});
+const PORT = process.env.PORT || 3225;
 
-// Initialize Express app
-const app: Express = express();
-const PORT = 3410;
-
-// Create HTTP server
+// 创建 HTTP 服务
 const server = http.createServer(app);
 
-// Initialize Socket.IO for real-time collaboration
+/**
+ * Socket.IO 服务实例，用于项目房间内的实时协作广播。
+ */
 const io = new SocketIOServer(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || "http://localhost:3400",
+    origin: parseAllowedOrigins(process.env.FRONTEND_URL),
     methods: ["GET", "POST"],
     credentials: true,
   },
 });
 
 // ============================================================================
-// MIDDLEWARE
-// ============================================================================
-
-// Security middleware
-app.use(helmet());
-
-// CORS configuration
-app.use(
-  cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:3400",
-    credentials: true,
-  }),
-);
-
-// Body parsing middleware
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
-
-// Compression middleware
-app.use(compression());
-
-// Logging middleware
-app.use(morgan("dev"));
-
-// Request logging
-app.use((req: Request, res: Response, next: NextFunction) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-  next();
-});
-
-// ============================================================================
-// ROUTES
-// ============================================================================
-
-// Health check endpoint
-app.get("/health", (req: Request, res: Response) => {
-  res.json({
-    status: "OK",
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    environment: process.env.NODE_ENV || "development",
-  });
-});
-
-// API routes (to be implemented)
-app.get("/api", (req: Request, res: Response) => {
-  res.json({
-    message: "AIIgniteCAD API Server",
-    version: "1.0.0",
-    endpoints: {
-      auth: "/api/auth",
-      projects: "/api/projects",
-      elements: "/api/elements",
-      blocks: "/api/blocks",
-      blockReferences: "/api/block-references",
-      layers: "/api/layers",
-      versions: "/api/versions",
-      chat: "/api/chat",
-    },
-  });
-});
-
-// Authentication routes
-import authRoutes from "./routes/auth";
-app.use("/api/auth", authRoutes);
-
-// Project routes
-import projectRoutes from "./routes/projects";
-app.use("/api/projects", projectRoutes);
-
-// LLM routes
-import llmRoutes from "./routes/llm";
-app.use("/api/llm", llmRoutes);
-
-// Chat routes
-import chatRoutes from "./routes/chat";
-app.use("/api/chat", chatRoutes);
-
-// LLM Chat routes
-import llmChatRoutes from "./routes/llmChat";
-app.use("/api/llm", llmChatRoutes);
-
-// Block routes
-import blockRoutes from "./routes/blocks";
-app.use("/api/blocks", blockRoutes);
-
-// Assistant routes
-import assistantRoutes from "./routes/assistants";
-app.use("/api/assistants", assistantRoutes);
-
-// ============================================================================
 // WEBSOCKET HANDLERS
 // ============================================================================
 
+/** 项目房间名，所有广播都限定在已鉴权的房间内 */
+const roomOf = (projectId: string) => `project:${projectId}`;
+
+/** 握手阶段校验 JWT；未通过连接直接拒绝，避免匿名客户端进入任何房间 */
+io.use((socket, next) => {
+  const token =
+    typeof socket.handshake.auth?.token === "string"
+      ? socket.handshake.auth.token
+      : "";
+  const decoded = token ? verifyToken(token) : null;
+  if (!decoded?.id) {
+    next(new Error("Unauthorized"));
+    return;
+  }
+  socket.data.userId = decoded.id;
+  socket.data.username =
+    typeof decoded.username === "string" ? decoded.username : "协作者";
+  socket.data.projectId = null;
+  next();
+});
+
 io.on("connection", (socket) => {
-  console.log(`Client connected: ${socket.id}`);
+  logger.debug("Socket client connected", {
+    socketId: socket.id,
+    userId: socket.data.userId,
+  });
 
-  // Join project room
-  socket.on("join-project", (projectId: string) => {
-    socket.join(`project:${projectId}`);
-    console.log(`Socket ${socket.id} joined project ${projectId}`);
+  // 加入项目房间：先校验项目归属，再加入并回传当前在线成员
+  socket.on("join-project", async (payload: { projectId?: unknown }) => {
+    const projectId = payload?.projectId;
+    if (!isUuid(projectId)) {
+      socket.emit("collaboration-error", { message: "项目未同步或不存在" });
+      return;
+    }
 
-    // Notify others in the room
-    socket.to(`project:${projectId}`).emit("user-joined", {
+    try {
+      const allowed = await canJoinProject(socket.data.userId, projectId);
+      if (!allowed) {
+        socket.emit("collaboration-error", { message: "无权加入该项目" });
+        return;
+      }
+    } catch (error) {
+      logger.error("Socket project ownership check failed", {
+        socketId: socket.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      socket.emit("collaboration-error", { message: "协作服务暂不可用" });
+      return;
+    }
+
+    if (socket.data.projectId) {
+      // 切换项目时先通知旧房间，避免对方一直显示已离线成员
+      socket.to(roomOf(socket.data.projectId)).emit("user-left", {
+        socketId: socket.id,
+        timestamp: new Date().toISOString(),
+      });
+      socket.leave(roomOf(socket.data.projectId));
+    }
+    socket.data.projectId = projectId;
+    socket.join(roomOf(projectId));
+
+    const peers: { socketId: string; username: string }[] = [];
+    const members = io.sockets.adapter.rooms.get(roomOf(projectId));
+    for (const socketId of members ?? []) {
+      if (socketId === socket.id) continue;
+      const peer = io.sockets.sockets.get(socketId);
+      peers.push({
+        socketId,
+        username: peer?.data.username || "协作者",
+      });
+    }
+
+    socket.emit("project-joined", { projectId, selfId: socket.id, peers });
+    socket.to(roomOf(projectId)).emit("user-joined", {
+      socketId: socket.id,
+      username: socket.data.username,
+      timestamp: new Date().toISOString(),
+    });
+    logger.debug("Socket joined project", { socketId: socket.id, projectId });
+  });
+
+  // 离开项目房间
+  socket.on("leave-project", () => {
+    const projectId = socket.data.projectId;
+    if (!projectId) return;
+    socket.leave(roomOf(projectId));
+    socket.data.projectId = null;
+    socket.to(roomOf(projectId)).emit("user-left", {
       socketId: socket.id,
       timestamp: new Date().toISOString(),
     });
   });
 
-  // Leave project room
-  socket.on("leave-project", (projectId: string) => {
-    socket.leave(`project:${projectId}`);
-    console.log(`Socket ${socket.id} left project ${projectId}`);
-
-    socket.to(`project:${projectId}`).emit("user-left", {
-      socketId: socket.id,
-      timestamp: new Date().toISOString(),
-    });
-  });
-
-  // Real-time element updates
-  socket.on("element-updated", (data: { projectId: string; element: any }) => {
-    socket.to(`project:${data.projectId}`).emit("element-updated", {
-      element: data.element,
+  // 批量图元差集：协作主通道，全员可写、最后写入胜
+  socket.on("element-patch", (data: { projectId?: unknown; patch?: unknown }) => {
+    const projectId = socket.data.projectId;
+    if (!projectId || data?.projectId !== projectId) return;
+    const patch = sanitizePatch(data.patch);
+    if (!patch) return;
+    socket.to(roomOf(projectId)).emit("element-patch", {
+      patch,
       updatedBy: socket.id,
       timestamp: new Date().toISOString(),
     });
   });
 
-  // Real-time element creation
-  socket.on("element-created", (data: { projectId: string; element: any }) => {
-    socket.to(`project:${data.projectId}`).emit("element-created", {
-      element: data.element,
-      createdBy: socket.id,
+  // 单元素广播（保留给旧客户端），同样要求已加入对应房间
+  const relayElement = (
+    event: string,
+    data: { projectId?: unknown; element?: unknown },
+    key: "element",
+  ) => {
+    const projectId = socket.data.projectId;
+    if (!projectId || data?.projectId !== projectId) return;
+    const sanitized = sanitizePatch({ upserts: [data.element], deletes: [] });
+    if (!sanitized) return;
+    socket.to(roomOf(projectId)).emit(event, {
+      [key]: sanitized.upserts[0],
+      updatedBy: socket.id,
+      timestamp: new Date().toISOString(),
+    });
+  };
+
+  socket.on("element-updated", (data) => relayElement("element-updated", data, "element"));
+  socket.on("element-created", (data) => relayElement("element-created", data, "element"));
+
+  socket.on("element-deleted", (data: { projectId?: unknown; elementId?: unknown }) => {
+    const projectId = socket.data.projectId;
+    if (!projectId || data?.projectId !== projectId) return;
+    if (typeof data.elementId !== "string") return;
+    socket.to(roomOf(projectId)).emit("element-deleted", {
+      elementId: data.elementId,
+      deletedBy: socket.id,
       timestamp: new Date().toISOString(),
     });
   });
 
-  // Real-time element deletion
-  socket.on(
-    "element-deleted",
-    (data: { projectId: string; elementId: string }) => {
-      socket.to(`project:${data.projectId}`).emit("element-deleted", {
-        elementId: data.elementId,
-        deletedBy: socket.id,
-        timestamp: new Date().toISOString(),
-      });
-    },
-  );
+  socket.on("block-inserted", (data: { projectId?: unknown; blockReference?: unknown }) => {
+    const projectId = socket.data.projectId;
+    if (!projectId || data?.projectId !== projectId) return;
+    const sanitized = sanitizePatch({
+      upserts: [data.blockReference],
+      deletes: [],
+    });
+    if (!sanitized) return;
+    socket.to(roomOf(projectId)).emit("block-inserted", {
+      blockReference: sanitized.upserts[0],
+      insertedBy: socket.id,
+      timestamp: new Date().toISOString(),
+    });
+  });
 
-  // Real-time block insertion
-  socket.on(
-    "block-inserted",
-    (data: { projectId: string; blockReference: any }) => {
-      socket.to(`project:${data.projectId}`).emit("block-inserted", {
-        blockReference: data.blockReference,
-        insertedBy: socket.id,
-        timestamp: new Date().toISOString(),
-      });
-    },
-  );
+  // 光标位置：只透出房间内的有限坐标
+  socket.on("cursor-move", (data: { projectId?: unknown; x?: unknown; y?: unknown }) => {
+    const projectId = socket.data.projectId;
+    if (!projectId || data?.projectId !== projectId) return;
+    const cursor = sanitizeCursor({ x: data.x, y: data.y });
+    if (!cursor) return;
+    socket.to(roomOf(projectId)).emit("cursor-move", {
+      socketId: socket.id,
+      username: socket.data.username,
+      x: cursor.x,
+      y: cursor.y,
+      timestamp: new Date().toISOString(),
+    });
+  });
 
-  // Real-time cursor position (for collaborative editing)
-  socket.on(
-    "cursor-move",
-    (data: { projectId: string; x: number; y: number }) => {
-      socket.to(`project:${data.projectId}`).emit("cursor-move", {
-        socketId: socket.id,
-        x: data.x,
-        y: data.y,
-        timestamp: new Date().toISOString(),
-      });
-    },
-  );
-
-  // Handle disconnection
+  // 断开连接：通知仍在房间内的客户端移除在线标记与光标
   socket.on("disconnect", () => {
-    console.log(`Client disconnected: ${socket.id}`);
-  });
-});
-
-// ============================================================================
-// ERROR HANDLING
-// ============================================================================
-
-// 404 handler
-app.use((req: Request, res: Response) => {
-  res.status(404).json({
-    error: "Not Found",
-    message: `Route ${req.method} ${req.path} not found`,
-    timestamp: new Date().toISOString(),
-  });
-});
-
-// Global error handler
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  console.error("Error:", err);
-
-  res.status(500).json({
-    error: "Internal Server Error",
-    message:
-      process.env.NODE_ENV === "production" ? "An error occurred" : err.message,
-    timestamp: new Date().toISOString(),
+    const projectId = socket.data.projectId;
+    if (projectId) {
+      socket.to(roomOf(projectId)).emit("user-left", {
+        socketId: socket.id,
+        timestamp: new Date().toISOString(),
+      });
+    }
+    logger.debug("Socket client disconnected", { socketId: socket.id });
   });
 });
 
@@ -247,80 +227,76 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 // SERVER STARTUP
 // ============================================================================
 
+/**
+ * 启动服务：等待数据库就绪、执行迁移、监听端口。
+ */
 async function startServer() {
   try {
-    // Wait for database to be ready with retry logic
-    let retries = 30; // 30 retries = 30 seconds max
+    // 数据库就绪重试：最多 30 次，每次间隔 1 秒
+    let retries = 30;
     while (retries > 0) {
       try {
         await prisma.$connect();
-        console.log("✓ Connected to PostgreSQL database");
+        logger.info("Connected to PostgreSQL database");
         break;
       } catch (error) {
         retries--;
         if (retries === 0) {
           throw error;
         }
-        console.log(`Database not ready, retrying... (${retries} attempts left)`);
+        logger.warn("Database not ready; retrying", { attemptsLeft: retries });
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
 
-    // Run database migrations (deploy mode for production)
+    // 生产模式执行迁移（deploy 不会生成新迁移文件）
     try {
-      execSync('npx prisma migrate deploy', { stdio: 'inherit' });
-      console.log("✓ Database migrations applied");
+      execSync("npx prisma migrate deploy", { stdio: "inherit" });
+      logger.info("Database migrations applied");
     } catch (error) {
-      console.error("Warning: Failed to apply migrations:", error);
-      // Continue anyway - schema might already be in sync
+      logger.warn("Failed to apply migrations; continuing with current schema", {
+        error,
+      });
     }
 
-    // Start server
     server.listen(PORT, () => {
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      console.log(`🚀 AIIgniteCAD Backend Server`);
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
-      console.log(`HTTP Server: http://localhost:${PORT}`);
-      console.log(`WebSocket Server: ws://localhost:${PORT}`);
-      console.log(`Health Check: http://localhost:${PORT}/health`);
-      console.log(`API Endpoint: http://localhost:${PORT}/api`);
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      logger.info("Backend server started", {
+        environment: process.env.NODE_ENV || "development",
+        port: Number(PORT),
+        healthCheck: `http://localhost:${PORT}/health`,
+        apiEndpoint: `http://localhost:${PORT}/api`,
+        metricsEndpoint: `http://localhost:${PORT}/api/metrics`,
+      });
     });
   } catch (error) {
-    console.error("Failed to start server:", error);
+    logger.error("Failed to start server", { error });
     process.exit(1);
   }
 }
 
-// Graceful shutdown
+// 优雅退出：SIGINT
 process.on("SIGINT", async () => {
-  console.log("\n🛑 Shutting down gracefully...");
+  logger.info("Graceful shutdown started", { signal: "SIGINT" });
 
-  // Close WebSocket connections
   io.close();
-
-  // Disconnect from database
   await prisma.$disconnect();
 
-  // Close server
   server.close(() => {
-    console.log("✓ Server closed");
+    logger.info("Server closed");
     process.exit(0);
   });
 });
 
+// 优雅退出：SIGTERM
 process.on("SIGTERM", async () => {
-  console.log("\n🛑 Received SIGTERM, shutting down...");
+  logger.info("Graceful shutdown started", { signal: "SIGTERM" });
   await prisma.$disconnect();
   server.close(() => {
-    console.log("✓ Server closed");
+    logger.info("Server closed");
     process.exit(0);
   });
 });
 
-// Start the server
 startServer();
 
-// Export for testing
-export { app, io };
+export { app, io, prisma };

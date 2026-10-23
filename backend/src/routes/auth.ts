@@ -1,9 +1,30 @@
 import { Router, Request, Response } from "express";
 import { body, validationResult } from "express-validator";
-import { prisma } from "../index";
+import { prisma } from "../lib/prisma";
 import { hashPassword, comparePassword, generateToken, AuthRequest } from "../middleware/auth";
+import { encryptSecret } from "../lib/crypto";
+import { logger } from "../lib/logger";
 
 const router = Router();
+
+/**
+ * 加密系统默认 Gemini Key
+ * 未配置 GEMINI_API_KEY 或未配置 ENCRYPTION_KEY 时返回 null，
+ * 避免把明文写入数据库（宁可不可用，也不落明文）
+ * @returns 密文或 null
+ */
+function encryptDefaultApiKey(): string | null {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) return null;
+    try {
+        return encryptSecret(apiKey);
+    } catch (error) {
+        logger.warn("Default GEMINI_API_KEY was not stored", {
+            reason: (error as Error).message,
+        });
+        return null;
+    }
+}
 
 async function createDefaultWorkspaceForUser(userId: string) {
     try {
@@ -51,11 +72,11 @@ async function createDefaultWorkspaceForUser(userId: string) {
                         name: "Gemini 2.0 Flash",
                         provider: "Google",
                         modelId: "gemini-2.0-flash-exp",
-                        apiKeyEncrypted: process.env.GEMINI_API_KEY || null,
+                        apiKeyEncrypted: encryptDefaultApiKey(),
                         isActive: true,
                     },
                 });
-                console.log("Created system-level default LLM model");
+                logger.info("Created system-level default LLM model");
             }
 
             await prisma.assistant.create({
@@ -80,9 +101,12 @@ async function createDefaultWorkspaceForUser(userId: string) {
             },
         });
 
-        console.log("Default workspace created for user:", userId);
+        logger.info("Default workspace created", { userId });
     } catch (err) {
-        console.error("Failed to create default workspace:", err);
+        logger.error("Failed to create default workspace", {
+            userId,
+            error: err,
+        });
     }
 }
 
@@ -154,7 +178,10 @@ router.post(
         user,
       });
     } catch (error) {
-      console.error("Registration error:", error);
+      logger.error("Registration error", {
+        requestId: req.requestId,
+        error,
+      });
       return res.status(500).json({
         error: "Internal Server Error",
         message: "Failed to register user",
@@ -222,7 +249,10 @@ router.post(
         },
       });
     } catch (error) {
-      console.error("Login error:", error);
+      logger.error("Login error", {
+        requestId: req.requestId,
+        error,
+      });
       return res.status(500).json({
         error: "Internal Server Error",
         message: "Failed to login",
@@ -274,7 +304,10 @@ router.get("/me", async (req: AuthRequest, res: Response) => {
 
     return res.json({ user });
   } catch (error) {
-    console.error("Get user error:", error);
+    logger.error("Get user error", {
+      requestId: req.requestId,
+      error,
+    });
     return res.status(500).json({
       error: "Internal Server Error",
       message: "Failed to get user",
@@ -358,7 +391,10 @@ router.put(
         user: updatedUser,
       });
     } catch (error) {
-      console.error("Update profile error:", error);
+      logger.error("Update profile error", {
+        requestId: req.requestId,
+        error,
+      });
       return res.status(500).json({
         error: "Internal Server Error",
         message: "Failed to update profile",
@@ -418,7 +454,10 @@ router.post(
         message: "Password changed successfully",
       });
     } catch (error) {
-      console.error("Change password error:", error);
+      logger.error("Change password error", {
+        requestId: req.requestId,
+        error,
+      });
       return res.status(500).json({
         error: "Internal Server Error",
         message: "Failed to change password",
