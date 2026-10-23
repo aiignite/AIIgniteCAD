@@ -6,6 +6,7 @@
 
 ### Fixed
 
+- 子路径部署下图标不再退化成英文单词：`@font-face` 的 `src` 原写绝对路径 `/fonts/...`，挂在 `/cad/` 下会去请求站点根、被网关默认站点以 `text/html` 兜底返回，Material Symbols 连字全部显示成 `send`、`folder_open`；改为相对自身解析，并把 `public/` 里无内容哈希的 CSS 与 `index.html` 从 30 天/启发式缓存改成 `no-cache`（字体二进制仍长缓存），否则修好了老访客也看不见。
 - 生产站点挂在 `/cad/` 子路径后不再整站失联：前端构建改为读取 `VITE_BASE_PATH` / `VITE_API_URL`，实时协作的 socket.io 握手路径按 API 基址推导前缀（`collaborationSocketPath`），否则升级请求会落到网关默认站点、协作面板只显示连接失败。
 - 后端识别两级代理的 `X-Forwarded-For`（`trust proxy`）：限流按 `req.ip` 计数，不认代理头会让全部访客挤进同一个桶，认证配额几分钟内被打满。
 - 后端镜像带上 Prisma 迁移（`.dockerignore` 此前排除了 `prisma/migrations`），容器内 `prisma migrate deploy` 才有可执行的迁移，否则生产库只能停留在空 schema。

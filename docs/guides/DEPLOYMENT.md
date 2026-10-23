@@ -98,6 +98,18 @@ ssh ubuntu@<服务器> 'cd ~/AIIgniteCAD && docker compose -f docker-compose.pro
 ssh ubuntu@<服务器> 'curl -s localhost:3245/ready'
 ```
 
+图标按钮显示成 `send`、`folder_open` 这类英文单词时，是 Material Symbols 字体没加载：
+
+```bash
+curl -s https://aiignite.com.cn/cad/fonts/material-symbols/material-symbols-local.css | grep 'src: url'
+curl -sI https://aiignite.com.cn/cad/fonts/material-symbols/material.woff2 | grep -i 'content-type\|cache-control'
+```
+
+`src` 必须是相对自身的 `url(material.woff2)`，字体必须返回 `font/woff2`。写成绝对路径
+`/fonts/...` 时，子路径部署会去请求站点根，被网关默认站点用 `text/html` 兜底返回，字体加载
+静默失败。`public/` 下的文件没有内容哈希，改了内容要确认它的 `Cache-Control` 不是长缓存，
+否则老访客继续命中旧副本（当前只有字体二进制保留 30 天，CSS 与 `index.html` 为 `no-cache`）。
+
 ### 4. 备份
 
 ```bash
