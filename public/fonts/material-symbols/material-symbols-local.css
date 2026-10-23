@@ -4,7 +4,9 @@
   font-style: normal;
   font-weight: 400;
   font-display: block;
-  src: url(/fonts/material-symbols/material.woff2) format("woff2");
+  /* 相对自身解析：挂在 /cad/ 这类子路径下时，绝对路径 /fonts/... 会落到网关默认站点，
+     拿回 text/html 而不是字体，图标全部退化成连字文本。 */
+  src: url(material.woff2) format("woff2");
 }
 
 .material-symbols-outlined {
