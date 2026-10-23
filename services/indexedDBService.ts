@@ -32,6 +32,16 @@ const STORES = {
     USER: 'user'
 };
 
+const createLocalId = () => Math.random().toString(36).substr(2, 9);
+
+/** 客户端生成的幂等键：重试时保持不变，由服务端按 key 去重 */
+const createIdempotencyKey = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
 class IndexedDBService {
     private db: IDBDatabase | null = null;
     private initPromise: Promise<IDBDatabase> | null = null;
@@ -240,10 +250,52 @@ class IndexedDBService {
     // Project-specific operations
     async saveProject(project: ProjectFile): Promise<void> {
         await this.update(STORES.PROJECTS, project);
+        await this.enqueueProjectUpdate(project);
+    }
 
-        // Queue for sync
+    /** 新建项目：本地立即落地，远端创建走 CREATE 队列并支持离线补建 */
+    async saveNewProject(project: ProjectFile): Promise<void> {
+        await this.update(STORES.PROJECTS, project);
+        await this.removeSyncItemsForEntity(project.id);
         await this.addToSyncQueue({
-            id: Math.random().toString(36).substr(2, 9),
+            id: createLocalId(),
+            idempotencyKey: createIdempotencyKey(),
+            operation: 'CREATE',
+            entityType: 'PROJECT',
+            entityId: project.id,
+            data: project,
+            timestamp: new Date().toISOString(),
+            status: 'PENDING'
+        });
+    }
+
+    /**
+     * 同一项目的连续自动保存合并为一个 UPDATE 队列项：
+     * 保留原 idempotencyKey，重试不会产生重复写入；快照始终是最新版本，离线恢复不丢改动。
+     */
+    async enqueueProjectUpdate(project: ProjectFile): Promise<void> {
+        const items = await this.getAll<SyncQueueItem>(STORES.SYNC_QUEUE);
+        const existing = items.find(
+            (item) =>
+                item.entityType === 'PROJECT' &&
+                item.entityId === project.id &&
+                item.operation === 'UPDATE'
+        );
+
+        if (existing) {
+            await this.update<SyncQueueItem>(STORES.SYNC_QUEUE, {
+                ...existing,
+                data: project,
+                timestamp: new Date().toISOString(),
+                status: 'PENDING',
+                error: undefined
+            });
+            return;
+        }
+
+        await this.addToSyncQueue({
+            id: createLocalId(),
+            idempotencyKey: createIdempotencyKey(),
             operation: 'UPDATE',
             entityType: 'PROJECT',
             entityId: project.id,
@@ -251,6 +303,57 @@ class IndexedDBService {
             timestamp: new Date().toISOString(),
             status: 'PENDING'
         });
+    }
+
+    private async removeSyncItemsForEntity(entityId: string): Promise<void> {
+        const items = await this.getAll<SyncQueueItem>(STORES.SYNC_QUEUE);
+        for (const item of items) {
+            if (item.entityType === 'PROJECT' && item.entityId === entityId) {
+                await this.delete(STORES.SYNC_QUEUE, item.id);
+            }
+        }
+    }
+
+    private async enqueueProjectDelete(projectId: string): Promise<void> {
+        await this.removeSyncItemsForEntity(projectId);
+        await this.addToSyncQueue({
+            id: createLocalId(),
+            idempotencyKey: createIdempotencyKey(),
+            operation: 'DELETE',
+            entityType: 'PROJECT',
+            entityId: projectId,
+            data: null,
+            timestamp: new Date().toISOString(),
+            status: 'PENDING'
+        });
+    }
+
+    /** 离线新建后拿到服务端 id：迁移本地项目、图元与排队中的操作 */
+    async remapProjectId(oldId: string, newId: string): Promise<void> {
+        const project = await this.getProject(oldId);
+        if (project) {
+            await this.delete(STORES.PROJECTS, oldId);
+            await this.update(STORES.PROJECTS, { ...project, id: newId });
+        }
+
+        for (const storeName of [STORES.ELEMENTS, STORES.BLOCK_REFERENCES, STORES.LAYERS]) {
+            const records = await this.getAllByIndex<any>(storeName, 'projectId', oldId);
+            for (const record of records) {
+                await this.update(storeName, { ...record, projectId: newId });
+            }
+        }
+
+        const queued = await this.getAll<SyncQueueItem>(STORES.SYNC_QUEUE);
+        for (const item of queued) {
+            if (item.entityType === 'PROJECT' && item.entityId === oldId) {
+                await this.update<SyncQueueItem>(STORES.SYNC_QUEUE, {
+                    ...item,
+                    entityId: newId
+                });
+            }
+        }
+
+        await this.setCacheMetadata(`sync.idMap.${oldId}`, newId);
     }
 
     async getProject(projectId: string): Promise<ProjectFile | undefined> {
@@ -283,30 +386,12 @@ class IndexedDBService {
             await this.delete(STORES.LAYERS, layer.id);
         }
 
-        await this.addToSyncQueue({
-            id: Math.random().toString(36).substr(2, 9),
-            operation: 'DELETE',
-            entityType: 'PROJECT',
-            entityId: projectId,
-            data: null,
-            timestamp: new Date().toISOString(),
-            status: 'PENDING'
-        });
+        await this.enqueueProjectDelete(projectId);
     }
 
     // Block operations
     async saveBlockDefinition(blockDef: BlockDefinition): Promise<void> {
         await this.update(STORES.BLOCK_DEFINITIONS, blockDef);
-
-        await this.addToSyncQueue({
-            id: Math.random().toString(36).substr(2, 9),
-            operation: 'UPDATE',
-            entityType: 'BLOCK_DEFINITION',
-            entityId: blockDef.id,
-            data: blockDef,
-            timestamp: new Date().toISOString(),
-            status: 'PENDING'
-        });
     }
 
     async getBlockDefinition(blockId: string): Promise<BlockDefinition | undefined> {
@@ -324,16 +409,6 @@ class IndexedDBService {
     async saveBlockReference(blockRef: BlockReference, projectId: string): Promise<void> {
         const refWithProject = { ...blockRef, projectId };
         await this.update(STORES.BLOCK_REFERENCES, refWithProject);
-
-        await this.addToSyncQueue({
-            id: Math.random().toString(36).substr(2, 9),
-            operation: 'UPDATE',
-            entityType: 'BLOCK_REFERENCE',
-            entityId: blockRef.id,
-            data: refWithProject,
-            timestamp: new Date().toISOString(),
-            status: 'PENDING'
-        });
     }
 
     async getBlockReferencesByProject(projectId: string): Promise<BlockReference[]> {
@@ -344,16 +419,6 @@ class IndexedDBService {
     async saveElement(element: CADElement, projectId: string): Promise<void> {
         const elemWithProject = { ...element, projectId };
         await this.update(STORES.ELEMENTS, elemWithProject);
-
-        await this.addToSyncQueue({
-            id: Math.random().toString(36).substr(2, 9),
-            operation: 'UPDATE',
-            entityType: 'ELEMENT',
-            entityId: element.id,
-            data: elemWithProject,
-            timestamp: new Date().toISOString(),
-            status: 'PENDING'
-        });
     }
 
     async saveElements(elements: CADElement[], projectId: string): Promise<void> {
@@ -380,16 +445,6 @@ class IndexedDBService {
     async saveLayer(layer: Layer, projectId: string): Promise<void> {
         const layerWithProject = { ...layer, projectId };
         await this.update(STORES.LAYERS, layerWithProject);
-
-        await this.addToSyncQueue({
-            id: Math.random().toString(36).substr(2, 9),
-            operation: 'UPDATE',
-            entityType: 'LAYER',
-            entityId: layer.id,
-            data: layerWithProject,
-            timestamp: new Date().toISOString(),
-            status: 'PENDING'
-        });
     }
 
     async getLayersByProject(projectId: string): Promise<Layer[]> {
@@ -403,6 +458,22 @@ class IndexedDBService {
 
     async getPendingSyncItems(): Promise<SyncQueueItem[]> {
         return this.getAllByIndex<SyncQueueItem>(STORES.SYNC_QUEUE, 'status', 'PENDING');
+    }
+
+    async getFailedSyncItems(): Promise<SyncQueueItem[]> {
+        return this.getAllByIndex<SyncQueueItem>(STORES.SYNC_QUEUE, 'status', 'FAILED');
+    }
+
+    /** 手动重试：把失败项重新放回待同步队列 */
+    async resetFailedSyncItems(): Promise<void> {
+        const items = await this.getFailedSyncItems();
+        for (const item of items) {
+            await this.update<SyncQueueItem>(STORES.SYNC_QUEUE, {
+                ...item,
+                status: 'PENDING',
+                error: undefined
+            });
+        }
     }
 
     async markSyncItemComplete(itemId: string): Promise<void> {
