@@ -1,0 +1,131 @@
+/**
+ * toolHints.ts — 当前工具与下一步提示
+ *
+ * 画布顶部、状态栏、底栏曾各自维护一套提示，容易互相矛盾。
+ * 这里统一成纯函数输出，状态栏是唯一展示位置。
+ */
+
+import type { DragMode } from "../types";
+import { ToolType } from "../types";
+
+export interface ToolHintInput {
+    tool: ToolType;
+    dragMode: DragMode | null;
+    /** 是否已有第一点（直线/矩形/圆） */
+    hasAnchor: boolean;
+    polyCount: number;
+    arcCount: number;
+    dimCount: number;
+    selectedCount: number;
+}
+
+export interface ToolHint {
+    /** 工具中文名 */
+    tool: string;
+    /** 下一步操作提示 */
+    next: string;
+}
+
+const TOOL_LABELS: Record<ToolType, string> = {
+    [ToolType.SELECT]: "选择",
+    [ToolType.PAN]: "平移",
+    [ToolType.LINE]: "直线",
+    [ToolType.POLYLINE]: "多段线",
+    [ToolType.CIRCLE]: "圆",
+    [ToolType.ARC]: "圆弧",
+    [ToolType.RECTANGLE]: "矩形",
+    [ToolType.TEXT]: "文字",
+    [ToolType.HATCH]: "填充",
+    [ToolType.COPY]: "复制",
+    [ToolType.TRIM]: "修剪",
+    [ToolType.MIRROR]: "镜像",
+    [ToolType.ROTATE]: "旋转",
+    [ToolType.SCALE]: "缩放",
+    [ToolType.OFFSET]: "偏移",
+    [ToolType.ARRAY]: "阵列",
+    [ToolType.DIMENSION]: "标注",
+    [ToolType.MEASURE]: "测量",
+    [ToolType.GEAR]: "齿轮",
+    [ToolType.INVOLUTE]: "渐开线",
+    [ToolType.SPIRAL]: "螺旋",
+    [ToolType.SPRING]: "弹簧",
+    [ToolType.POLYGON]: "多边形",
+    [ToolType.ELLIPSE]: "椭圆",
+};
+
+const ADVANCED_TOOLS = new Set<ToolType>([
+    ToolType.GEAR,
+    ToolType.INVOLUTE,
+    ToolType.SPIRAL,
+    ToolType.SPRING,
+    ToolType.POLYGON,
+    ToolType.ELLIPSE,
+]);
+
+export function toolLabel(tool: ToolType): string {
+    return TOOL_LABELS[tool] ?? tool;
+}
+
+export function describeToolHint(input: ToolHintInput): ToolHint {
+    const { tool, dragMode, hasAnchor, polyCount, arcCount, dimCount, selectedCount } = input;
+    const toolName = toolLabel(tool);
+    const next = (text: string): ToolHint => ({ tool: toolName, next: text });
+
+    switch (tool) {
+        case ToolType.SELECT:
+            if (selectedCount > 0) {
+                return next(`已选 ${selectedCount} 个：拖拽移动，或用夹点编辑；Shift + 点击可加选`);
+            }
+            return next("点击选择；向右拖拽为窗口选择，向左拖拽为交叉选择");
+        case ToolType.PAN:
+            return next("拖拽平移画布；滚轮以光标为中心缩放");
+        case ToolType.LINE:
+            return hasAnchor
+                ? next("指定下一点：移动光标、点击，或键入长度后回车")
+                : next("指定起点：可拖拽，也可点击两次（第二次确定终点）");
+        case ToolType.RECTANGLE:
+            return hasAnchor
+                ? next("指定对角点：移动光标、点击，或键入宽高后回车")
+                : next("指定第一个角点");
+        case ToolType.CIRCLE:
+            return hasAnchor
+                ? next("指定半径：移动光标、点击，或键入半径后回车")
+                : next("指定圆心");
+        case ToolType.POLYLINE:
+            return polyCount > 0
+                ? next(`已取 ${polyCount} 点：继续点击或键入长度，Enter 完成，Esc 取消`)
+                : next("指定起点");
+        case ToolType.ARC:
+            if (arcCount === 0) return next("指定圆弧起点");
+            if (arcCount === 1) return next("指定圆弧第二点");
+            return next("指定圆弧端点");
+        case ToolType.DIMENSION:
+            if (dimCount === 0) return next("指定标注起点");
+            if (dimCount === 1) return next("指定标注终点：点击或键入长度后回车");
+            return next("指定标注位置");
+        case ToolType.MEASURE:
+            return dragMode === "MEASURE" ? next("松开鼠标完成测量") : next("点击测量起点");
+        case ToolType.MIRROR:
+            return dragMode === "MIRROR_LINE" ? next("指定镜像线终点") : next("指定镜像线起点");
+        case ToolType.COPY:
+            return next(selectedCount > 0 ? "拖拽所选对象到目标位置" : "先选中要复制的对象");
+        case ToolType.ROTATE:
+            return next(selectedCount > 0 ? "点击基点，再拖拽确定角度" : "先选中要旋转的对象");
+        case ToolType.SCALE:
+            if (dragMode === "SCALE_ITEMS") return next("移动光标确定倍率，点击应用");
+            return next(selectedCount > 0 ? "点击缩放基点" : "先选中要缩放的对象");
+        case ToolType.OFFSET:
+            return next(selectedCount > 0 ? "点击确定偏移方向与距离" : "先选中要偏移的对象");
+        case ToolType.TRIM:
+            return next("点击要修剪掉的线段");
+        case ToolType.ARRAY:
+            return next("在弹窗中设置行列与间距");
+        case ToolType.TEXT:
+            return next("点击放置文字");
+        case ToolType.HATCH:
+            return next("点击闭合区域内部进行填充");
+        default:
+            if (ADVANCED_TOOLS.has(tool)) return next("点击插入位置并在弹窗中设置参数");
+            return next("点击画布开始");
+    }
+}

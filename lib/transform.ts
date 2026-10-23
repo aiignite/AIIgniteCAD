@@ -91,7 +91,6 @@ export function moveElementFromTo(element: CADElement, from: Point, to: Point): 
 export function copyElement(element: CADElement, delta: Point): CADElement {
     const copied = moveElement(element, delta);
     copied.id = generateId();
-    copied.selected = false;
     return copied;
 }
 
@@ -163,32 +162,32 @@ export function polarArray(
     const result: CADElement[] = [];
     const angleRad = degToRad(angleIncrement);
 
+    // 形心、轨道半径与初始角度对所有副本都相同，提前计算避免重复运算
+    const centroid = getElementsCentroid(elements);
+    const radius = distance(center, centroid);
+    const baseAngle = Math.atan2(centroid.y - center.y, centroid.x - center.x);
+
     for (let i = 1; i < count; i++) {
         const totalAngle = angleRad * i;
-        const rotated = rotateItems
-            ? rotateElements(elements, center, angleIncrement * i)
-            : moveElements(elements, { x: 0, y: 0 }); // Clone without rotation
-
-        // Move to circular position
-        const centroid = getElementsCentroid(elements);
-        const radius = distance(center, centroid);
-        const currentAngle = Math.atan2(centroid.y - center.y, centroid.x - center.x);
-        const newAngle = currentAngle + totalAngle;
 
         const newPosition = {
-            x: center.x + radius * Math.cos(newAngle),
-            y: center.y + radius * Math.sin(newAngle)
+            x: center.x + radius * Math.cos(baseAngle + totalAngle),
+            y: center.y + radius * Math.sin(baseAngle + totalAngle)
         };
 
-        const delta = {
-            x: newPosition.x - centroid.x,
-            y: newPosition.y - centroid.y
-        };
+        // rotateItems 为 true 时直接绕阵列中心旋转，形心会自然落到目标角度，
+        // 不能再额外平移，否则会对同一角度应用两次变换。
+        // 为 false 时保持原朝向，仅把形心平移到目标位置。
+        const copies = rotateItems
+            ? rotateElements(elements, center, angleIncrement * i)
+            : moveElements(elements, {
+                x: newPosition.x - centroid.x,
+                y: newPosition.y - centroid.y
+            });
 
-        result.push(...moveElements(rotated, delta).map(el => ({
+        result.push(...copies.map(el => ({
             ...el,
             id: generateId(),
-            selected: false
         })));
     }
 

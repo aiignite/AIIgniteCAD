@@ -246,3 +246,60 @@ input[type="range"]::-webkit-slider-track {
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
     "Courier New", monospace;
 }
+
+/* ---------------------------------------------------------------
+   AI 应用反馈
+   变更落图后短暂脉冲，帮助用户定位"AI 改在了哪里"。
+--------------------------------------------------------------- */
+@keyframes cad-ai-flash {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  25%,
+  80% {
+    opacity: 0.15;
+  }
+  55% {
+    opacity: 1;
+  }
+}
+
+.cad-ai-flash {
+  animation: cad-ai-flash 1.2s ease-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cad-ai-flash {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------
+   图框 / 打印
+   打印根节点通过 portal 挂在 body 下，打印时隐藏应用本体，
+   避免模态框祖先的 overflow / transform 影响输出。
+--------------------------------------------------------------- */
+.plot-print-root {
+  display: none;
+}
+
+@media print {
+  html,
+  body {
+    background: #ffffff !important;
+    overflow: visible !important;
+  }
+
+  #root {
+    display: none !important;
+  }
+
+  .plot-print-root {
+    display: block !important;
+  }
+
+  .plot-print-root > svg {
+    display: block;
+  }
+}

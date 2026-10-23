@@ -1,41 +1,50 @@
-import React, { useState } from 'react';
+/**
+ * Footer.tsx — 底部状态栏组件
+ * 提供命令行输入和状态切换（GRID/SNAP/ORTHO）
+ */
+
+import React, { useSyncExternalStore } from 'react';
+import { useCanvas } from '../store/canvasStore';
+import { getCanvasStatus, subscribeCanvasStatus } from '../store/canvasStatus';
+import { useCommandInput } from '../hooks/useCommandInput';
+import { snapTypeLabel } from '../lib/snapping';
+import { CollaborationToggle } from './CollaborationToggle';
 
 interface FooterProps {
-    orthoMode: boolean;
-    toggleOrtho: () => void;
-    snapMode: boolean;
-    toggleSnap: () => void;
-    gridMode: boolean;
-    toggleGrid: () => void;
     onCommand: (cmd: string) => void;
+    /** 被隔离 / 隐藏命令藏起来的图元数量，0 时不显示入口 */
+    hiddenCount: number;
+    /** 清除临时隐藏集 */
+    onShowAllObjects: () => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ 
-    orthoMode, toggleOrtho, 
-    snapMode, toggleSnap, 
-    gridMode, toggleGrid,
-    onCommand
-}) => {
-    const [inputValue, setInputValue] = useState("");
+/**
+ * 状态栏开关按钮
+ * 提取为模块级组件，避免每次渲染都创建新的组件类型
+ */
+const ToggleButton: React.FC<{ label: string; active: boolean; onClick: () => void }> = ({ label, active, onClick }) => (
+    <button
+        onClick={onClick}
+        className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors font-mono
+        ${active ? 'bg-cad-primary/20 text-cad-primary shadow-sm border border-cad-primary/30' : 'hover:bg-cad-text/10 text-cad-muted hover:text-cad-text border border-transparent'}`}
+    >
+        {label}
+    </button>
+);
 
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === 'Enter') {
-            if (inputValue.trim()) {
-                onCommand(inputValue);
-                setInputValue(""); // Clear after execution
-            }
-        }
-    };
-    
-    const ToggleButton = ({ label, active, onClick }: { label: string, active: boolean, onClick: () => void }) => (
-        <button 
-            onClick={onClick}
-            className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors font-mono
-            ${active ? 'bg-cad-primary/20 text-cad-primary shadow-sm border border-cad-primary/30' : 'hover:bg-cad-text/10 text-cad-muted hover:text-cad-text border border-transparent'}`}
-        >
-            {label}
-        </button>
+export const Footer: React.FC<FooterProps> = ({ onCommand, hiddenCount, onShowAllObjects }) => {
+    const { state, dispatch } = useCanvas();
+    const { orthoMode, polarMode, snapMode, gridMode, drawingSettings } = state;
+    const commandInput = useCommandInput(onCommand);
+    const canvasStatus = useSyncExternalStore(
+        subscribeCanvasStatus,
+        getCanvasStatus,
+        getCanvasStatus,
     );
+
+    const precision = Math.min(Math.max(drawingSettings.dimPrecision, 0), 4);
+    const coordinate = (value: number) =>
+        canvasStatus.active ? value.toFixed(precision) : "—";
 
     return (
         <footer className="flex flex-col shrink-0 z-20 border-t border-cad-border bg-cad-panel transition-colors duration-300">
@@ -44,35 +53,64 @@ export const Footer: React.FC<FooterProps> = ({
                 <span className="text-cad-primary font-mono text-sm mr-2 font-bold">&gt;</span>
                 <input 
                     className="bg-transparent border-none text-cad-text text-sm w-full focus:ring-0 placeholder-gray-500 font-mono focus:outline-none transition-colors duration-300" 
-                    placeholder="Type a command (e.g., LINE, CIRCLE, ORTHO)" 
+                    placeholder={commandInput.prompt ?? "输入命令（LINE、CIRCLE、SCALE 1.5、OFFSET 20、ARRAY 3 2 100 100）"} 
                     type="text"
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    onKeyDown={handleKeyDown}
+                    value={commandInput.value}
+                    onChange={(e) => commandInput.onChange(e.target.value)}
+                    onKeyDown={commandInput.onKeyDown}
                 />
-                <div className="hidden md:flex gap-2">
-                    <span className="text-[10px] text-cad-muted font-mono border border-cad-border rounded px-1.5 py-0.5 cursor-pointer hover:bg-cad-text/10 hover:text-cad-text transition-colors">ESC Cancel</span>
-                    <span className="text-[10px] text-cad-muted font-mono border border-cad-border rounded px-1.5 py-0.5 cursor-pointer hover:bg-cad-text/10 hover:text-cad-text transition-colors">ENTER Execute</span>
-                    <span className="text-[10px] text-cad-muted font-mono border border-cad-border rounded px-1.5 py-0.5 cursor-pointer hover:bg-cad-text/10 hover:text-cad-text transition-colors">DEL Delete</span>
+                <div className="flex items-center gap-2 min-w-0 max-w-[55%] shrink-0">
+                    {commandInput.hint ? (
+                        <span className={`text-[10px] font-mono truncate ${commandInput.pending ? 'text-cad-primary' : 'text-cad-muted'}`}>
+                            {commandInput.hint}
+                        </span>
+                    ) : (
+                        <div className="hidden md:flex items-center gap-2">
+                            <span className="text-[10px] text-cad-muted font-mono border border-cad-border rounded px-1.5 py-0.5 cursor-pointer hover:bg-cad-text/10 hover:text-cad-text transition-colors">Esc 取消</span>
+                            <span className="text-[10px] text-cad-muted font-mono border border-cad-border rounded px-1.5 py-0.5 cursor-pointer hover:bg-cad-text/10 hover:text-cad-text transition-colors">Tab 补全</span>
+                            <span className="text-[10px] text-cad-muted font-mono border border-cad-border rounded px-1.5 py-0.5 cursor-pointer hover:bg-cad-text/10 hover:text-cad-text transition-colors">↑↓ 历史</span>
+                        </div>
+                    )}
                 </div>
             </div>
 
             {/* Status Bar */}
-            <div className="flex items-center justify-between px-4 h-8 bg-cad-panel text-[11px] text-cad-muted font-medium select-none transition-colors duration-300">
-                <div className="flex items-center gap-6">
-                    <div className="flex items-center gap-2 font-mono">
-                        <span className="text-cad-muted">Ready</span>
-                    </div>
+            <div className="flex items-center justify-between gap-4 px-4 h-8 bg-cad-panel text-[11px] text-cad-muted font-medium select-none transition-colors duration-300">
+                <div className="flex items-center gap-4 font-mono min-w-0">
+                    <span
+                        className="text-cad-text truncate max-w-[380px]"
+                        title={canvasStatus.hint}
+                    >
+                        {canvasStatus.hint || "就绪"}
+                    </span>
+                    <span className="hidden md:inline">X <span className="text-cad-text">{coordinate(canvasStatus.x)}</span></span>
+                    <span className="hidden md:inline">Y <span className="text-cad-text">{coordinate(canvasStatus.y)}</span></span>
+                    <span>缩放 <span className="text-cad-text">{canvasStatus.zoomPercent}%</span></span>
+                    <span className="min-w-[92px] text-cad-primary font-bold">
+                        {canvasStatus.snapType ? `捕捉 ${snapTypeLabel(canvasStatus.snapType)}` : ""}
+                    </span>
                 </div>
                 
-                <div className="flex items-center gap-1">
-                    <button className="px-2 py-0.5 rounded hover:bg-cad-text/10 text-cad-text font-bold transition-colors">MODEL</button>
+                <div className="flex items-center gap-1 shrink-0">
+                    <button className="px-2 py-0.5 rounded hover:bg-cad-text/10 text-cad-text font-bold transition-colors">模型空间</button>
                     <div className="w-px h-3 bg-cad-border mx-1"></div>
-                    <ToggleButton label="GRID" active={gridMode} onClick={toggleGrid} />
-                    <ToggleButton label="SNAP" active={snapMode} onClick={toggleSnap} />
-                    <ToggleButton label="ORTHO" active={orthoMode} onClick={toggleOrtho} />
-                    <ToggleButton label="POLAR" active={false} onClick={() => {}} />
-                    <ToggleButton label="OSNAP" active={snapMode} onClick={toggleSnap} />
+                    {hiddenCount > 0 && (
+                        <button
+                            data-action="show-all-objects"
+                            onClick={onShowAllObjects}
+                            title="显示被隔离或隐藏的图元"
+                            className="px-2 py-0.5 rounded text-[10px] font-bold border transition-colors
+                            bg-amber-500/15 text-amber-600 border-amber-500/30 hover:bg-amber-500/25 dark:text-amber-400"
+                        >
+                            已隐藏 {hiddenCount}
+                        </button>
+                    )}
+                    <ToggleButton label="栅格" active={gridMode} onClick={() => dispatch({ type: "SET_GRID_MODE", value: !gridMode })} />
+                    <ToggleButton label="捕捉" active={snapMode} onClick={() => dispatch({ type: "SET_SNAP_MODE", value: !snapMode })} />
+                    <ToggleButton label="正交" active={orthoMode} onClick={() => dispatch({ type: "SET_ORTHO_MODE", value: !orthoMode })} />
+                    <ToggleButton label="极轴" active={polarMode} onClick={() => dispatch({ type: "SET_POLAR_MODE", value: !polarMode })} />
+                    <div className="w-px h-3 bg-cad-border mx-1"></div>
+                    <CollaborationToggle />
                 </div>
             </div>
         </footer>

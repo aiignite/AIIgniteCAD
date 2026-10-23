@@ -590,6 +590,30 @@ export function getElementBoundingBox(element: CADElement): BoundingBox {
         };
     }
 
+    // 标注：引出线范围由起点、终点与偏移点共同决定
+    if (element.type === 'DIMENSION' && element.start && element.end) {
+        const points = [element.start, element.end];
+        if (element.offsetPoint) points.push(element.offsetPoint);
+        return boundingBoxFromPoints(points);
+    }
+
+    // 椭圆：按中心与半径轴计算外包矩形
+    if (element.type === 'ELLIPSE' && element.center && element.radiusX && element.radiusY) {
+        const rx = Math.abs(element.radiusX);
+        const ry = Math.abs(element.radiusY);
+        return {
+            minX: element.center.x - rx,
+            minY: element.center.y - ry,
+            maxX: element.center.x + rx,
+            maxY: element.center.y + ry
+        };
+    }
+
+    // 以离散点表示的曲线（齿轮/螺旋/弹簧等）统一取点集包围盒
+    if (element.points && element.points.length > 0) {
+        return boundingBoxFromPoints(element.points);
+    }
+
     return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 }
 
