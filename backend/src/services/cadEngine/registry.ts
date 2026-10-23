@@ -3,8 +3,6 @@
  * 定义所有可用的CAD算法及其元数据
  */
 
-import { Point, CADElement } from '../../types';
-
 // 参数类型定义
 export type ParameterType = 
     | 'Point' 
