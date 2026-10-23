@@ -253,6 +253,43 @@ describe("DXF 导入", () => {
         ]);
     });
 
+    it("合并旧式 POLYLINE + VERTEX 序列", () => {
+        const dxf = externalDxf([
+            "0", "POLYLINE", "8", "WALLS", "70", "1",
+            "0", "VERTEX", "8", "WALLS", "10", "0", "20", "0",
+            "0", "VERTEX", "8", "WALLS", "10", "10", "20", "0",
+            "0", "VERTEX", "8", "WALLS", "10", "10", "20", "10",
+            "0", "SEQEND",
+        ]);
+
+        const parsed = parseDXF(dxf);
+        expect(parsed).toHaveLength(1);
+        expect(parsed[0].type).toBe("LWPOLYLINE");
+        expect(parsed[0].closed).toBe(true);
+        expect(parsed[0].points).toEqual([
+            { x: 0, y: 0 },
+            { x: 10, y: 0 },
+            { x: 10, y: -10 },
+        ]);
+    });
+
+    it("把多段线 bulge 采样成圆弧折线", () => {
+        const dxf = externalDxf([
+            "0", "LWPOLYLINE", "8", "0", "90", "2", "70", "0",
+            "10", "0", "20", "0", "42", "1",
+            "10", "10", "20", "0",
+        ]);
+
+        const parsed = parseDXF(dxf);
+        expect(parsed[0].type).toBe("LWPOLYLINE");
+        expect(parsed[0].points.length).toBeGreaterThan(2);
+        expect(
+            parsed[0].points.some(
+                (point) => Math.abs(point.x - 5) < 1e-6 && Math.abs(point.y - 5) < 1e-6,
+            ),
+        ).toBe(true);
+    });
+
     it("导入 ARC 时将角度映射到屏幕坐标", () => {
         const dxf = externalDxf([
             "0", "ARC", "8", "0", "10", "0", "20", "0", "40", "10", "50", "0", "51", "90",
@@ -321,6 +358,103 @@ describe("DXF 导入", () => {
         expect(parsed).toHaveLength(1);
         expect(parsed[0].type).toBe("LINE");
     });
+
+    it("展开 INSERT：应用基点、缩放、旋转与图层继承", () => {
+        const dxf = [
+            "0", "SECTION", "2", "BLOCKS",
+            "0", "BLOCK", "8", "0", "2", "BOX", "70", "0", "10", "0", "20", "0", "3", "BOX",
+            "0", "LINE", "8", "0", "10", "0", "20", "0", "11", "10", "21", "0",
+            "0", "ENDBLK",
+            "0", "ENDSEC",
+            "0", "SECTION", "2", "ENTITIES",
+            "0", "INSERT", "8", "WALLS", "2", "BOX",
+            "10", "100", "20", "50", "41", "2", "42", "2", "50", "90",
+            "0", "ENDSEC", "0", "EOF",
+        ].join("\n");
+
+        const parsed = parseDXF(dxf);
+        expect(parsed).toHaveLength(1);
+        expect(parsed[0].type).toBe("LINE");
+        expect(parsed[0].layer).toBe("WALLS");
+        expect(parsed[0].start).toEqual({ x: 100, y: -50 });
+        expect(parsed[0].end?.x).toBeCloseTo(100, 5);
+        expect(parsed[0].end?.y).toBeCloseTo(-70, 5);
+    });
+
+    it("展开嵌套 INSERT 并处理块基点", () => {
+        const dxf = [
+            "0", "SECTION", "2", "BLOCKS",
+            "0", "BLOCK", "2", "INNER", "10", "5", "20", "5",
+            "0", "CIRCLE", "8", "0", "10", "5", "20", "5", "40", "2",
+            "0", "ENDBLK",
+            "0", "BLOCK", "2", "OUTER", "10", "0", "20", "0",
+            "0", "INSERT", "8", "0", "2", "INNER", "10", "0", "20", "0",
+            "0", "ENDBLK",
+            "0", "ENDSEC",
+            "0", "SECTION", "2", "ENTITIES",
+            "0", "INSERT", "8", "MECH", "2", "OUTER", "10", "10", "20", "20",
+            "0", "ENDSEC", "0", "EOF",
+        ].join("\n");
+
+        const parsed = parseDXF(dxf);
+        expect(parsed).toHaveLength(1);
+        expect(parsed[0].type).toBe("CIRCLE");
+        expect(parsed[0].layer).toBe("MECH");
+        expect(parsed[0].center).toEqual({ x: 10, y: -20 });
+        expect(parsed[0].radius).toBe(2);
+    });
+
+    it("解码 TEXT 的 Unicode 转义", () => {
+        const dxf = externalDxf([
+            "0", "TEXT", "8", "0", "10", "0", "20", "0", "40", "5", "1", "\\U+4E2D\\U+6587",
+        ]);
+
+        expect(parseDXF(dxf)[0].text).toBe("中文");
+    });
+
+    it("把 MTEXT 转成 TEXT 并去掉内联格式码", () => {
+        const dxf = externalDxf([
+            "0", "MTEXT", "8", "TEXT", "10", "10", "20", "20", "40", "5", "50", "30",
+            "1", "{\\fArial|b0|i0|c0;Hello}", "3", "\\PWorld",
+        ]);
+
+        const parsed = parseDXF(dxf);
+        expect(parsed).toHaveLength(1);
+        expect(parsed[0].type).toBe("TEXT");
+        expect(parsed[0].text).toBe("Hello World");
+        expect(parsed[0].fontSize).toBe(5);
+        expect(parsed[0].start).toEqual({ x: 10, y: -20 });
+        expect(parsed[0].rotation).toBe(30);
+    });
+
+    it("DIMENSION 优先展开匿名块，缺失时退化为标注图元", () => {
+        const withBlock = [
+            "0", "SECTION", "2", "BLOCKS",
+            "0", "BLOCK", "2", "*D1", "10", "0", "20", "0",
+            "0", "LINE", "8", "DIM", "10", "0", "20", "0", "11", "10", "21", "0",
+            "0", "ENDBLK",
+            "0", "ENDSEC",
+            "0", "SECTION", "2", "ENTITIES",
+            "0", "DIMENSION", "8", "DIM", "2", "*D1",
+            "10", "0", "20", "0", "11", "5", "21", "2", "13", "0", "23", "0", "14", "10", "24", "0",
+            "0", "ENDSEC", "0", "EOF",
+        ].join("\n");
+
+        const expanded = parseDXF(withBlock);
+        expect(expanded).toHaveLength(1);
+        expect(expanded[0].type).toBe("LINE");
+
+        const fallback = externalDxf([
+            "0", "DIMENSION", "8", "DIM",
+            "10", "0", "20", "0", "11", "5", "21", "2", "13", "0", "23", "0", "14", "10", "24", "0",
+        ]);
+        const parsed = parseDXF(fallback);
+        expect(parsed).toHaveLength(1);
+        expect(parsed[0].type).toBe("DIMENSION");
+        expect(parsed[0].start).toEqual({ x: 0, y: 0 });
+        expect(parsed[0].end).toEqual({ x: 10, y: 0 });
+        expect(parsed[0].offsetPoint).toEqual({ x: 5, y: -2 });
+    });
 });
 
 describe("DXF 往返", () => {
@@ -377,6 +511,21 @@ describe("DXF 往返", () => {
         expect(ellipse.radiusX).toBeCloseTo(20, 5);
         expect(ellipse.radiusY).toBeCloseTo(10, 5);
         expect(ellipse.rotation).toBeCloseTo(30, 5);
+    });
+
+    it("导出后再导入保持文字旋转", () => {
+        const source = makeElement({
+            type: "TEXT",
+            start: { x: 10, y: 20 },
+            text: "TILT",
+            fontSize: 8,
+            rotation: 30,
+        });
+
+        const parsed = parseDXF(exportToDXF([source]));
+        expect(parsed[0].type).toBe("TEXT");
+        expect(parsed[0].text).toBe("TILT");
+        expect(parsed[0].rotation).toBeCloseTo(30, 5);
     });
 
     it("导出后再导入保持圆弧的起止角度与方向", () => {

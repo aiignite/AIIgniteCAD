@@ -232,6 +232,16 @@ const CADElementRenderer: React.FC<CADElementRendererProps> = ({
                 : 'var(--cad-text)';
     // 位移为零时省略 transform，减少无意义的属性
     const transform = offsetX !== 0 || offsetY !== 0 ? `translate(${offsetX}, ${offsetY})` : undefined;
+    // DXF 文字旋转为世界坐标逆时针，屏幕 Y 向下时需取反
+    const textRotation = el.rotation ?? 0;
+    const textTransform = [
+        transform,
+        el.start && Math.abs(textRotation) > 1e-9
+            ? `rotate(${-textRotation} ${el.start.x} ${el.start.y})`
+            : undefined,
+    ]
+        .filter(Boolean)
+        .join(' ') || undefined;
 
     if (el.type === 'LINE' && el.start && el.end) {
         return <line x1={el.start.x} y1={el.start.y} x2={el.end.x} y2={el.end.y} {...style} transform={transform} vectorEffect={vectorEffect} />;
@@ -253,7 +263,7 @@ const CADElementRenderer: React.FC<CADElementRendererProps> = ({
                 fill={textFill}
                 fontSize={el.fontSize || 12}
                 fontFamily="monospace"
-                transform={transform}
+                transform={textTransform}
                 style={{ userSelect: 'none', ...style, stroke: 'none' }}
             >
                 {el.text}

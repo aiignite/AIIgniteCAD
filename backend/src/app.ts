@@ -20,6 +20,7 @@ import { createLlmChatRouter } from "./routes/llmChat";
 import blockRoutes from "./routes/blocks";
 import assistantRoutes from "./routes/assistants";
 import skillRoutes from "./routes/skills";
+import importRoutes from "./routes/imports";
 import metricsRoutes from "./routes/metrics";
 import telemetryRoutes from "./routes/telemetry";
 import { requestId, requestLogger } from "./middleware/observability";
@@ -129,6 +130,7 @@ export function createApp(): Express {
         chat: "/api/chat",
         assistants: "/api/assistants",
         skills: "/api/skills",
+        import: "/api/import/dwg",
         metrics: "/api/metrics",
         telemetry: "/api/telemetry/events",
       },
@@ -146,6 +148,7 @@ export function createApp(): Express {
   app.use("/api/blocks", blockRoutes);
   app.use("/api/assistants", assistantRoutes);
   app.use("/api/skills", skillRoutes);
+  app.use("/api/import", importRoutes);
   app.use("/api/metrics", metricsRoutes);
   app.use("/api/telemetry", telemetryRoutes);
 

@@ -314,7 +314,11 @@ export const exportToDXF = (elements: CADElement[]): string => {
             const start = dxfPoint(el.start);
             const safeText = el.text.replace(/\r?\n/g, ' ');
             dxf += entityHeader('TEXT', layer, color);
-            dxf += `10\n${num(start.x)}\n20\n${num(start.y)}\n30\n0\n40\n${num(el.fontSize || 12)}\n1\n${safeText}\n`;
+            dxf += `10\n${num(start.x)}\n20\n${num(start.y)}\n30\n0\n40\n${num(el.fontSize || 12)}\n`;
+            if (el.rotation && Math.abs(el.rotation) > 1e-9) {
+                dxf += `50\n${num(el.rotation)}\n`;
+            }
+            dxf += `1\n${safeText}\n`;
         } else if (el.type === 'LWPOLYLINE' && el.points) {
             dxf += writePolyline(layer, color, el.points, Boolean(el.closed));
         } else if (el.type === 'ARC' && el.center && el.radius && el.startAngle !== undefined && el.endAngle !== undefined) {
@@ -368,7 +372,8 @@ interface PendingLayer {
     trueColor?: number;
 }
 
-interface PendingEntity {
+/** DXF 世界坐标下的原始实体（Y 向上）；块展开完成后再统一转屏幕坐标 */
+interface RawDxfEntity {
     type: string;
     layer: string;
     points: Point[];
@@ -376,17 +381,47 @@ interface PendingEntity {
     y1?: number;
     x2?: number;
     y2?: number;
-    radius?: number;
+    x3?: number;
+    y3?: number;
+    x4?: number;
+    y4?: number;
     measure?: number;
     text?: string;
     startAngle?: number;
     endAngle?: number;
+    rotation?: number;
     closed?: boolean;
     aci?: number;
     trueColor?: number;
     majorX?: number;
     majorY?: number;
     ratio?: number;
+    /** LWPOLYLINE 每个顶点的凸度（tan(圆心角/4)） */
+    bulges?: number[];
+    /** INSERT / DIMENSION 引用的块名 */
+    blockName?: string;
+    scaleX?: number;
+    scaleY?: number;
+    columnCount?: number;
+    rowCount?: number;
+    columnSpacing?: number;
+    rowSpacing?: number;
+}
+
+interface RawBlock {
+    name: string;
+    basePoint: Point;
+    entities: RawDxfEntity[];
+}
+
+/** 2D 仿射矩阵：x' = a*x + c*y + e，y' = b*x + d*y + f */
+interface DxfTransform {
+    a: number;
+    b: number;
+    c: number;
+    d: number;
+    e: number;
+    f: number;
 }
 
 const SUPPORTED_ENTITIES = new Set([
@@ -394,9 +429,92 @@ const SUPPORTED_ENTITIES = new Set([
     'CIRCLE',
     'LWPOLYLINE',
     'TEXT',
+    'MTEXT',
     'ARC',
     'ELLIPSE',
+    'INSERT',
+    'DIMENSION',
+    // 旧式多段线：POLYLINE 后跟若干 VERTEX，再以 SEQEND 结束
+    'POLYLINE',
+    'VERTEX',
 ]);
+
+const MAX_BLOCK_DEPTH = 8;
+const MAX_EXPANDED_ENTITIES = 200_000;
+
+const IDENTITY_TRANSFORM: DxfTransform = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+
+const multiplyTransform = (left: DxfTransform, right: DxfTransform): DxfTransform => ({
+    a: left.a * right.a + left.c * right.b,
+    b: left.b * right.a + left.d * right.b,
+    c: left.a * right.c + left.c * right.d,
+    d: left.b * right.c + left.d * right.d,
+    e: left.a * right.e + left.c * right.f + left.e,
+    f: left.b * right.e + left.d * right.f + left.f,
+});
+
+const translationTransform = (x: number, y: number): DxfTransform => ({
+    a: 1,
+    b: 0,
+    c: 0,
+    d: 1,
+    e: x,
+    f: y,
+});
+
+const scalingTransform = (x: number, y: number): DxfTransform => ({
+    a: x,
+    b: 0,
+    c: 0,
+    d: y,
+    e: 0,
+    f: 0,
+});
+
+const rotationTransform = (radians: number): DxfTransform => ({
+    a: Math.cos(radians),
+    b: Math.sin(radians),
+    c: -Math.sin(radians),
+    d: Math.cos(radians),
+    e: 0,
+    f: 0,
+});
+
+const applyPoint = (matrix: DxfTransform, point: Point): Point => ({
+    x: matrix.a * point.x + matrix.c * point.y + matrix.e,
+    y: matrix.b * point.x + matrix.d * point.y + matrix.f,
+});
+
+const applyVector = (matrix: DxfTransform, x: number, y: number): Point => ({
+    x: matrix.a * x + matrix.c * y,
+    y: matrix.b * x + matrix.d * y,
+});
+
+/** 块内非均匀缩放时按主方向取近似半径，避免圆弧直接消失 */
+const uniformScale = (matrix: DxfTransform): number =>
+    Math.hypot(matrix.a, matrix.b) ||
+    Math.sqrt(Math.abs(matrix.a * matrix.d - matrix.b * matrix.c)) ||
+    1;
+
+const transformRotation = (matrix: DxfTransform): number =>
+    (Math.atan2(matrix.b, matrix.a) * 180) / Math.PI;
+
+const createRawEntity = (type: string): RawDxfEntity => ({
+    type,
+    layer: '0',
+    points: [],
+    ...(type === 'LWPOLYLINE' || type === 'VERTEX' ? { bulges: [] } : {}),
+    ...(type === 'INSERT'
+        ? {
+              scaleX: 1,
+              scaleY: 1,
+              columnCount: 1,
+              rowCount: 1,
+              columnSpacing: 0,
+              rowSpacing: 0,
+          }
+        : {}),
+});
 
 const tokenize = (content: string): DxfPair[] => {
     const lines = content.split(/\r?\n/);
@@ -409,16 +527,42 @@ const tokenize = (content: string): DxfPair[] => {
     return pairs;
 };
 
-/** 解析 DXF 文本为应用图元；Y 取反，角度与方向同步翻转 */
+/** 把旧式 POLYLINE + VERTEX 序列合并成应用支持的 LWPOLYLINE */
+const mergeOldPolylines = (source: RawDxfEntity[]): RawDxfEntity[] => {
+    const merged: RawDxfEntity[] = [];
+    for (let i = 0; i < source.length; i++) {
+        const entity = source[i];
+        if (entity.type !== 'POLYLINE') {
+            merged.push(entity);
+            continue;
+        }
+        const points = [...entity.points];
+        const bulges = [...(entity.bulges ?? [])];
+        let j = i + 1;
+        while (j < source.length && source[j].type === 'VERTEX') {
+            const vertex = source[j];
+            points.push({ x: vertex.x1 ?? 0, y: vertex.y1 ?? 0 });
+            bulges.push(vertex.bulges?.[0] ?? 0);
+            j++;
+        }
+        merged.push({ ...entity, type: 'LWPOLYLINE', points, bulges });
+        i = j - 1;
+    }
+    return merged;
+};
+
+/** 解析 DXF 文本为应用图元；块引用先展开，再统一 Y 取反与角度翻转 */
 export const parseDXF = (dxfContent: string): CADElement[] => {
     const pairs = tokenize(dxfContent);
-    const elements: CADElement[] = [];
     const layerColors = new Map<string, string>();
+    const blocks: RawBlock[] = [];
+    const entities: RawDxfEntity[] = [];
 
     let section = '';
     let tableName = '';
     let pendingLayer: PendingLayer | null = null;
-    let entity: PendingEntity | null = null;
+    let entity: RawDxfEntity | null = null;
+    let currentBlock: RawBlock | null = null;
 
     const resolveColor = (record: { aci?: number; trueColor?: number }, layer: string): string => {
         if (record.trueColor !== undefined) {
@@ -442,8 +586,8 @@ export const parseDXF = (dxfContent: string): CADElement[] => {
 
     const flushEntity = () => {
         if (!entity) return;
-        const parsed = finalizeEntity(entity, resolveColor);
-        if (parsed) elements.push(parsed);
+        if (currentBlock) currentBlock.entities.push(entity);
+        else entities.push(entity);
         entity = null;
     };
 
@@ -461,6 +605,7 @@ export const parseDXF = (dxfContent: string): CADElement[] => {
             if (value === 'ENDSEC') {
                 section = '';
                 tableName = '';
+                currentBlock = null;
                 continue;
             }
             if (value === 'TABLE') {
@@ -475,8 +620,23 @@ export const parseDXF = (dxfContent: string): CADElement[] => {
                 pendingLayer = { name: '0' };
                 continue;
             }
+            if (section === 'BLOCKS') {
+                if (value === 'BLOCK') {
+                    currentBlock = { name: '', basePoint: { x: 0, y: 0 }, entities: [] };
+                    continue;
+                }
+                if (value === 'ENDBLK') {
+                    if (currentBlock?.name) blocks.push(currentBlock);
+                    currentBlock = null;
+                    continue;
+                }
+                if (currentBlock && SUPPORTED_ENTITIES.has(value)) {
+                    entity = createRawEntity(value);
+                }
+                continue;
+            }
             if (section === 'ENTITIES' && SUPPORTED_ENTITIES.has(value)) {
-                entity = { type: value, layer: '0', points: [] };
+                entity = createRawEntity(value);
             }
             continue;
         }
@@ -488,6 +648,17 @@ export const parseDXF = (dxfContent: string): CADElement[] => {
             continue;
         }
 
+        if (section === 'BLOCKS' && currentBlock) {
+            if (!entity) {
+                if (code === 2 || code === 3) currentBlock.name = value;
+                else if (code === 10) currentBlock.basePoint.x = Number.parseFloat(value) || 0;
+                else if (code === 20) currentBlock.basePoint.y = Number.parseFloat(value) || 0;
+                continue;
+            }
+            parseEntityProp(entity, code, value);
+            continue;
+        }
+
         if (section === 'ENTITIES' && entity) {
             parseEntityProp(entity, code, value);
         }
@@ -495,18 +666,44 @@ export const parseDXF = (dxfContent: string): CADElement[] => {
 
     flushEntity();
     flushLayer();
+
+    const mergedEntities = mergeOldPolylines(entities);
+    for (const block of blocks) block.entities = mergeOldPolylines(block.entities);
+
+    const blockMap = new Map<string, RawBlock>();
+    for (const block of blocks) blockMap.set(block.name.toLowerCase(), block);
+
+    const expanded: RawDxfEntity[] = [];
+    for (const item of mergedEntities) {
+        expanded.push(
+            ...expandEntity(item, blockMap, IDENTITY_TRANSFORM, new Set<string>(), 0),
+        );
+        if (expanded.length >= MAX_EXPANDED_ENTITIES) break;
+    }
+
+    const elements: CADElement[] = [];
+    for (const item of expanded.slice(0, MAX_EXPANDED_ENTITIES)) {
+        const parsed = finalizeEntity(item, resolveColor);
+        if (parsed) elements.push(parsed);
+    }
     return elements;
 };
 
-function parseEntityProp(entity: PendingEntity, code: number, value: string) {
+function parseEntityProp(entity: RawDxfEntity, code: number, value: string) {
     const val = Number.parseFloat(value);
     switch (code) {
         case 8:
             entity.layer = value || '0';
             break;
+        case 2:
+            entity.blockName = value;
+            break;
         case 10:
             entity.x1 = val;
-            if (entity.type === 'LWPOLYLINE') entity.points.push({ x: val, y: 0 });
+            if (entity.type === 'LWPOLYLINE') {
+                entity.points.push({ x: val, y: 0 });
+                entity.bulges?.push(0);
+            }
             break;
         case 20:
             entity.y1 = val;
@@ -522,30 +719,70 @@ function parseEntityProp(entity: PendingEntity, code: number, value: string) {
             if (entity.type === 'ELLIPSE') entity.majorY = val;
             else entity.y2 = val;
             break;
+        case 13:
+            entity.x3 = val;
+            break;
+        case 23:
+            entity.y3 = val;
+            break;
+        case 14:
+            entity.x4 = val;
+            break;
+        case 24:
+            entity.y4 = val;
+            break;
         case 40:
             if (entity.type === 'ELLIPSE') entity.ratio = val;
             else entity.measure = val;
             break;
         case 41:
-            // 椭圆起始参数，当前按整椭圆导入
+            // INSERT 的 X 缩放；椭圆起止参数当前按整椭圆导入
+            if (entity.type === 'INSERT') entity.scaleX = val;
             break;
         case 42:
-            // 椭圆终止参数，当前按整椭圆导入
+            if (entity.type === 'INSERT') entity.scaleY = val;
+            else if (entity.type === 'DIMENSION') entity.measure = val;
+            else if (entity.type === 'LWPOLYLINE' && entity.bulges) {
+                entity.bulges[Math.max(0, entity.points.length - 1)] = val;
+            } else if (entity.type === 'VERTEX' && entity.bulges) {
+                entity.bulges[0] = val;
+            }
+            break;
+        case 44:
+            if (entity.type === 'INSERT') entity.columnSpacing = val;
+            break;
+        case 45:
+            if (entity.type === 'INSERT') entity.rowSpacing = val;
             break;
         case 50:
-            entity.startAngle = val;
+            if (entity.type === 'ARC') entity.startAngle = val;
+            else entity.rotation = val;
             break;
         case 51:
-            entity.endAngle = val;
+            if (entity.type === 'ARC') entity.endAngle = val;
             break;
         case 1:
-            entity.text = value;
+            entity.text = entity.type === 'MTEXT' ? `${entity.text ?? ''}${value}` : value;
+            break;
+        case 3:
+            if (entity.type === 'MTEXT') entity.text = `${entity.text ?? ''}${value}`;
             break;
         case 62:
             entity.aci = Number.parseInt(value, 10);
             break;
         case 70:
-            entity.closed = (Number.parseInt(value, 10) & 1) === 1;
+            if (entity.type === 'LWPOLYLINE') {
+                entity.closed = (Number.parseInt(value, 10) & 1) === 1;
+            } else if (entity.type === 'INSERT') {
+                entity.columnCount = Math.max(1, Number.parseInt(value, 10) || 1);
+            } else if (entity.type === 'POLYLINE') {
+                entity.closed = (Number.parseInt(value, 10) & 1) === 1;
+            }
+            break;
+        case 71:
+            if (entity.type === 'INSERT') {
+                entity.rowCount = Math.max(1, Number.parseInt(value, 10) || 1);
+            }
             break;
         case 420:
             entity.trueColor = Number.parseInt(value, 10);
@@ -560,8 +797,249 @@ function parseEntityProp(entity: PendingEntity, code: number, value: string) {
     }
 }
 
+/** 解码 DXF 的 Unicode 转义与常见 %% 控制码 */
+const decodeDxfText = (raw: string): string =>
+    raw
+        .replace(/\\U\+([0-9a-fA-F]{4})/g, (_, hex: string) =>
+            String.fromCharCode(Number.parseInt(hex, 16)),
+        )
+        .replace(/%%[dD]/g, '°')
+        .replace(/%%[cC]/g, '⌀')
+        .replace(/%%[pP]/g, '±');
+
+/** 去掉 MTEXT 的内联格式码，保留可读文本 */
+const cleanMText = (raw: string): string =>
+    decodeDxfText(raw)
+        .replace(/\\P/gi, ' ')
+        .replace(/\\~/g, ' ')
+        .replace(/\\S([^;^]*)\^([^;]*);/g, '$1/$2')
+        .replace(/\\[A-Za-z][^;\\]*;/g, '')
+        .replace(/\\[LlOoKk]/g, '')
+        .replace(/\\\\/g, '\\')
+        .replace(/[{}]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+const inheritLayer = (source: RawDxfEntity, parentLayer: string): RawDxfEntity =>
+    source.layer === '0' && parentLayer !== '0' ? { ...source, layer: parentLayer } : source;
+
+function transformRawEntity(entity: RawDxfEntity, matrix: DxfTransform): RawDxfEntity {
+    const scale = uniformScale(matrix);
+    const rotationOffset = transformRotation(matrix);
+    const transformed: RawDxfEntity = {
+        ...entity,
+        points: entity.points.map((point) => applyPoint(matrix, point)),
+        ...(entity.bulges
+            ? {
+                  bulges:
+                      matrix.a * matrix.d - matrix.b * matrix.c < 0
+                          ? entity.bulges.map((bulge) => -bulge)
+                          : [...entity.bulges],
+              }
+            : {}),
+    };
+
+    const move = (x?: number, y?: number): Point | null =>
+        x === undefined || y === undefined ? null : applyPoint(matrix, { x, y });
+
+    const p1 = move(entity.x1, entity.y1);
+    if (p1) {
+        transformed.x1 = p1.x;
+        transformed.y1 = p1.y;
+    }
+    const p2 = move(entity.x2, entity.y2);
+    if (p2) {
+        transformed.x2 = p2.x;
+        transformed.y2 = p2.y;
+    }
+    if (entity.type === 'DIMENSION') {
+        const p3 = move(entity.x3, entity.y3);
+        if (p3) {
+            transformed.x3 = p3.x;
+            transformed.y3 = p3.y;
+        }
+        const p4 = move(entity.x4, entity.y4);
+        if (p4) {
+            transformed.x4 = p4.x;
+            transformed.y4 = p4.y;
+        }
+        transformed.rotation = (entity.rotation ?? 0) + rotationOffset;
+        return transformed;
+    }
+
+    if (entity.type === 'CIRCLE' || entity.type === 'ARC') {
+        transformed.measure = (entity.measure ?? 10) * scale;
+        if (entity.type === 'ARC') {
+            transformed.startAngle = (entity.startAngle ?? 0) + rotationOffset;
+            transformed.endAngle = (entity.endAngle ?? 0) + rotationOffset;
+        }
+        return transformed;
+    }
+    if (entity.type === 'TEXT') {
+        transformed.measure = (entity.measure ?? 12) * scale;
+        transformed.rotation = (entity.rotation ?? 0) + rotationOffset;
+        return transformed;
+    }
+    if (entity.type === 'ELLIPSE') {
+        const major = applyVector(matrix, entity.majorX ?? 10, entity.majorY ?? 0);
+        const ratio = entity.ratio && entity.ratio > 0 ? entity.ratio : 1;
+        const minor = applyVector(
+            matrix,
+            -(entity.majorY ?? 0) * ratio,
+            (entity.majorX ?? 10) * ratio,
+        );
+        const majorLength = Math.hypot(major.x, major.y) || 1;
+        const minorLength = Math.hypot(minor.x, minor.y);
+        transformed.majorX = major.x;
+        transformed.majorY = major.y;
+        transformed.ratio = Math.min(1, minorLength / majorLength);
+        return transformed;
+    }
+    return transformed;
+}
+
+function expandEntity(
+    entity: RawDxfEntity,
+    blocks: Map<string, RawBlock>,
+    matrix: DxfTransform,
+    stack: Set<string>,
+    depth: number,
+): RawDxfEntity[] {
+    if (entity.type === 'INSERT') {
+        return expandInsert(entity, blocks, matrix, stack, depth);
+    }
+    if (entity.type === 'DIMENSION') {
+        return expandDimension(entity, blocks, matrix, stack, depth);
+    }
+    if (entity.type === 'MTEXT') {
+        const text = cleanMText(entity.text ?? '');
+        if (!text) return [];
+        return [transformRawEntity({ ...entity, type: 'TEXT', text }, matrix)];
+    }
+    return [transformRawEntity(entity, matrix)];
+}
+
+function expandInsert(
+    insert: RawDxfEntity,
+    blocks: Map<string, RawBlock>,
+    parentMatrix: DxfTransform,
+    stack: Set<string>,
+    depth: number,
+): RawDxfEntity[] {
+    const name = (insert.blockName ?? '').trim().toLowerCase();
+    if (!name || depth >= MAX_BLOCK_DEPTH || stack.has(name)) return [];
+    const block = blocks.get(name);
+    if (!block) return [];
+
+    const nextStack = new Set(stack);
+    nextStack.add(name);
+
+    const scaleX = insert.scaleX ?? 1;
+    const scaleY = insert.scaleY ?? 1;
+    const columns = Math.max(1, insert.columnCount ?? 1);
+    const rows = Math.max(1, insert.rowCount ?? 1);
+    const result: RawDxfEntity[] = [];
+
+    for (let row = 0; row < rows; row++) {
+        for (let column = 0; column < columns; column++) {
+            const local = multiplyTransform(
+                translationTransform(insert.x1 ?? 0, insert.y1 ?? 0),
+                multiplyTransform(
+                    rotationTransform(((insert.rotation ?? 0) * Math.PI) / 180),
+                    multiplyTransform(
+                        scalingTransform(scaleX, scaleY),
+                        translationTransform(
+                            column * (insert.columnSpacing ?? 0) - block.basePoint.x,
+                            row * (insert.rowSpacing ?? 0) - block.basePoint.y,
+                        ),
+                    ),
+                ),
+            );
+            const matrix = multiplyTransform(parentMatrix, local);
+            for (const child of block.entities) {
+                const inherited = inheritLayer(child, insert.layer);
+                for (const expanded of expandEntity(
+                    inherited,
+                    blocks,
+                    matrix,
+                    nextStack,
+                    depth + 1,
+                )) {
+                    result.push(expanded);
+                    if (result.length >= MAX_EXPANDED_ENTITIES) return result;
+                }
+            }
+        }
+    }
+    return result;
+}
+
+function expandDimension(
+    dimension: RawDxfEntity,
+    blocks: Map<string, RawBlock>,
+    parentMatrix: DxfTransform,
+    stack: Set<string>,
+    depth: number,
+): RawDxfEntity[] {
+    const name = (dimension.blockName ?? '').trim().toLowerCase();
+    if (name && depth < MAX_BLOCK_DEPTH && !stack.has(name)) {
+        const block = blocks.get(name);
+        if (block) {
+            const nextStack = new Set(stack);
+            nextStack.add(name);
+            const result: RawDxfEntity[] = [];
+            for (const child of block.entities) {
+                const inherited = inheritLayer(child, dimension.layer);
+                for (const expanded of expandEntity(
+                    inherited,
+                    blocks,
+                    parentMatrix,
+                    nextStack,
+                    depth + 1,
+                )) {
+                    result.push(expanded);
+                    if (result.length >= MAX_EXPANDED_ENTITIES) break;
+                }
+            }
+            // 标注匿名块通常已包含完整的线、箭头与文字，优先使用
+            if (result.length > 0) return result;
+        }
+    }
+    return [transformRawEntity(dimension, parentMatrix)];
+}
+
+/** 把 LWPOLYLINE 的 bulge 段采样为折线，避免圆角/圆弧槽被拉直 */
+function sampleBulge(start: Point, end: Point, bulge: number): Point[] {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const chord = Math.hypot(dx, dy);
+    const theta = 4 * Math.atan(bulge);
+    if (chord < 1e-9 || Math.abs(theta) < 1e-9) return [];
+
+    const offset = (chord / 2) / Math.tan(theta / 2);
+    if (!Number.isFinite(offset)) return [];
+
+    const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+    const center = {
+        x: mid.x - (dy / chord) * offset,
+        y: mid.y + (dx / chord) * offset,
+    };
+    const radius = Math.hypot(start.x - center.x, start.y - center.y);
+    const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
+    const segments = Math.min(64, Math.max(2, Math.ceil(Math.abs(theta) / (Math.PI / 12))));
+    const points: Point[] = [];
+    for (let i = 1; i < segments; i++) {
+        const angle = startAngle + (theta * i) / segments;
+        points.push({
+            x: center.x + radius * Math.cos(angle),
+            y: center.y + radius * Math.sin(angle),
+        });
+    }
+    return points;
+}
+
 function finalizeEntity(
-    entity: PendingEntity,
+    entity: RawDxfEntity,
     resolveColor: (record: { aci?: number; trueColor?: number }, layer: string) => string,
 ): CADElement | null {
     const color = resolveColor({ aci: entity.aci, trueColor: entity.trueColor }, entity.layer || '0');
@@ -592,20 +1070,53 @@ function finalizeEntity(
             ...base,
             type: 'TEXT',
             start: screenPoint({ x: entity.x1 ?? 0, y: entity.y1 ?? 0 }),
-            text: entity.text || 'Text',
+            text: decodeDxfText(entity.text || 'Text'),
             fontSize: entity.measure || 12,
+            ...(entity.rotation && Math.abs(entity.rotation) > 1e-9
+                ? { rotation: entity.rotation }
+                : {}),
         };
     }
     if (entity.type === 'LWPOLYLINE') {
-        let points = entity.points.map(screenPoint);
-        if (entity.closed && points.length > 1) {
-            const first = points[0];
-            const last = points[points.length - 1];
+        const closed = Boolean(entity.closed);
+        const source = [...entity.points];
+        const bulges = [...(entity.bulges ?? [])];
+        if (closed && source.length > 1) {
+            const first = source[0];
+            const last = source[source.length - 1];
             if (Math.abs(first.x - last.x) < 1e-9 && Math.abs(first.y - last.y) < 1e-9) {
-                points = points.slice(0, -1);
+                source.pop();
+                bulges.pop();
             }
         }
-        return { ...base, type: 'LWPOLYLINE', points, closed: Boolean(entity.closed) };
+
+        const sampled: Point[] = [];
+        const segments = closed ? source.length : source.length - 1;
+        for (let i = 0; i < segments; i++) {
+            const current = source[i];
+            const next = source[(i + 1) % source.length];
+            sampled.push(current);
+            const bulge = bulges[i] ?? 0;
+            if (Math.abs(bulge) > 1e-9) {
+                sampled.push(...sampleBulge(current, next, bulge));
+            }
+        }
+        if (!closed && source.length > 0) sampled.push(source[source.length - 1]);
+
+        let points = sampled.map(screenPoint);
+        if (points.length === 0) return null;
+        if (closed) {
+            while (points.length > 1) {
+                const first = points[0];
+                const last = points[points.length - 1];
+                if (Math.abs(first.x - last.x) < 1e-9 && Math.abs(first.y - last.y) < 1e-9) {
+                    points = points.slice(0, -1);
+                } else {
+                    break;
+                }
+            }
+        }
+        return { ...base, type: 'LWPOLYLINE', points, closed };
     }
     if (entity.type === 'ARC') {
         const radius = entity.measure || 10;
@@ -639,6 +1150,22 @@ function finalizeEntity(
             radiusY,
             rotation,
             points: sampleEllipse(center, radiusX, radiusY, rotation),
+        };
+    }
+    if (entity.type === 'DIMENSION') {
+        const startX = entity.x3 ?? entity.x1 ?? 0;
+        const startY = entity.y3 ?? entity.y1 ?? 0;
+        const endX = entity.x4 ?? entity.x2 ?? startX;
+        const endY = entity.y4 ?? entity.y2 ?? startY;
+        return {
+            ...base,
+            type: 'DIMENSION',
+            start: screenPoint({ x: startX, y: startY }),
+            end: screenPoint({ x: endX, y: endY }),
+            offsetPoint: screenPoint({
+                x: entity.x2 ?? (startX + endX) / 2,
+                y: entity.y2 ?? (startY + endY) / 2,
+            }),
         };
     }
     return null;

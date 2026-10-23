@@ -147,3 +147,12 @@ export function blockRateLimit() {
     windowMs: positiveInt(process.env.BLOCK_RATE_LIMIT_WINDOW_MS, 5 * 60_000),
   });
 }
+
+/** DWG 导入转换：默认每 10 分钟 20 次 */
+export function importRateLimit() {
+  return createRateLimiter({
+    scope: "import",
+    max: positiveInt(process.env.IMPORT_RATE_LIMIT_MAX, 20),
+    windowMs: positiveInt(process.env.IMPORT_RATE_LIMIT_WINDOW_MS, 10 * 60_000),
+  });
+}
