@@ -1,185 +1,129 @@
-# Docker 部署指南
+# 部署指南
+
+本项目有两种部署路径：**发布到共享服务器**（生产）与**本机 Docker 试跑**（演示 / 验证）。
+两者用的镜像定义不同，不要混用配置文件。
+
+| 场景         | 编排文件                     | 前端入口                    | 说明                                        |
+| ------------ | ---------------------------- | --------------------------- | ------------------------------------------- |
+| 生产发布     | `docker-compose.prod.yml`    | `https://aiignite.com.cn/cad/` | 前端走 `Dockerfile.prod`，产物挂在 `/cad/` 子路径 |
+| 本机 Docker  | `docker-compose.yml`         | `http://localhost:3220`     | 根路径模式，走 `Dockerfile` + `nginx.conf`  |
+
+开发环境（不走 Docker）见 [QUICKSTART.md](../../QUICKSTART.md)。
 
 ## 前置要求
 
-- Docker 20.10+
-- Docker Compose 2.0+
+- Docker 20.10+ 与 Docker Compose v2（`docker compose` 子命令，不是 `docker-compose`）
+- 生产发布还需：本机 `rsync` / `ssh` / `curl`，服务器上的 SSH 登录，以及宿主机已配置共享网关
+  （nginx + certbot，域名 `aiignite.com.cn`）
 
-## 快速开始
+## 一、发布到服务器
 
-### 1. 设置API密钥
+### 槽位约定
 
-创建 `.env` 文件并设置你的 Gemini API密钥：
+站点挂在共享域名的 `/cad/` 子路径下，容器只绑回环，公网入口统一由宿主机网关转发：
 
-```bash
-cp .env.local .env
-```
+- 前端容器 → 宿主机 `127.0.0.1:3220`（由 `location /cad/` 反代）
+- 后端容器 → 宿主机 `127.0.0.1:3245`（不对外暴露，仅排障时直连）
+- Postgres → 不发布任何宿主机端口，只在 compose 网络内可达
 
-编辑 `.env` 文件，确保包含：
-```
-GEMINI_API_KEY=your_api_key_here
-```
+> `/cad/` 与 `3220` 此前由另一个同名 CAD 项目使用。接管该槽位会让它下线；
+> `scripts/deploy-remote.sh` 在同步前会检测端口被谁占用并中止，需要你显式停掉对方容器。
+> 对方的数据卷不动，回滚只需重新 `up` 它的栈。
 
-### 2. 构建并启动
-
-使用部署脚本：
+### 1. 首次初始化（只做一次）
 
 ```bash
-chmod +x deploy.sh test-deployment.sh
-./deploy.sh
+cp scripts/deploy.env.example scripts/deploy.env   # 填服务器地址；该文件已被 .gitignore 忽略
+bash scripts/deploy-remote.sh --init-env           # 同步代码并在服务器上生成生产配置
+ssh ubuntu@<服务器> 'nano /home/ubuntu/AIIgniteCAD/.env'   # 至少补上 GEMINI_API_KEY
 ```
 
-选择选项 `1) 构建并启动服务`
+`scripts/init-server-env.sh` 会随机生成 `POSTGRES_PASSWORD`、`JWT_SECRET`、`ENCRYPTION_KEY`、
+`METRICS_TOKEN`，写入服务器仓库根目录的 `.env`（权限 600）。
 
-或使用Docker Compose命令：
+两条不可违反的约定：
+
+- **生产配置只存在于服务器上的 `.env`**。本地 `.env` 与 `backend/.env` 属于开发环境，rsync 阶段被排除，
+  不会被同步上去，也不会覆盖服务器上的值。
+- **`ENCRYPTION_KEY` 不能随意更换**。数据库里的 LLM Key 用 AES-256-GCM 以它加密，换掉后历史密文无法解密。
+
+### 2. 日常发布
 
 ```bash
-docker-compose up -d --build
+bash scripts/deploy-remote.sh
 ```
 
-### 3. 测试部署
+脚本按 AIDriveAll / AIDriveNote 的同一套机制执行：
+
+1. 预检宿主机 `3220` 是否被其它项目的容器占用；
+2. `rsync` 当前工作区到 `/home/ubuntu/AIIgniteCAD`（排除 `node_modules`、`.git`、`.env`、
+   `dist`、`coverage`、`playwright-report`、`scripts/deploy.env` 等）；
+3. ssh 执行服务器上的 `deploy.sh`：`docker compose -f docker-compose.prod.yml up -d --build` →
+   等待 `pg_isready` → 在 backend 容器内 `npx prisma migrate deploy` → 自检三个端点；
+4. 从外部验证 `https://aiignite.com.cn/cad/health` 与页面。
+
+> rsync 是增量覆盖、不删除远端多余文件，也不会重置服务器 `.env`。
+> 发布内容 = 本地工作区，因此发布前先确认工作区就是你想上线的代码。
+
+### 3. 排障
 
 ```bash
-./test-deployment.sh
+# 后端日志（含 requestId 结构化输出）
+ssh ubuntu@<服务器> 'cd ~/AIIgniteCAD && docker compose -f docker-compose.prod.yml logs --tail=100 backend'
+
+# 迁移状态
+ssh ubuntu@<服务器> 'cd ~/AIIgniteCAD && docker compose -f docker-compose.prod.yml run --rm --no-deps backend npx prisma migrate status'
+
+# 直连后端（绕开前端 nginx）
+ssh ubuntu@<服务器> 'curl -s localhost:3245/ready'
 ```
 
-### 4. 访问应用
+### 4. 备份
 
-打开浏览器访问:
-- 前端: `http://localhost:3400`
-- 后端API: `http://localhost:3410`
-
-## 常用命令
-
-### 查看运行状态
 ```bash
-docker-compose ps
+ssh ubuntu@<服务器> 'docker exec aiignite-cad-postgres pg_dump -U ai_ignite_cad -d ai_ignite_cad' \
+  > cad-$(date +%Y%m%d).sql
 ```
 
-### 查看日志
+`postgres_data` 是命名卷，删卷即删库；`down -v` 之前先确认已备份。
+
+## 二、本机 Docker 试跑
+
 ```bash
-docker-compose logs -f
+cp .env.example .env          # 需要 GEMINI_API_KEY 时填本地值
+docker compose up -d --build  # 前端 http://localhost:3220，后端 3225，Postgres 5432
 ```
 
-### 停止服务
-```bash
-docker-compose down
-```
+注意本机的 5432 常被系统里的其它 Postgres 占用；占用时直接用现有实例跑 `backend/` 的开发流程即可，
+不必强行起容器。
 
-### 重启服务
-```bash
-docker-compose restart
-```
+## 端口一览
 
-### 清理并重新构建
-```bash
-docker-compose down
-docker system prune -f
-docker-compose up -d --build
-```
-
-### 进入容器
-```bash
-docker-compose exec aiignite-cad sh
-```
-
-## 目录结构
-
-```
-.
-├── Dockerfile              # 前端Docker镜像定义
-├── docker-compose.yml      # Docker Compose配置
-├── nginx.conf             # Nginx生产配置
-├── .dockerignore          # Docker构建忽略文件
-├── deploy.sh              # 部署脚本
-└── test-deployment.sh     # 测试脚本
-```
-
-## 端口配置
-
-默认端口:
-- 前端: `3400`
-- 后端: `3410`
-- 数据库: `5432`
-
-如需修改端口，编辑 `docker-compose.yml`:
-
-```yaml
-services:
-  frontend:
-    ports:
-      - "你的前端端口:80"
-  backend:
-    ports:
-      - "你的后端端口:3000"
-```
+| 端口 | 位置         | 用途                          |
+| ---- | ------------ | ----------------------------- |
+| 3220 | 生产宿主机   | 前端容器（仅 127.0.0.1）      |
+| 3245 | 生产宿主机   | 后端容器（仅 127.0.0.1）      |
+| 3220 | 本机开发     | Vite dev server / compose     |
+| 3225 | 本机开发     | 后端 dev server / compose     |
+| 5432 | 本机 compose | Postgres（生产容器不发布端口） |
 
 ## 环境变量
 
-在 `docker-compose.yml` 中添加环境变量:
+后端必需项与默认值见 [backend/.env.example](../../backend/.env.example)；生产编排用 `${VAR:?}` 硬校验，
+缺 `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `JWT_SECRET` / `ENCRYPTION_KEY` / `FRONTEND_URL`
+时直接拒绝启动，不会回退到默认密钥。
 
-```yaml
-environment:
-  - NODE_ENV=production
-  - GEMINI_API_KEY=${GEMINI_API_KEY}
-```
+前端可配的构建参数只有两个：`VITE_BASE_PATH`（站点前缀）与 `VITE_API_URL`（接口前缀）。
+**AI Key 不作为前端构建参数**：Vite 会把构建期变量内联进 JS，而产物由公网直接下发，
+密钥只能留在后端容器环境里。
 
-## 故障排查
+`FRONTEND_URL` 是 CORS 与 Socket.IO 的白名单，子路径部署时填域名根（`https://aiignite.com.cn`），
+不要带 `/cad/`。
 
-### 端口被占用
-```bash
-lsof -i :3000
-kill -9 <PID>
-```
+## 安全要点
 
-### 构建失败
-```bash
-# 清理Docker缓存
-docker system prune -a
-# 重新构建
-docker-compose build --no-cache
-```
-
-### 容器无法启动
-```bash
-# 查看日志
-docker-compose logs
-# 检查配置
-docker-compose config
-```
-
-## 性能优化
-
-- 启用了Gzip压缩
-- 静态资源缓存1年
-- 使用多阶段构建减小镜像大小
-- Alpine Linux基础镜像减小体积
-
-## 安全性
-
-- 禁止访问隐藏文件
-- 添加了安全头(X-Frame-Options, X-Content-Type-Options, X-XSS-Protection)
-- 最小权限原则
-- 健康检查配置
-
-## 生产部署建议
-
-1. 使用反向代理(Nginx/HAProxy)
-2. 配置HTTPS
-3. 设置容器资源限制
-4. 使用Docker Swarm或Kubernetes编排
-5. 配置日志收集
-6. 设置监控告警
-
-## 更新部署
-
-```bash
-# 拉取最新代码
-git pull
-
-# 重新构建并启动
-docker-compose up -d --build
-
-# 验证更新
-./test-deployment.sh
-```
+- 后端位于两级 nginx 之后，`app.set("trust proxy", 2)` 让限流按真实客户端计数；
+  去掉它会让所有访客共用一个桶，认证配额几分钟内被打满。
+- SSE 端点 `/cad/api/llm/chat` 在 `deploy/nginx/cad.conf` 里单独关闭缓冲，其余接口保持缓冲以启用 gzip。
+- CSP / HSTS 等安全头集中在 `backend/src/app.ts`，前端静态站的头在 `deploy/nginx/cad.conf`。
+- 日志与错误信息不应出现 API Key、JWT 或完整请求体。

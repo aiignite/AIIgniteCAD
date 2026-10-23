@@ -3,6 +3,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { collaborationSocketPath } from "../services/collaborationService";
 import {
     MAX_PATCH_ELEMENTS,
     applyElementPatches,
@@ -29,6 +30,18 @@ const line = (id: string, x: number): CADElement => ({
     end: { x: x + 10, y: 0 },
     layer: "0",
     color: "#e6edf3",
+});
+
+describe("collaborationSocketPath", () => {
+    it("根路径部署使用默认 socket.io 路径", () => {
+        expect(collaborationSocketPath("/api")).toBe("/socket.io/");
+        expect(collaborationSocketPath("http://localhost:3225/api")).toBe("/socket.io/");
+    });
+
+    it("子路径部署时带上同一前缀", () => {
+        expect(collaborationSocketPath("/cad/api")).toBe("/cad/socket.io/");
+        expect(collaborationSocketPath("/cad/api/")).toBe("/cad/socket.io/");
+    });
 });
 
 describe("diffElementPatches", () => {

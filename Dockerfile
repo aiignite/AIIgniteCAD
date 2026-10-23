@@ -15,11 +15,13 @@ RUN npm install
 # 复制源代码
 COPY . .
 
-# 构建期注入前端环境变量（.env 已被 .dockerignore 排除，避免密钥进入镜像层）
-ARG GEMINI_API_KEY=""
+# 构建期只注入可公开的前端配置。
+# AI Key 属于服务端机密，绝不能作为 ARG 传进来：Vite 会把构建期变量内联进 JS，
+# 而这个镜像的产物由公网 nginx 直接下发。
 ARG VITE_API_URL="http://localhost:3225/api"
-ENV GEMINI_API_KEY=$GEMINI_API_KEY
+ARG VITE_BASE_PATH="/"
 ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_BASE_PATH=$VITE_BASE_PATH
 
 # 构建生产版本
 RUN npm run build

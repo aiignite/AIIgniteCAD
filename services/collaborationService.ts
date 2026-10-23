@@ -29,6 +29,16 @@ export function collaborationSocketUrl(): string {
     }
 }
 
+/**
+ * 站点挂在网关子路径下时（API 基址形如 /cad/api），socket.io 必须带同一前缀握手，
+ * 否则升级请求会落到网关的默认站点上，协作面板只会显示连接失败。
+ */
+export function collaborationSocketPath(apiBaseUrl: string = API_BASE_URL): string {
+    const { pathname } = new URL(apiBaseUrl, "http://localhost");
+    const prefix = pathname.replace(/\/?api\/?$/, "").replace(/\/+$/, "");
+    return `${prefix}/socket.io/`;
+}
+
 const CURSOR_THROTTLE_MS = 60;
 
 export class CollaborationClient {
@@ -49,6 +59,7 @@ export class CollaborationClient {
 
         const socket = io(collaborationSocketUrl(), {
             auth: { token },
+            path: collaborationSocketPath(),
             transports: ["websocket", "polling"],
             reconnectionAttempts: 5,
             timeout: 8000,

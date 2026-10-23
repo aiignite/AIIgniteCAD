@@ -1,0 +1,92 @@
+# 生产编排（发布在共享网关的 /cad/ 槽位下）
+#
+# 配置来源是仓库根目录的 .env，由 scripts/init-server-env.sh 在服务器上首次生成；
+# backend/.env 与 .env 只属于本地开发，rsync 阶段就被排除，绝不参与生产构建。
+name: aiignite-cad
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aiignite-cad-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER 未设置}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 未设置}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB 未设置}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - cadnet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aiignite-cad-backend
+    restart: unless-stopped
+    # 只绑回环：公网入口统一走宿主机的 https://aiignite.com.cn/cad/
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-3245}:3225"
+    environment:
+      NODE_ENV: production
+      PORT: 3225
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      FRONTEND_URL: ${FRONTEND_URL:?FRONTEND_URL 未设置（CORS 白名单，逗号分隔）}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 未设置}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY 未设置}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-20}
+      AUTH_RATE_LIMIT_WINDOW_MS: ${AUTH_RATE_LIMIT_WINDOW_MS:-900000}
+      AI_RATE_LIMIT_MAX: ${AI_RATE_LIMIT_MAX:-30}
+      AI_RATE_LIMIT_WINDOW_MS: ${AI_RATE_LIMIT_WINDOW_MS:-60000}
+      CHAT_RATE_LIMIT_MAX: ${CHAT_RATE_LIMIT_MAX:-120}
+      CHAT_RATE_LIMIT_WINDOW_MS: ${CHAT_RATE_LIMIT_WINDOW_MS:-300000}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - cadnet
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3225/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+      args:
+        VITE_BASE_PATH: ${VITE_BASE_PATH:-/cad/}
+        VITE_API_URL: ${VITE_API_URL:-/cad/api}
+    container_name: aiignite-cad-frontend
+    restart: unless-stopped
+    # 网关从宿主机 127.0.0.1 反代进来，因此同样只绑回环，不额外开放直连端口
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3220}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - cadnet
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/cad/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+networks:
+  cadnet:
+    driver: bridge
+
+volumes:
+  postgres_data:

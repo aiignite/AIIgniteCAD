@@ -1,84 +1,61 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# 服务器侧发布脚本：构建并拉起生产栈、跑迁移、自检。
+# 平时由 scripts/deploy-remote.sh 通过 ssh 调用，也可以在服务器上直接执行。
+set -euo pipefail
 
-# AIIgniteCAD Docker 部署脚本
+cd "$(dirname "$0")"
 
-set -e
+FRONTEND_PORT="${FRONTEND_PORT:-3220}"
+CAD_SUBPATH="${CAD_SUBPATH:-/cad}"
+BACKEND_PORT="${BACKEND_PORT:-3245}"
+COMPOSE="docker compose -f docker-compose.prod.yml"
 
-echo "==================================="
-echo "AIIgniteCAD Docker 部署"
-echo "==================================="
-
-# 颜色定义
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m' # No Color
-
-# 检查Docker是否安装
-if ! command -v docker &> /dev/null; then
-    echo -e "${RED}错误: Docker 未安装${NC}"
-    echo "请先安装 Docker: https://docs.docker.com/get-docker/"
+if ! docker compose version >/dev/null 2>&1; then
+    echo "需要 Docker Compose v2（docker compose 子命令）" >&2
     exit 1
 fi
 
-# 检查Docker Compose是否安装
-if ! command -v docker-compose &> /dev/null; then
-    echo -e "${RED}错误: Docker Compose 未安装${NC}"
-    echo "请先安装 Docker Compose: https://docs.docker.com/compose/install/"
+if [ ! -f .env ]; then
+    echo "缺少仓库根目录的 .env；首次发布请在服务器上执行 bash scripts/init-server-env.sh" >&2
     exit 1
 fi
 
-# 显示菜单
-echo ""
-echo "请选择操作:"
-echo "1) 构建并启动服务"
-echo "2) 停止服务"
-echo "3) 重启服务"
-echo "4) 查看日志"
-echo "5) 清理并重新构建"
-echo "6) 查看运行状态"
-echo "7) 退出"
-echo ""
-read -p "请输入选项 (1-7): " choice
+set -a
+# shellcheck disable=SC1091
+. ./.env
+set +a
 
-case $choice in
-    1)
-        echo -e "${GREEN}开始构建并启动服务...${NC}"
-        docker-compose up -d --build
-        echo -e "${GREEN}✓ 服务启动成功!${NC}"
-        echo "访问地址: http://localhost:3220"
-        ;;
-    2)
-        echo -e "${YELLOW}停止服务...${NC}"
-        docker-compose down
-        echo -e "${GREEN}✓ 服务已停止${NC}"
-        ;;
-    3)
-        echo -e "${YELLOW}重启服务...${NC}"
-        docker-compose restart
-        echo -e "${GREEN}✓ 服务已重启${NC}"
-        ;;
-    4)
-        echo -e "${YELLOW}查看日志 (Ctrl+C 退出):${NC}"
-        docker-compose logs -f
-        ;;
-    5)
-        echo -e "${RED}清理并重新构建...${NC}"
-        docker-compose down
-        docker system prune -f
-        docker-compose up -d --build
-        echo -e "${GREEN}✓ 重新构建完成!${NC}"
-        ;;
-    6)
-        echo -e "${YELLOW}服务运行状态:${NC}"
-        docker-compose ps
-        ;;
-    7)
-        echo "退出"
-        exit 0
-        ;;
-    *)
-        echo -e "${RED}无效选项${NC}"
-        exit 1
-        ;;
-esac
+echo "[1/4] 构建并启动服务"
+$COMPOSE up -d --build
+
+echo "[2/4] 等待 PostgreSQL 就绪"
+ready=no
+for _ in $(seq 1 30); do
+    if $COMPOSE exec -T postgres pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1; then
+        ready=yes
+        break
+    fi
+    sleep 2
+done
+if [ "$ready" != "yes" ]; then
+    echo "PostgreSQL 未在 60 秒内就绪，中止发布" >&2
+    $COMPOSE ps
+    exit 1
+fi
+
+echo "[3/4] 应用 Prisma 迁移"
+$COMPOSE run --rm --no-deps backend npx prisma migrate deploy
+
+echo "[4/4] 自检"
+backend_code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${BACKEND_PORT}/ready")
+health_code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${FRONTEND_PORT}${CAD_SUBPATH}/health")
+page_code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${FRONTEND_PORT}${CAD_SUBPATH}/")
+echo "backend /ready=${backend_code} frontend ${CAD_SUBPATH}/health=${health_code} ${CAD_SUBPATH}/=${page_code}"
+if [ "$backend_code" != "200" ] || [ "$health_code" != "200" ] || [ "$page_code" != "200" ]; then
+    echo "自检未通过，查看日志：$COMPOSE logs --tail=100 backend" >&2
+    $COMPOSE ps
+    exit 1
+fi
+
+$COMPOSE ps
+echo "发布完成：https://<域名>${CAD_SUBPATH}/"

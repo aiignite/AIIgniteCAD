@@ -1,0 +1,33 @@
+# 生产前端镜像：产物挂在子路径下，反代规则见 deploy/nginx/cad.conf
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+
+RUN npm ci --registry=https://registry.npmmirror.com
+
+COPY . .
+
+# 只注入可公开的配置。AI Key 属于服务端机密，不能作为构建参数进来
+ARG VITE_BASE_PATH=/cad/
+ARG VITE_API_URL=/cad/api
+ENV VITE_BASE_PATH=$VITE_BASE_PATH
+ENV VITE_API_URL=$VITE_API_URL
+
+# 共享服务器内存有限，Node 默认堆上限会让 vite 构建被 OOM 杀掉
+ENV NODE_OPTIONS=--max-old-space-size=3072
+
+RUN npm run build
+
+FROM nginx:alpine
+
+RUN apk add --no-cache wget
+
+COPY deploy/nginx/cad.conf /etc/nginx/conf.d/default.conf
+
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

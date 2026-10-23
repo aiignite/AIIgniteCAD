@@ -1,5 +1,9 @@
 # Docker 更新部署指南
 
+> 发布到共享服务器（`https://aiignite.com.cn/cad/`）请看
+> [DEPLOYMENT.md](DEPLOYMENT.md)：那条路径用 `docker-compose.prod.yml` + `scripts/deploy-remote.sh`，
+> 前端构建参数与 nginx 配置都不同。本文只覆盖**本机 Docker**（`docker-compose.yml`，根路径模式）。
+
 ## 📋 概述
 
 本指南说明如何将最新的前端代码更新部署到 Docker 容器中。
@@ -8,17 +12,10 @@
 
 ## 🚀 快速更新部署
 
-### 方法一：使用部署脚本（推荐）
+### 方法一：使用部署脚本（服务器侧）
 
-```bash
-# 进入项目目录
-cd AIIgniteCAD
-
-# 运行部署脚本
-./deploy.sh
-
-# 选择选项 5: 清理并重新构建
-```
+仓库根目录的 `deploy.sh` 现在是**服务器侧非交互脚本**（构建 → 等数据库 → 跑 Prisma 迁移 → 自检），
+本机试跑请直接使用方法二的命令。
 
 ### 方法二：手动命令
 
@@ -27,13 +24,13 @@ cd AIIgniteCAD
 cd AIIgniteCAD
 
 # 停止现有容器
-docker-compose down
+docker compose down
 
 # 重新构建并启动
-docker-compose up -d --build
+docker compose up -d --build
 
 # 查看启动日志
-docker-compose logs -f frontend
+docker compose logs -f frontend
 ```
 
 ---
@@ -48,7 +45,7 @@ docker-compose logs -f frontend
 docker --version
 
 # 检查 Docker Compose 版本
-docker-compose --version
+docker compose --version
 
 # 确保 Docker 服务运行中
 docker ps
@@ -71,16 +68,16 @@ ls components/MarkdownMessage.tsx
 #### 仅构建前端
 ```bash
 # 构建前端镜像
-docker-compose build frontend
+docker compose build frontend
 
 # 或者强制重新构建（不使用缓存）
-docker-compose build --no-cache frontend
+docker compose build --no-cache frontend
 ```
 
 #### 查看构建日志
 ```bash
 # 详细构建日志
-docker-compose build --progress=plain frontend
+docker compose build --progress=plain frontend
 ```
 
 ### 3. 启动服务
@@ -88,22 +85,22 @@ docker-compose build --progress=plain frontend
 #### 启动前端服务
 ```bash
 # 启动前端容器
-docker-compose up -d frontend
+docker compose up -d frontend
 
 # 查看启动状态
-docker-compose ps
+docker compose ps
 
 # 查看实时日志
-docker-compose logs -f frontend
+docker compose logs -f frontend
 ```
 
 #### 启动所有服务
 ```bash
 # 启动所有服务（前端 + 后端 + 数据库）
-docker-compose up -d
+docker compose up -d
 
 # 查看所有服务状态
-docker-compose ps
+docker compose ps
 ```
 
 ### 4. 验证部署
@@ -114,28 +111,29 @@ docker-compose ps
 docker ps
 
 # 应该看到：
-# - aiignite-cad-frontend (端口 3400:80)
-# - aiignite-cad-backend (端口 3410:3410)
-# - aiignite-cad-postgres (端口 5435:5432)
+# - aiignite-cad-frontend (端口 3220:80)
+# - aiignite-cad-backend (端口 3225:3225)
+# - aiignite-cad-postgres (端口 5432:5432，本机 5432 被其它 Postgres 占用时需改映射)
 ```
 
 #### 访问应用
 ```bash
 # 前端访问地址
-http://localhost:3400
+http://localhost:3220
 
 # 后端 API 地址
-http://localhost:3410/api
+http://localhost:3225/api
+```
 ```
 
 #### 检查健康状态
 ```bash
 # 查看容器健康检查状态
-docker-compose ps
+docker compose ps
 
 # 查看详细日志
-docker-compose logs frontend
-docker-compose logs backend
+docker compose logs frontend
+docker compose logs backend
 ```
 
 ---
@@ -145,28 +143,28 @@ docker-compose logs backend
 ### 查看日志
 ```bash
 # 查看前端日志
-docker-compose logs frontend
+docker compose logs frontend
 
 # 实时查看日志
-docker-compose logs -f frontend
+docker compose logs -f frontend
 
 # 查看最近 100 行日志
-docker-compose logs --tail=100 frontend
+docker compose logs --tail=100 frontend
 
 # 查看所有服务日志
-docker-compose logs
+docker compose logs
 ```
 
 ### 重启服务
 ```bash
 # 重启前端服务
-docker-compose restart frontend
+docker compose restart frontend
 
 # 重启所有服务
-docker-compose restart
+docker compose restart
 
 # 停止并重新启动
-docker-compose down && docker-compose up -d
+docker compose down && docker compose up -d
 ```
 
 ### 进入容器调试
@@ -184,10 +182,10 @@ docker exec aiignite-cad-frontend ls -la /usr/share/nginx/html
 ### 清理资源
 ```bash
 # 停止并删除容器
-docker-compose down
+docker compose down
 
 # 删除容器和卷
-docker-compose down -v
+docker compose down -v
 
 # 清理未使用的镜像
 docker image prune -a
@@ -227,7 +225,7 @@ docker system prune -a --volumes
 # 错误信息：npm install 失败
 
 # 解决方案 1：清理缓存重新构建
-docker-compose build --no-cache frontend
+docker compose build --no-cache frontend
 
 # 解决方案 2：检查网络连接
 ping registry.npmmirror.com
@@ -239,17 +237,17 @@ ping registry.npmmirror.com
 ### 问题 2：容器启动失败
 ```bash
 # 查看详细日志
-docker-compose logs frontend
+docker compose logs frontend
 
 # 常见原因：
 # 1. 端口被占用
-sudo lsof -i :3400
+sudo lsof -i :3220
 
 # 2. 权限问题
 sudo chown -R $USER:$USER .
 
 # 3. 配置错误
-docker-compose config
+docker compose config
 ```
 
 ### 问题 3：无法访问前端
@@ -273,14 +271,14 @@ docker exec aiignite-cad-frontend wget -O- http://localhost
 
 # 解决方案：
 # 1. 删除旧容器和镜像
-docker-compose down
+docker compose down
 docker rmi aiignitecad-frontend
 
 # 2. 强制重新构建
-docker-compose build --no-cache frontend
+docker compose build --no-cache frontend
 
 # 3. 启动新容器
-docker-compose up -d frontend
+docker compose up -d frontend
 ```
 
 ### 问题 5：新组件未包含
@@ -292,7 +290,7 @@ cat .dockerignore
 docker run --rm aiignitecad-frontend ls -la /usr/share/nginx/html
 
 # 如果文件缺失，检查构建步骤
-docker-compose build --progress=plain frontend 2>&1 | grep "MarkdownMessage"
+docker compose build --progress=plain frontend 2>&1 | grep "MarkdownMessage"
 ```
 
 ---
@@ -305,10 +303,10 @@ docker-compose build --progress=plain frontend 2>&1 | grep "MarkdownMessage"
 # Dockerfile 已经使用了多阶段构建
 
 # 使用 BuildKit 加速
-DOCKER_BUILDKIT=1 docker-compose build frontend
+DOCKER_BUILDKIT=1 docker compose build frontend
 
 # 并行构建多个服务
-docker-compose build --parallel
+docker compose build --parallel
 ```
 
 ### 镜像优化
@@ -332,7 +330,7 @@ docker builder prune
 # 创建 .env 文件
 cat > .env << EOF
 NODE_ENV=production
-VITE_API_URL=http://your-domain.com:3410
+VITE_API_URL=http://your-domain.com:3225
 DATABASE_URL=postgresql://user:password@db:5432/aiignitecad
 JWT_SECRET=your-secret-key
 GEMINI_API_KEY=your-api-key
@@ -371,7 +369,7 @@ chmod 600 .env
 - [ ] 代码已更新到最新版本
 - [ ] 已执行 `npm run build` 本地测试
 - [ ] Docker 和 Docker Compose 已安装
-- [ ] 端口 3400, 3410, 5435 未被占用
+- [ ] 端口 3220, 3225, 5432 未被占用
 - [ ] 环境变量已正确配置
 
 ### 部署中
@@ -381,8 +379,8 @@ chmod 600 .env
 - [ ] 日志无异常信息
 
 ### 部署后
-- [ ] 前端页面可访问 (http://localhost:3400)
-- [ ] 后端 API 可访问 (http://localhost:3410)
+- [ ] 前端页面可访问 (http://localhost:3220)
+- [ ] 后端 API 可访问 (http://localhost:3225)
 - [ ] 滑动条功能正常
 - [ ] AI 助手 Markdown 渲染正常
 - [ ] 停止生成功能正常
@@ -408,15 +406,15 @@ git pull origin main
 
 # 2. 停止现有服务
 echo "停止现有服务..."
-docker-compose down
+docker compose down
 
 # 3. 重新构建前端
 echo "重新构建前端..."
-docker-compose build --no-cache frontend
+docker compose build --no-cache frontend
 
 # 4. 启动服务
 echo "启动服务..."
-docker-compose up -d
+docker compose up -d
 
 # 5. 等待服务启动
 echo "等待服务启动..."
@@ -424,11 +422,11 @@ sleep 10
 
 # 6. 检查状态
 echo "检查服务状态..."
-docker-compose ps
+docker compose ps
 
 # 7. 显示日志
 echo "显示前端日志（Ctrl+C 退出）:"
-docker-compose logs -f frontend
+docker compose logs -f frontend
 
 EOF
 
@@ -454,13 +452,13 @@ chmod +x update.sh
 ### 常用命令速查
 ```bash
 # 快速重新部署
-docker-compose up -d --build --force-recreate frontend
+docker compose up -d --build --force-recreate frontend
 
 # 查看资源使用
 docker stats
 
 # 导出日志
-docker-compose logs frontend > frontend.log
+docker compose logs frontend > frontend.log
 
 # 备份数据库
 docker exec aiignite-cad-postgres pg_dump -U aiignite aiignitecad > backup.sql
@@ -470,7 +468,7 @@ docker exec aiignite-cad-postgres pg_dump -U aiignite aiignitecad > backup.sql
 
 ## ✅ 完成确认
 
-部署完成后，访问 http://localhost:3400 并验证：
+部署完成后，访问 http://localhost:3220 并验证：
 
 1. ✅ 页面正常加载
 2. ✅ 创建图形并使用滑动条调整属性

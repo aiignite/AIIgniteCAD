@@ -41,3 +41,6 @@ backend/.env.*
 
 # README 演示帧（由 npm run docs:frames 生成）
 .demo-frames/
+
+# 服务器发布配置（含主机地址与口令），绝不提交
+scripts/deploy.env

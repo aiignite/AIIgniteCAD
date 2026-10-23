@@ -6,6 +6,10 @@
 
 ### Fixed
 
+- 生产站点挂在 `/cad/` 子路径后不再整站失联：前端构建改为读取 `VITE_BASE_PATH` / `VITE_API_URL`，实时协作的 socket.io 握手路径按 API 基址推导前缀（`collaborationSocketPath`），否则升级请求会落到网关默认站点、协作面板只显示连接失败。
+- 后端识别两级代理的 `X-Forwarded-For`（`trust proxy`）：限流按 `req.ip` 计数，不认代理头会让全部访客挤进同一个桶，认证配额几分钟内被打满。
+- 后端镜像带上 Prisma 迁移（`.dockerignore` 此前排除了 `prisma/migrations`），容器内 `prisma migrate deploy` 才有可执行的迁移，否则生产库只能停留在空 schema。
+
 - 计划与多方案不再必然失败：提示词此前把「本轮可调用工具」（只读工具）当成「步骤可引用工具」，模型只能引用 `query_elements` 这类不写图的步骤；现在单独下发 22 个写工具的速查表，规则只约束步骤引用（[ADR 0018](docs/adr/0018-ai-tool-contract-and-rejection-loop.md)）。
 - 被拒绝的工具调用会成对回传给模型，并点名失败字段与取值范围：此前拒绝只留在前端本地，模型看不到原因、落库顺序也不满足 provider 对 `tool_calls` / `tool` 配对的要求。
 - 前端工具轮次上限改为读取服务端下发的 `maxToolRounds`（默认 4，最多 8），不再出现第 5 轮必 400。
@@ -23,6 +27,7 @@
 
 ### Added
 
+- 一键发布到共享生产服务器（与 AIDriveAll / AIDriveNote 同一套机制）：本地 `scripts/deploy-remote.sh` 先做端口占用预检，再 rsync 工作区、ssh 触发服务器侧非交互 `deploy.sh`（`docker compose -f docker-compose.prod.yml up -d --build` → 等库就绪 → 容器内迁移 → 就绪探针与页面自检），最后从外网校验 `https://aiignite.com.cn/cad/health`。新增 `docker-compose.prod.yml`、`Dockerfile.prod` 与 `deploy/nginx/cad.conf`（子路径静态资源、`/cad/api` 反代、SSE 免缓冲、`/cad/socket.io/` 升级），前后端只绑定 `127.0.0.1`、由共享网关对外暴露；`scripts/init-server-env.sh` 首次生成服务器 `.env`（随机 `POSTGRES_PASSWORD` / `JWT_SECRET` / `ENCRYPTION_KEY`，权限 600），仓库不再需要任何生产密钥。详见 [docs/guides/DEPLOYMENT.md](docs/guides/DEPLOYMENT.md)。
 - 方案对比卡片按草稿上的几何差分显示「新增 N / 修改 M / 移除 K」，全为 0 时显示「无几何变化」，不再只信模型自述的步骤数；连续的同工具同参数调用会在 toolResult 里提示模型换做法，但不直接拒绝（[ADR 0018](docs/adr/0018-ai-tool-contract-and-rejection-loop.md)）。
 - 块目录读取结果带上可用性标记（`getBlockCatalog` 返回 `{ entries, ok }`），Agent 草稿据此区分「块库不可用」与「块库为空」。
 - 技能统计刷新信号 `store/skillStats.ts`：轻量外部 store + `useSyncExternalStore`，回执成功即通知订阅方。
@@ -103,6 +108,7 @@
 
 ### Security
 
+- 前端构建不再把 `GEMINI_API_KEY` 内联进公开 bundle（`vite.config.ts` 的 `define` 与 `Dockerfile` 的 `ARG/ENV` 一并移除）：产物是公网静态资源，任何构建期注入的密钥都能被直接读出；AI 密钥只保留在服务端 `.env`，由后端代理调用 Provider。
 - 认证写操作与 `/api/llm/chat` 增加进程内限流（默认 20 次 / 15 分钟、30 次 / 分钟），返回 `429`、`Retry-After` 与 `RateLimit-*` 头；只读的 `GET /api/auth/me` 不计数。
 - `/api/llm/chat` 增加请求体 schema 校验，非法参数在触达数据库与 Provider 前返回 400。
 - `/api/llm/chat` 校验扩展到完整 Agent 回合契约：`phase` 枚举、`round` 上界、`pinnedSkillCodes` ≤5、`canvasContext` 与 `toolResults` 条数与字段长度上限；`/api/chat/*` 会话读写新增独立限流（默认 120 次 / 5 分钟，`CHAT_RATE_LIMIT_MAX/WINDOW_MS`）。
@@ -114,6 +120,7 @@
 
 ### Changed
 
+- `deploy.sh` 从本地交互式菜单改为服务器侧非交互脚本（构建 → 等库就绪 → 迁移 → 自检，任一环节失败即非零退出）；本地临时栈继续用 `docker-compose.yml`（`localhost:3220`），生产用 `docker-compose.prod.yml`。`docs/guides/DOCKER_UPDATE_GUIDE.md` 的过期端口 3400/3410/5435 与 `docker-compose` 命令统一为 3220/3225/5432 与 `docker compose`。
 - 命令行输入控制器抽离为 `hooks/useCommandInput.ts`，历史持久化至 localStorage。
 - 画布提示统一到状态栏：删除画布顶部 8 处英文提示，`lib/toolHints.ts` 按工具与已取点阶段输出「工具 · 下一步」。
 - 交互界面文案中文化（工具栏、状态栏、AI 变更预览、绘图设置的捕捉项），捕捉类型标签由 `lib/snapping.ts` 单点提供。

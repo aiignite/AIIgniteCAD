@@ -45,6 +45,10 @@ export function createApp(): Express {
   // 隐藏框架指纹
   app.disable("x-powered-by");
 
+  // 站点挂在两级 nginx 之后（共享网关 + 前端容器），限流按 req.ip 计数，
+  // 不认代理头会让所有访客挤进同一个桶，auth 配额几分钟内就被打满。
+  app.set("trust proxy", 2);
+
   // 安全响应头：API 不承载文档，CSP 取最严格的 default-src 'none'
   app.use(
     helmet({

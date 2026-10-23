@@ -5,7 +5,6 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        GEMINI_API_KEY: ${GEMINI_API_KEY}
         VITE_API_URL: ${VITE_API_URL:-http://localhost:3225/api}
     container_name: aiignite-cad-frontend
     ports:

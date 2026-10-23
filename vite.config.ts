@@ -9,12 +9,11 @@ export default defineConfig(({ mode }) => {
       port: 3220,
       host: "0.0.0.0",
     },
+    // 生产站点挂在共享网关的子路径下（https://aiignite.com.cn/cad/）
+    base: env.VITE_BASE_PATH || "/",
     plugins: [react()],
     define: {
       __APP_VERSION__: JSON.stringify(process.env.npm_package_version || "0.0.0"),
-      "process.env.API_KEY": JSON.stringify(env.GEMINI_API_KEY),
-      "process.env.GEMINI_API_KEY": JSON.stringify(env.GEMINI_API_KEY),
-      "process.env.VITE_API_URL": JSON.stringify(env.VITE_API_URL || 'http://localhost:3225/api'),
     },
     resolve: {
       alias: {

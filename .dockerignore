@@ -1,9 +1,13 @@
 node_modules
+**/node_modules
 npm-debug.log
 .env
 .env.*
+**/.env
+**/.env.local
 !.env.example
 dist
+**/dist
 .git
 .gitignore
 .vscode
@@ -19,4 +23,12 @@ DATABASE_DESIGN.md
 .DS_Store
 *.log
 coverage
+**/coverage
+playwright-report
+.test-results
+.demo-frames
+.trae
+backend
+tests
+docs
 .env.example
