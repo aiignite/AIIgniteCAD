@@ -40,16 +40,6 @@ rsync_ssh() {
 
 echo "==> 目标: ${USER}@${HOST}:${REMOTE_PATH}"
 
-echo "==> 预检：宿主机 ${FRONTEND_PORT} 是否被其它项目的容器占用"
-# ${CAD_SUBPATH}/ 槽位此前由另一个 CAD 项目使用；两个栈抢同一端口时，后启动的只会静默失败
-holders="$(ssh_wrap "docker ps --filter publish=${FRONTEND_PORT} --format '{{.Names}}' | grep -v '^aiignite-cad-' | tr '\n' ' '" || true)"
-if [[ -n "${holders// /}" ]]; then
-    echo "端口 ${FRONTEND_PORT} 已被占用：${holders}" >&2
-    echo "先停掉它再发布（数据卷保留，可随时 up 回滚）：" >&2
-    echo "  ssh ${USER}@${HOST} 'docker stop ${holders%% }'" >&2
-    exit 1
-fi
-
 echo "==> 同步代码..."
 rsync -az \
     --exclude 'node_modules' \
@@ -75,6 +65,17 @@ fi
 
 if ! ssh_wrap "test -f ${REMOTE_PATH}/.env"; then
     echo "服务器上没有 ${REMOTE_PATH}/.env；先执行：bash scripts/deploy-remote.sh --init-env" >&2
+    exit 1
+fi
+
+echo "==> 预检：宿主机 ${FRONTEND_PORT} 是否被其它项目的容器占用"
+# ${CAD_SUBPATH}/ 槽位此前由另一个 CAD 项目使用；两个栈抢同一端口时，后启动的只会静默失败。
+# 放在同步之后，首次 --init-env 只需要传代码、不需要端口已经空出来。
+holders="$(ssh_wrap "docker ps --filter publish=${FRONTEND_PORT} --format '{{.Names}}' | grep -v '^aiignite-cad-' | tr '\n' ' '" || true)"
+if [[ -n "${holders// /}" ]]; then
+    echo "端口 ${FRONTEND_PORT} 已被占用：${holders}" >&2
+    echo "先停掉它再发布（数据卷保留，可随时 up 回滚）：" >&2
+    echo "  ssh ${USER}@${HOST} 'docker stop ${holders%% }'" >&2
     exit 1
 fi
 

@@ -55,15 +55,35 @@ bash scripts/deploy-remote.sh
 
 脚本按 AIDriveAll / AIDriveNote 的同一套机制执行：
 
-1. 预检宿主机 `3220` 是否被其它项目的容器占用；
-2. `rsync` 当前工作区到 `/home/ubuntu/AIIgniteCAD`（排除 `node_modules`、`.git`、`.env`、
+1. `rsync` 当前工作区到 `/home/ubuntu/AIIgniteCAD`（排除 `node_modules`、`.git`、`.env`、
    `dist`、`coverage`、`playwright-report`、`scripts/deploy.env` 等）；
+2. 预检宿主机 `3220` 是否被其它项目的容器占用（`--init-env` 首次初始化会跳过这一步）；
 3. ssh 执行服务器上的 `deploy.sh`：`docker compose -f docker-compose.prod.yml up -d --build` →
    等待 `pg_isready` → 在 backend 容器内 `npx prisma migrate deploy` → 自检三个端点；
 4. 从外部验证 `https://aiignite.com.cn/cad/health` 与页面。
 
 > rsync 是增量覆盖、不删除远端多余文件，也不会重置服务器 `.env`。
-> 发布内容 = 本地工作区，因此发布前先确认工作区就是你想上线的代码。
+> 发布内容 = 本地工作区，因此发布前先确认工作区就是你想上线的代码。要上线干净的提交而不是在写的功能，
+> 先从该提交开一个临时 worktree 再从那里跑（脚本按自身所在目录确定发布根目录）：
+>
+> ```bash
+> git worktree add --detach /tmp/cad-release <要上线的提交>
+> AIIGNITECAD_DEPLOY_CONFIG="$PWD/scripts/deploy.env" \
+>   bash /tmp/cad-release/scripts/deploy-remote.sh
+> git worktree remove /tmp/cad-release
+> ```
+
+### 网关与已知限制
+
+宿主机网关里已经有一条 `location /cad/ { proxy_pass http://127.0.0.1:3220; }`，带 `proxy_buffering off`
+与 `X-Accel-Buffering: no`，所以 SSE 对话不需要改网关，接管槽位后直接可用。
+
+该 location 显式设了 `proxy_set_header Connection ''` 且没有转发 `Upgrade`，浏览器无法在 `/cad/` 下建立
+WebSocket。实时协作（实验特性、默认关闭）会自动退回 HTTP 长轮询，功能不受影响；要用 WebSocket 得在共享
+网关里加一条 `location /cad/socket.io/`，那是共享基础设施变更，需在 AIDriveAll 侧一起改。
+
+服务器 4 GB 内存 + 10 GB swap，`npm run build` 峰值会吃掉 1 GB 以上；先停掉旧栈再发布可以留出余量，
+构建期间页面响应会变慢属于预期。
 
 ### 3. 排障
 
