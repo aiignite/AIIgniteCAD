@@ -26,7 +26,7 @@ test("检查面板列出问题、定位选中并带着摘要切到 AI 修复", a
         await page.mouse.up();
     }
 
-    await page.locator('nav button[title="检查"]').click();
+    await page.locator('aside [data-action="panel-review"]').click();
     await expect(page.getByText("图纸检查")).toBeVisible();
 
     const issue = page.locator('[data-review-issue="missing-dimension"]');

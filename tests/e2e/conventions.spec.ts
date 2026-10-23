@@ -13,7 +13,7 @@ test("设计约定保存后随项目同步，并在刷新后回填", async ({ pa
     await page.getByRole("button", { name: "创建", exact: true }).click();
     await expect(page.locator("#drawing-surface svg")).toBeVisible();
 
-    await page.locator('nav button[title="约定"]').click();
+    await page.locator('aside [data-action="panel-conventions"]').click();
     await expect(page.getByText("设计约定").first()).toBeVisible();
     await page.getByLabel("制图标准").fill("GB/T 14689");
     await page.getByLabel("建议字高").fill("5");
@@ -46,7 +46,7 @@ test("设计约定保存后随项目同步，并在刷新后回填", async ({ pa
     await expect(page.getByText("欢迎使用 AI Ignite CAD")).toBeVisible();
     await page.getByText("Convention Drawing", { exact: true }).click();
     await expect(page.locator("#drawing-surface svg")).toBeVisible();
-    await page.locator('nav button[title="约定"]').click();
+    await page.locator('aside [data-action="panel-conventions"]').click();
     await expect(page.getByLabel("制图标准")).toHaveValue("GB/T 14689");
     await expect(page.getByLabel("建议字高")).toHaveValue("5");
     await expect(page.getByLabel("图层 1 名称")).toHaveValue("WALLS");

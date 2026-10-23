@@ -37,7 +37,7 @@ export const Header: React.FC<HeaderProps> = ({
     aiOpen = false,
     onToggleAI,
 }) => {
-    const { locale, setLocale, t } = useI18n();
+    const { t } = useI18n();
     // 初始值直接从 DOM 读取，避免挂载后再 setState 触发级联渲染
     const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains("dark"));
     const [fileMenuOpen, setFileMenuOpen] = useState(false);
@@ -299,20 +299,6 @@ export const Header: React.FC<HeaderProps> = ({
                 >
                     <span className="material-symbols-outlined text-[18px]">smart_toy</span>
                     <span className="hidden lg:inline text-xs font-bold">AI</span>
-                </button>
-
-                <button
-                    onClick={() => setLocale(locale === "zh" ? "en" : "zh")}
-                    title={t("header.languageToggle", {
-                        language: locale === "zh" ? t("header.languageZh") : t("header.languageEn"),
-                    })}
-                    aria-label={t("header.languageToggle", {
-                        language: locale === "zh" ? t("header.languageZh") : t("header.languageEn"),
-                    })}
-                    className="flex items-center gap-1 h-8 px-2 rounded text-cad-muted hover:text-cad-text hover:bg-cad-text/10 transition-colors"
-                >
-                    <span className="material-symbols-outlined text-[18px]">translate</span>
-                    <span className="text-[11px] font-bold">{locale === "zh" ? "中文" : "EN"}</span>
                 </button>
 
                 <button

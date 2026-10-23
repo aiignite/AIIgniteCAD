@@ -80,6 +80,8 @@ export interface UseAIFloatingWindowResult {
     windowRef: React.RefObject<HTMLDivElement | null>;
     compact: boolean;
     mode: WindowMode;
+    /** 抽屉模式下的面板宽度；贴右分栏时由布局直接使用 */
+    drawerWidth: number;
     style: { left: number; top: number; width: number; height: number };
     handlers: {
         onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -170,13 +172,24 @@ export function useAIFloatingWindow(): UseAIFloatingWindowResult {
         const dx = event.clientX - drag.startX;
         const dy = event.clientY - drag.startY;
         const currentViewport = viewportRef.current;
-        const next = drag.drawer
-            ? drawerRect(currentViewport, resizeDrawerWidth(drag.startRect.w, dx, currentViewport))
-            : drag.mode === "move"
-              ? moveRect(drag.startRect, dx, dy, currentViewport)
-              : resizeRect(drag.startRect, drag.mode, dx, dy, currentViewport);
-        drag.latest = next;
         const node = windowRef.current;
+
+        // 抽屉模式只调宽度：贴右分栏时位置由布局决定
+        if (drag.drawer) {
+            const next = drawerRect(
+                currentViewport,
+                resizeDrawerWidth(drag.startRect.w, dx, currentViewport),
+            );
+            drag.latest = next;
+            if (node) node.style.width = `${next.w}px`;
+            return;
+        }
+
+        const next =
+            drag.mode === "move"
+                ? moveRect(drag.startRect, dx, dy, currentViewport)
+                : resizeRect(drag.startRect, drag.mode, dx, dy, currentViewport);
+        drag.latest = next;
         if (node) {
             node.style.left = `${next.x}px`;
             node.style.top = `${next.y}px`;
@@ -226,6 +239,7 @@ export function useAIFloatingWindow(): UseAIFloatingWindowResult {
         windowRef,
         compact,
         mode,
+        drawerWidth,
         style: {
             left: displayRect.x,
             top: displayRect.y,

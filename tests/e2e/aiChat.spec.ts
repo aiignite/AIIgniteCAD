@@ -569,18 +569,24 @@ test("视图类工具只移动视口，不弹预览也不改图纸", async ({ pa
     const box = await svg.boundingBox();
     if (!box) throw new Error("Drawing surface is not visible");
 
+    // 关闭栅格与捕捉，线段端点落在鼠标位置上，命中位置可复现
+    await page.getByRole("button", { name: "栅格" }).click();
+    await page.getByRole("button", { name: "捕捉" }).click();
+
     // 画一条线并选中它，作为视图工具的作用目标
     await page.locator('[data-tool="LINE"]').click();
-    await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.35);
+    const start = { x: box.x + box.width * 0.3, y: box.y + box.height * 0.35 };
+    const end = { x: box.x + box.width * 0.6, y: box.y + box.height * 0.55 };
+    await page.mouse.move(start.x, start.y);
     await page.mouse.down();
-    await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.55, {
+    await page.mouse.move(end.x, end.y, {
         steps: 8,
     });
     await page.mouse.up();
     await expect(svg.locator("line")).toHaveCount(3);
 
     await page.locator('[data-tool="SELECT"]').click();
-    await page.mouse.click(box.x + box.width * 0.45, box.y + box.height * 0.45);
+    await page.mouse.click((start.x + end.x) / 2, (start.y + end.y) / 2);
     await expect(page.locator("footer").getByText(/已选 1 个/)).toBeVisible();
 
     // 覆盖聊天路由：模型本轮只提议视图类工具

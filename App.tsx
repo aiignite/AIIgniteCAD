@@ -19,6 +19,7 @@ import { AIPreviewModal } from "./components/AIPreviewModal";
 import { PlotModal } from "./components/PlotModal";
 import { QuickSelectModal } from "./components/QuickSelectModal";
 import ImageTraceModal from "./components/ImageTraceModal";
+import FilesModal from "./components/FilesModal";
 import AIAssistantWindow from "./components/ai/AIAssistantWindow";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import {
@@ -168,12 +169,21 @@ function App() {
         setActiveFile,
         updateFile,
         setSideMode,
+        setSidePanelOpen,
         setLoading,
         showNotification,
         clearNotification,
     } = useApp();
-    const { isLoggedIn, currentUser, files, activeFile, sideMode, loading, notification } =
-        appState;
+    const {
+        isLoggedIn,
+        currentUser,
+        files,
+        activeFile,
+        sideMode,
+        sidePanelOpen,
+        loading,
+        notification,
+    } = appState;
 
     // 实验性实时协作：关闭时不建立连接，也不影响单机编辑
     useCollaboration();
@@ -196,6 +206,7 @@ function App() {
     const [showPlot, setShowPlot] = useState(false);
     const [showQuickSelect, setShowQuickSelect] = useState(false);
     const [showImageTrace, setShowImageTrace] = useState(false);
+    const [showFiles, setShowFiles] = useState(false);
     const [aiOpen, setAiOpen] = useState(false);
     const [aiPreview, setAiPreview] = useState<AIPreviewState | null>(null);
     const [flashIds, setFlashIds] = useState<Set<string> | null>(null);
@@ -458,6 +469,7 @@ function App() {
 
     const handleShowUserProfile = () => {
         setSideMode(SidePanelMode.USER_INFO);
+        setSidePanelOpen(true);
     };
 
     /** F3 / F7 / F8 / F10 分别切换捕捉、栅格、正交与极轴（沿用 AutoCAD 键位） */
@@ -1457,6 +1469,21 @@ function App() {
                 onClose={() => setShowWelcomeModal(false)}
             />
 
+            {/* 图纸（文件夹）管理弹窗 */}
+            <FilesModal
+                open={showFiles}
+                files={files}
+                activeFileId={activeFile?.id || null}
+                onClose={() => setShowFiles(false)}
+                onLoadFile={(file) => {
+                    setShowFiles(false);
+                    void handleLoadFile(file);
+                }}
+                onCreateFile={(name) => void handleCreateFile(name)}
+                onRenameFile={(id, name) => void handleRenameFile(id, name)}
+                onDeleteFile={(id) => void handleDeleteFile(id)}
+            />
+
             {/* TEXT INPUT MODAL */}
             {showTextModal && (
                 <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[2px]">
@@ -1614,24 +1641,12 @@ function App() {
                 onToggleAI={() => setAiOpen((open) => !open)}
             />
 
-            <AIAssistantWindow
-                open={aiOpen}
-                onClose={() => setAiOpen(false)}
-                projectId={activeFile?.id || null}
-                projectKey={activeFile?.chatKey ?? activeFile?.id ?? null}
-                currentElements={elements}
-                selectedIds={selectedIds}
-                units={drawingSettings.units}
-                conventions={activeFile?.designConventions ?? null}
-                projectName={activeFile?.name}
-                blockCount={activeFile?.blockReferences?.length ?? 0}
-                hiddenObjectCount={hiddenIds.length}
-                onPreviewActions={handleAIPreview}
-                draft={chatDraft}
-            />
-
             <div className="flex flex-1 overflow-hidden relative">
-                <Toolbar />
+                <Toolbar
+                    onOpenFiles={() => setShowFiles(true)}
+                    currentUser={currentUser}
+                    onShowUserProfile={handleShowUserProfile}
+                />
                 <Canvas
                     onRequestTextEntry={handleRequestTextEntry}
                     onRequestAdvancedShape={handleRequestAdvancedShape}
@@ -1647,6 +1662,7 @@ function App() {
                     key={currentUser?.id || "no-user"}
                     mode={sideMode}
                     onChangeMode={setSideMode}
+                    collapsed={!sidePanelOpen}
                     currentElements={elements}
                     drawingSettings={drawingSettings}
                     onUpdateSettings={setDrawingSettings}
@@ -1657,13 +1673,23 @@ function App() {
                     onSaveDesignConventions={handleSaveDesignConventions}
                     files={files}
                     activeFileId={activeFile?.id || null}
-                    onLoadFile={handleLoadFile}
-                    onCreateFile={handleCreateFile}
-                    onRenameFile={handleRenameFile}
-                    onDeleteFile={handleDeleteFile}
                     currentUser={currentUser}
                     onLogout={handleLogout}
-                    onShowUserProfile={handleShowUserProfile}
+                />
+                <AIAssistantWindow
+                    open={aiOpen}
+                    onClose={() => setAiOpen(false)}
+                    projectId={activeFile?.id || null}
+                    projectKey={activeFile?.chatKey ?? activeFile?.id ?? null}
+                    currentElements={elements}
+                    selectedIds={selectedIds}
+                    units={drawingSettings.units}
+                    conventions={activeFile?.designConventions ?? null}
+                    projectName={activeFile?.name}
+                    blockCount={activeFile?.blockReferences?.length ?? 0}
+                    hiddenObjectCount={hiddenIds.length}
+                    onPreviewActions={handleAIPreview}
+                    draft={chatDraft}
                 />
             </div>
             <Footer

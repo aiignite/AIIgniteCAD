@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useSyncExternalStore } from "react";
+import React, { useState, useEffect, useSyncExternalStore } from "react";
 import {
     SidePanelMode,
     BlockDefinition,
@@ -19,29 +19,6 @@ import { zoomViewportToBounds } from "../store/viewport";
 import type { ReviewIssue } from "../lib/designReview";
 import { syncService } from "../services/syncService";
 import { useI18n, type TranslationKey } from "../lib/i18n";
-
-/** 竖排图标导航按钮；定义在模块作用域，避免组件渲染时重建导致子树重挂载 */
-const NavButton = ({
-    icon,
-    label,
-    active,
-    onClick,
-}: {
-    icon: string;
-    label: string;
-    active: boolean;
-    onClick: () => void;
-}) => (
-    <button
-        onClick={onClick}
-        className={`group flex flex-col items-center gap-1 p-2 rounded-lg transition-all w-10 ${active ? "bg-cad-primary/20 text-cad-primary" : "text-gray-500 hover:text-cad-text hover:bg-white/5"}`}
-        title={label}
-    >
-        <span className={`material-symbols-outlined text-[20px] ${active ? "filled" : ""}`}>
-            {icon}
-        </span>
-    </button>
-);
 
 /** 捕捉类型与界面文案键，顺序即设置面板展示顺序 */
 const SNAP_TYPE_OPTIONS: Array<{ type: SnapType; labelKey: TranslationKey }> = [
@@ -71,17 +48,14 @@ interface RightPanelProps {
     /** 当前项目设计约定与保存回调 */
     designConventions?: DesignConventions | null;
     onSaveDesignConventions?: (conventions: DesignConventions | null) => Promise<void> | void;
+    /** 右侧面板是否展开；收起时不渲染，把画布面积让给绘图 */
+    collapsed?: boolean;
     // Files Props
     files: ProjectFile[];
     activeFileId: string | null;
-    onLoadFile: (file: ProjectFile) => void;
-    onCreateFile: (name: string) => void;
-    onRenameFile: (id: string, newName: string) => void;
-    onDeleteFile: (id: string) => void;
     // User Props
     currentUser?: any;
     onLogout?: () => void;
-    onShowUserProfile?: () => void;
 }
 
 export const RightPanel: React.FC<RightPanelProps> = ({
@@ -95,17 +69,13 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     onAskAIFix,
     designConventions,
     onSaveDesignConventions,
+    collapsed = false,
     files,
     activeFileId,
-    onLoadFile,
-    onCreateFile,
-    onRenameFile,
-    onDeleteFile,
     currentUser,
     onLogout,
-    onShowUserProfile,
 }) => {
-    const { t } = useI18n();
+    const { t, locale, setLocale } = useI18n();
     // 图层可见性 / 锁定状态由画布 Store 统一维护，渲染与命中测试都依赖它
     const {
         state: canvasState,
@@ -165,11 +135,6 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     /** 等待二次确认删除的图层 */
     const [pendingDeleteLayer, setPendingDeleteLayer] = useState<string | null>(null);
 
-    // Files State
-    const [searchQuery, setSearchQuery] = useState("");
-    const [editingFileId, setEditingFileId] = useState<string | null>(null);
-    const [editName, setEditName] = useState("");
-
     // User Profile Edit State
     const [editingProfile, setEditingProfile] = useState(false);
     const [profileForm, setProfileForm] = useState({
@@ -186,10 +151,6 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         type: "success" | "error";
         text: string;
     } | null>(null);
-
-    // UI State
-    const [activeDropdown, setActiveDropdown] = useState<string | null>(null); // ID of item with open menu
-    const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
 
     // Assistant panel width state (Frame 2)
     const [assistantPanelWidth, setAssistantPanelWidth] = useState(320); // Default w-80 = 20rem = 320px
@@ -220,13 +181,6 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             cancelled = true;
         };
     }, [propTab]);
-
-    // 切到别的视图时展开面板；在渲染期比对旧值而不是 effect，避免二次渲染
-    const [prevMode, setPrevMode] = useState(mode);
-    if (prevMode !== mode) {
-        setPrevMode(mode);
-        if (isPanelCollapsed) setIsPanelCollapsed(false);
-    }
 
     // Handle assistant panel resize
     useEffect(() => {
@@ -280,61 +234,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         toggleSelection(elementId);
     };
 
-    // Explicit handler to avoid type inference issues
-    const handleDropdownToggle = (e: React.MouseEvent, id: string) => {
-        e.stopPropagation();
-        setActiveDropdown(activeDropdown === id ? null : id);
-    };
-
-    const handleCreateFile = () => {
-        onCreateFile(t("panel.untitledDrawing"));
-    };
-
-    const startEditingFile = (file: ProjectFile) => {
-        setEditingFileId(file.id);
-        setEditName(file.name);
-        setActiveDropdown(null);
-    };
-
-    const saveFileName = (id: string) => {
-        if (editName.trim()) {
-            onRenameFile(id, editName);
-        }
-        setEditingFileId(null);
-    };
-
     // --- SUB-COMPONENT RENDERERS ---
-
-    const DropdownMenu = ({
-        onEdit,
-        onDelete,
-        editLabel = "Edit",
-    }: {
-        onEdit?: () => void;
-        onDelete?: () => void;
-        editLabel?: string;
-    }) => (
-        <div className="absolute right-0 top-6 w-32 bg-cad-panel border border-cad-border rounded shadow-xl z-50 flex flex-col py-1 animate-in fade-in zoom-in duration-100">
-            <button
-                onClick={(e) => {
-                    e.stopPropagation();
-                    onEdit?.();
-                }}
-                className="px-3 py-2 text-left text-xs text-cad-muted hover:bg-cad-text/10 hover:text-cad-text flex items-center gap-2"
-            >
-                <span className="material-symbols-outlined text-[14px]">edit</span> {editLabel}
-            </button>
-            <button
-                onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete?.();
-                }}
-                className="px-3 py-2 text-left text-xs text-red-400 hover:bg-red-900/20 hover:text-red-300 flex items-center gap-2"
-            >
-                <span className="material-symbols-outlined text-[14px]">delete</span> {t("common.delete")}
-            </button>
-        </div>
-    );
 
     const renderPropertiesAndStructure = () => {
         // 图层 = 显式创建的顺序 + 元素中出现但未登记的图层（按名称排序追加）
@@ -904,133 +804,34 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         </div>
     );
 
-    const renderFiles = () => {
-        const filteredFiles = files.filter((f) =>
-            f.name.toLowerCase().includes(searchQuery.toLowerCase()),
-        );
-
-        return (
-            <div className="flex flex-col h-full bg-cad-bg">
-                {/* Header */}
-                <div className="flex items-center justify-between p-4 border-b border-cad-border bg-cad-panel">
-                    <h3 className="text-sm font-bold text-cad-text">{t("panel.projectFiles")}</h3>
-                    <div className="flex items-center gap-2">
-                        <button
-                            className="p-1 hover:bg-cad-text/10 rounded text-gray-400 hover:text-cad-text"
-                            title={t("panel.sort")}
-                        >
-                            <span className="material-symbols-outlined text-[20px]">sort</span>
-                        </button>
-                        <button
-                            onClick={handleCreateFile}
-                            className="flex items-center justify-center size-6 bg-cad-primary text-white rounded hover:bg-cad-primaryHover transition-colors shadow-sm"
-                            title={t("panel.newFile")}
-                        >
-                            <span className="material-symbols-outlined text-[18px]">add</span>
-                        </button>
-                    </div>
-                </div>
-
-                {/* Search Bar */}
-                <div className="p-3 border-b border-cad-border bg-cad-bg">
-                    <div className="relative">
-                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-[16px] text-gray-400">
-                            search
-                        </span>
-                        <input
-                            type="text"
-                            placeholder={t("panel.searchFiles")}
-                            className="w-full h-8 pl-8 pr-3 rounded bg-cad-panel border border-cad-border text-xs text-cad-text focus:border-cad-primary focus:ring-1 focus:ring-cad-primary outline-none transition-all placeholder-gray-500"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
-                    </div>
-                </div>
-
-                {/* File List */}
-                <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                    {filteredFiles.map((file: ProjectFile) => (
-                        <div
-                            key={file.id}
-                            onClick={() => onLoadFile(file)}
-                            className={`group relative flex items-center p-3 rounded-lg border cursor-pointer transition-all ${
-                                activeFileId === file.id
-                                    ? "bg-cad-primary/10 border-cad-primary/30"
-                                    : "hover:bg-cad-text/5 border-transparent hover:border-cad-border"
-                            }`}
-                        >
-                            <div
-                                className={`size-8 rounded flex items-center justify-center mr-3 ${
-                                    activeFileId === file.id
-                                        ? "bg-cad-primary text-white"
-                                        : "bg-blue-100 dark:bg-blue-900/30 text-cad-primary"
-                                }`}
-                            >
-                                <span className="material-symbols-outlined text-[20px]">
-                                    description
-                                </span>
-                            </div>
-
-                            <div className="flex-1 min-w-0">
-                                {editingFileId === file.id ? (
-                                    <input
-                                        autoFocus
-                                        value={editName}
-                                        onChange={(e) => setEditName(e.target.value)}
-                                        onBlur={() => saveFileName(file.id)}
-                                        onKeyDown={(e) =>
-                                            e.key === "Enter" && saveFileName(file.id)
-                                        }
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="w-full bg-cad-bg border border-cad-primary rounded px-1 py-0.5 text-xs text-cad-text outline-none"
-                                    />
-                                ) : (
-                                    <h4 className="text-sm font-medium text-cad-text truncate">
-                                        {file.name}
-                                    </h4>
-                                )}
-                                <span className="text-[10px] text-cad-muted">
-                                    {file.lastModified}
-                                </span>
-                            </div>
-
-                            <button
-                                onClick={(e) => handleDropdownToggle(e, file.id)}
-                                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-cad-text/10 rounded text-gray-400 hover:text-cad-text transition-opacity"
-                            >
-                                <span className="material-symbols-outlined text-[18px]">
-                                    more_vert
-                                </span>
-                            </button>
-
-                            {activeDropdown === file.id && (
-                                <DropdownMenu
-                                    onEdit={() => startEditingFile(file)}
-                                    onDelete={() => onDeleteFile(file.id)}
-                                />
-                            )}
-                        </div>
-                    ))}
-
-                    {filteredFiles.length === 0 && (
-                        <div className="flex flex-col items-center justify-center py-12 text-cad-muted">
-                            <span className="material-symbols-outlined text-[48px] opacity-20 mb-2">
-                                folder_off
-                            </span>
-                            <p className="text-xs">{t("panel.noFiles")}</p>
-                        </div>
-                    )}
-                </div>
-            </div>
-        );
-    };
-
     const renderSettings = () => (
         <div className="flex flex-col h-full bg-cad-bg">
             <div className="flex items-center justify-between p-4 border-b border-cad-border bg-cad-panel">
                 <h3 className="text-sm font-bold text-cad-text">{t("settings.title")}</h3>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                {/* 界面语言 */}
+                <div className="space-y-3">
+                    <h4 className="text-xs font-bold text-cad-muted uppercase tracking-wider">
+                        {t("settings.language")}
+                    </h4>
+                    <div className="flex rounded border border-cad-border bg-cad-panel overflow-hidden">
+                        {(["zh", "en"] as const).map((code) => (
+                            <button
+                                key={code}
+                                onClick={() => setLocale(code)}
+                                className={`flex-1 py-1.5 text-xs transition-colors ${
+                                    locale === code
+                                        ? "bg-cad-primary text-white"
+                                        : "text-cad-muted hover:bg-cad-border/50"
+                                }`}
+                            >
+                                {code === "zh" ? t("settings.languageZh") : t("settings.languageEn")}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
                 {/* Cloud Sync */}
                 <div className="space-y-3">
                     <h4 className="text-xs font-bold text-cad-muted uppercase tracking-wider">
@@ -1672,25 +1473,27 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         if (issue.bbox) zoomViewportToBounds(issue.bbox);
     };
 
+    // 收起时不渲染整块面板，把画布面积完全让给绘图
+    if (collapsed) return null;
+
     return (
         <div className="flex h-full shrink-0 z-20 shadow-xl shadow-black/50 border-l border-cad-border bg-cad-panel">
-            {/* Frame 1: Properties Library (Always visible on large screens, fixed width) */}
+            {/* Frame 1: 属性 / 结构 / 图块 */}
             <div className="w-64 border-r border-cad-border flex flex-col relative bg-cad-panel hidden lg:flex flex-shrink-0">
                 {renderPropertiesAndStructure()}
             </div>
 
-            {/* Resizable Divider between Properties and Assistant Panel */}
+            {/* 可拖动分隔条 */}
             <div
                 className="hidden lg:flex w-1 bg-cad-border hover:bg-cad-primary cursor-col-resize relative z-30 transition-colors flex-shrink-0"
                 onMouseDown={handleAssistantResizeStart}
                 title={t("panel.dragResize")}
             />
 
-            {/* Frame 2: AI / Dynamic Content (Resizable width) */}
+            {/* Frame 2: 动态内容（可调宽度） */}
             <div
-                className={`flex flex-col h-full relative bg-cad-panel transition-all duration-300 ${isPanelCollapsed ? "w-0 overflow-hidden" : "border-l border-cad-border"}`}
-                style={isPanelCollapsed ? {} : { width: `${assistantPanelWidth}px` }}
-                data-collapsed={isPanelCollapsed}
+                className="flex flex-col h-full relative bg-cad-panel border-l border-cad-border transition-all duration-300"
+                style={{ width: `${assistantPanelWidth}px` }}
             >
                 {mode === SidePanelMode.REVIEW && (
                     <DrawingReviewPanel
@@ -1707,90 +1510,9 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                         onSave={onSaveDesignConventions ?? (() => undefined)}
                     />
                 )}
-                {mode === SidePanelMode.FILES && renderFiles()}
                 {mode === SidePanelMode.SETTINGS && renderSettings()}
                 {mode === SidePanelMode.USER_INFO && renderUserInfo()}
             </div>
-
-            {/* Navigation Strip */}
-            <nav className="w-12 border-l border-cad-border bg-cad-bg dark:bg-[#0d1116] flex flex-col items-center py-4 gap-4 z-40 transition-colors duration-300">
-                {/* Panel Toggle Button */}
-                <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        setIsPanelCollapsed(!isPanelCollapsed);
-                    }}
-                    className="group flex flex-col items-center gap-1 p-2 rounded-lg transition-all w-10 text-gray-500 hover:text-cad-text hover:bg-cad-text/5 relative z-50"
-                    title={isPanelCollapsed ? t("panel.expand") : t("panel.collapse")}
-                >
-                    <span className="material-symbols-outlined text-[20px]">
-                        {isPanelCollapsed
-                            ? "keyboard_double_arrow_right"
-                            : "keyboard_double_arrow_left"}
-                    </span>
-                </button>
-
-                <div className="w-8 h-px bg-cad-border shrink-0"></div>
-
-                <NavButton
-                    icon="rule"
-                    label={t("panel.review")}
-                    active={mode === SidePanelMode.REVIEW}
-                    onClick={() => {
-                        setIsPanelCollapsed(false);
-                        onChangeMode(SidePanelMode.REVIEW);
-                    }}
-                />
-                <NavButton
-                    icon="design_services"
-                    label={t("panel.conventions")}
-                    active={mode === SidePanelMode.CONVENTIONS}
-                    onClick={() => {
-                        setIsPanelCollapsed(false);
-                        onChangeMode(SidePanelMode.CONVENTIONS);
-                    }}
-                />
-                <NavButton
-                    icon="folder_open"
-                    label={t("panel.files")}
-                    active={mode === SidePanelMode.FILES}
-                    onClick={() => {
-                        setIsPanelCollapsed(false);
-                        onChangeMode(SidePanelMode.FILES);
-                    }}
-                />
-
-                <div className="flex-1"></div>
-                <NavButton
-                    icon="settings"
-                    label={t("panel.settings")}
-                    active={mode === SidePanelMode.SETTINGS}
-                    onClick={() => {
-                        setIsPanelCollapsed(false);
-                        onChangeMode(SidePanelMode.SETTINGS);
-                    }}
-                />
-                {currentUser ? (
-                    <div
-                        onClick={() => {
-                            setIsPanelCollapsed(false);
-                            onChangeMode(SidePanelMode.USER_INFO);
-                            onShowUserProfile?.();
-                        }}
-                        className="size-8 rounded-full bg-gradient-to-br from-[#137fec] to-[#0b63c1] flex items-center justify-center text-[10px] font-bold text-white cursor-pointer mt-2 hover:scale-105 transition-transform"
-                        title={t("panel.clickProfile")}
-                    >
-                        {currentUser.username?.substring(0, 2).toUpperCase()}
-                    </div>
-                ) : (
-                    <div
-                        className="size-8 rounded-full bg-indigo-500 flex items-center justify-center text-[10px] font-bold text-white cursor-pointer mt-2"
-                        title={t("panel.notLoggedIn")}
-                    >
-                        U
-                    </div>
-                )}
-            </nav>
         </div>
     );
 };

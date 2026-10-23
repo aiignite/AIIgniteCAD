@@ -29,7 +29,6 @@ export enum ToolType {
 export enum SidePanelMode {
     REVIEW = "REVIEW",
     CONVENTIONS = "CONVENTIONS",
-    FILES = "FILES",
     SETTINGS = "SETTINGS",
     USER_INFO = "USER_INFO",
 }

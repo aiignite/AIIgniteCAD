@@ -66,7 +66,7 @@ const AIAssistantWindow: React.FC<AIAssistantWindowProps> = ({
     draft,
 }) => {
     const { t } = useI18n();
-    const { windowRef, compact, mode, style, handlers, toggleMode } = useAIFloatingWindow();
+    const { windowRef, compact, mode, drawerWidth, style, handlers, toggleMode } = useAIFloatingWindow();
     const registry = useAIRegistry();
     const { state: canvasState } = useCanvas();
     const [assistantId, setAssistantId] = useState<string | null>(readAssistantId);
@@ -153,6 +153,11 @@ const AIAssistantWindow: React.FC<AIAssistantWindowProps> = ({
     const docked = !compact && mode === "drawer";
     const handles = compact ? [] : docked ? [DRAWER_HANDLE] : HANDLES;
 
+    // 贴右时面板作为工作区的右列参与布局，与画布左右分开而不是浮在上层
+    const placement = docked
+        ? `relative z-20 h-full shrink-0 flex flex-col overflow-hidden bg-cad-bg border-l border-cad-border transition-[width] duration-150 ${open ? "" : "hidden"}`
+        : `fixed z-40 flex flex-col overflow-hidden bg-cad-bg border border-cad-border shadow-2xl transition-[opacity,transform,visibility] duration-150 ${compact ? "" : "rounded-2xl"} ${open ? "scale-100 opacity-100" : "pointer-events-none invisible scale-[0.98] opacity-0"}`;
+
     return (
         <div
             ref={windowRef}
@@ -163,13 +168,9 @@ const AIAssistantWindow: React.FC<AIAssistantWindowProps> = ({
             inert={!open}
             data-testid="ai-assistant-window"
             data-ai-window-mode={compact ? "compact" : mode}
-            style={style}
+            style={docked ? { width: `${drawerWidth}px` } : style}
             {...handlers}
-            className={`fixed z-40 flex flex-col overflow-hidden bg-cad-bg transition-[opacity,transform,visibility] duration-150 ${
-                docked
-                    ? "border-l border-cad-border shadow-[-8px_0_24px_rgba(15,23,42,0.12)]"
-                    : `border border-cad-border shadow-2xl ${compact ? "" : "rounded-2xl"}`
-            } ${open ? "scale-100 opacity-100" : "pointer-events-none invisible scale-[0.98] opacity-0"}`}
+            className={placement}
         >
             {handles.map(({ dir, className }) => (
                 <div

@@ -14,6 +14,8 @@ export interface AppState {
   files: ProjectFile[];
   activeFile: ProjectFile | null;
   sideMode: SidePanelMode;
+  /** 右侧面板是否展开；默认收起，把画布面积让给绘图 */
+  sidePanelOpen: boolean;
   loading: boolean;
   notification: string | null;
 }
@@ -24,6 +26,7 @@ const initialState: AppState = {
   files: [],
   activeFile: null,
   sideMode: SidePanelMode.REVIEW,
+  sidePanelOpen: false,
   loading: false,
   notification: null,
 };
@@ -37,6 +40,7 @@ export type AppAction =
   | { type: "SET_ACTIVE_FILE"; file: ProjectFile | null }
   | { type: "UPDATE_FILE"; file: ProjectFile }
   | { type: "SET_SIDE_MODE"; mode: SidePanelMode }
+  | { type: "SET_SIDE_PANEL_OPEN"; value: boolean }
   | { type: "SET_LOADING"; value: boolean }
   | { type: "SHOW_NOTIFICATION"; message: string }
   | { type: "CLEAR_NOTIFICATION" }
@@ -72,6 +76,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "SET_SIDE_MODE":
       return { ...state, sideMode: action.mode };
 
+    case "SET_SIDE_PANEL_OPEN":
+      return { ...state, sidePanelOpen: action.value };
+
     case "SET_LOADING":
       return { ...state, loading: action.value };
 
@@ -100,6 +107,7 @@ interface AppContextValue {
   setActiveFile: (file: ProjectFile | null) => void;
   updateFile: (file: ProjectFile) => void;
   setSideMode: (mode: SidePanelMode) => void;
+  setSidePanelOpen: (value: boolean) => void;
   setLoading: (value: boolean) => void;
   showNotification: (message: string) => void;
   clearNotification: () => void;
@@ -143,6 +151,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const setSidePanelOpen = useCallback(
+    (value: boolean) => dispatch({ type: "SET_SIDE_PANEL_OPEN", value }),
+    []
+  );
+
   const setLoading = useCallback(
     (value: boolean) => dispatch({ type: "SET_LOADING", value }),
     []
@@ -169,6 +182,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setActiveFile,
     updateFile,
     setSideMode,
+    setSidePanelOpen,
     setLoading,
     showNotification,
     clearNotification,

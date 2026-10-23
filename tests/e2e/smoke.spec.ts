@@ -78,14 +78,16 @@ test("登录后进入欢迎界面并保存 token", async ({ page }) => {
   expect(token).toBe("e2e-token");
 });
 
-test("语言默认中文，可切换英文并在刷新后保持", async ({ page }) => {
+test("语言默认中文，可在设置面板切换为英文并在刷新后保持", async ({ page }) => {
   await openLoggedInApp(page);
   await createDrawing(page, "Language Drawing");
 
-  await expect(page.getByRole("button", { name: /切换语言/ })).toBeVisible();
+  // 语言切换收进设置面板
+  await page.locator('aside [data-action="panel-settings"]').click();
+  await expect(page.getByText("界面语言")).toBeVisible();
   await expect(page.locator('header [data-action="file-menu"]')).toContainText("文件");
 
-  await page.getByRole("button", { name: /切换语言/ }).click();
+  await page.getByRole("button", { name: "English", exact: true }).click();
   await expect(page.locator('header [data-action="file-menu"]')).toContainText("File");
   await expect(
     page.locator("header button").filter({ hasText: "Export" }),
@@ -425,7 +427,7 @@ test("隔离与选择同类：临时隐藏集只影响屏幕显示", async ({ pa
   await expect(page.getByText("Selected 2 similar objects")).toBeVisible();
   await expect(page.locator("footer").getByText(/已选 2 个/)).toBeVisible();
 
-  // 点选已选中的图元不会缩小选择集，先点空白清空再单选
+  // 点选已选中的图元会把选择集收窄到该对象，先点空白清空再单选
   await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.9);
   await page.mouse.click(aMid.x, aMid.y);
   await runCommand("ISOLATE");
