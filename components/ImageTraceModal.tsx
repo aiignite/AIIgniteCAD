@@ -3,6 +3,7 @@ import type { CADElement } from "../types";
 import { traceImage, type TraceImageData, type TraceResult } from "../lib/imageTrace";
 import { loadTraceImage } from "../services/imageTraceService";
 import ElementPreview from "./ElementPreview";
+import { useI18n } from "../lib/i18n";
 
 interface ImageTraceModalProps {
     onClose: () => void;
@@ -10,6 +11,7 @@ interface ImageTraceModalProps {
 }
 
 const ImageTraceModal: React.FC<ImageTraceModalProps> = ({ onClose, onInsert }) => {
+    const { t } = useI18n();
     const inputRef = useRef<HTMLInputElement>(null);
     const [fileName, setFileName] = useState<string | null>(null);
     const [source, setSource] = useState<TraceImageData | null>(null);
@@ -39,7 +41,7 @@ const ImageTraceModal: React.FC<ImageTraceModalProps> = ({ onClose, onInsert }) 
             setResult(traced);
             setDirty(false);
         } catch (traceError) {
-            setError(traceError instanceof Error ? traceError.message : "图像识别失败");
+            setError(traceError instanceof Error ? traceError.message : t("trace.traceFailed"));
             setResult(null);
         } finally {
             setLoading(false);
@@ -58,7 +60,7 @@ const ImageTraceModal: React.FC<ImageTraceModalProps> = ({ onClose, onInsert }) 
         } catch (loadError) {
             setSource(null);
             setResult(null);
-            setError(loadError instanceof Error ? loadError.message : "图片读取失败");
+            setError(loadError instanceof Error ? loadError.message : t("trace.loadFailed"));
         } finally {
             setLoading(false);
         }
@@ -71,7 +73,7 @@ const ImageTraceModal: React.FC<ImageTraceModalProps> = ({ onClose, onInsert }) 
             <div
                 role="dialog"
                 aria-modal="true"
-                aria-label="参考图转 CAD"
+                aria-label={t("trace.title")}
                 className="w-[900px] max-w-[94vw] max-h-[90vh] bg-cad-panel border border-cad-border rounded-xl shadow-2xl flex flex-col overflow-hidden"
             >
                 <div className="flex items-center justify-between px-4 py-3 border-b border-cad-border">
@@ -80,15 +82,15 @@ const ImageTraceModal: React.FC<ImageTraceModalProps> = ({ onClose, onInsert }) 
                             <span className="material-symbols-outlined text-[18px] text-cad-primary">
                                 image
                             </span>
-                            参考图转 CAD
+                            {t("trace.title")}
                         </h3>
                         <p className="text-[10px] text-cad-muted mt-0.5">
-                            图片只在本地解析为轮廓多段线；插入后仍可正常编辑、撤销与导出 DXF。
+                            {t("trace.subtitle")}
                         </p>
                     </div>
                     <button
                         onClick={onClose}
-                        title="关闭"
+                        title={t("common.close")}
                         className="p-1 text-cad-muted hover:text-cad-text"
                     >
                         <span className="material-symbols-outlined text-[20px]">close</span>
@@ -101,13 +103,13 @@ const ImageTraceModal: React.FC<ImageTraceModalProps> = ({ onClose, onInsert }) 
                             onClick={() => inputRef.current?.click()}
                             className="w-full px-2 py-2 rounded border border-dashed border-cad-primary/50 text-[11px] text-cad-primary hover:bg-cad-primary/10"
                         >
-                            {fileName ? "重新选择图片" : "选择参考图片"}
+                            {fileName ? t("trace.chooseAgain") : t("trace.choose")}
                         </button>
                         <input
                             ref={inputRef}
                             type="file"
                             accept="image/*"
-                            aria-label="参考图片文件"
+                            aria-label={t("trace.fileAria")}
                             className="hidden"
                             onChange={(event) => void handleFile(event.target.files?.[0])}
                         />
@@ -119,9 +121,9 @@ const ImageTraceModal: React.FC<ImageTraceModalProps> = ({ onClose, onInsert }) 
                         )}
 
                         <label className="block text-[10px] text-cad-muted">
-                            识别阈值 {threshold}
+                             {t("trace.threshold", { value: threshold })}
                             <input
-                                aria-label="识别阈值"
+                                aria-label={t("trace.thresholdAria")}
                                 type="range"
                                 min={20}
                                 max={240}
@@ -138,20 +140,20 @@ const ImageTraceModal: React.FC<ImageTraceModalProps> = ({ onClose, onInsert }) 
                         <label className="flex items-center gap-1.5 text-[10px] text-cad-muted">
                             <input
                                 type="checkbox"
-                                aria-label="反色识别"
+                                aria-label={t("trace.invertAria")}
                                 checked={invert}
                                 onChange={(event) => {
                                     setInvert(event.target.checked);
                                     markDirty();
                                 }}
                             />
-                            深色背景 / 浅色线条
+                            {t("trace.invert")}
                         </label>
 
                         <label className="block text-[10px] text-cad-muted">
-                            简化容差 {simplifyTolerance.toFixed(1)} px
+                             {t("trace.simplify", { value: simplifyTolerance.toFixed(1) })}
                             <input
-                                aria-label="简化容差"
+                                aria-label={t("trace.simplifyAria")}
                                 type="range"
                                 min={0}
                                 max={4}
@@ -166,9 +168,9 @@ const ImageTraceModal: React.FC<ImageTraceModalProps> = ({ onClose, onInsert }) 
                         </label>
 
                         <label className="block text-[10px] text-cad-muted">
-                            目标宽度（图纸单位）
+                            {t("trace.targetWidth")}
                             <input
-                                aria-label="目标宽度"
+                                aria-label={t("trace.targetWidthAria")}
                                 type="number"
                                 min={1}
                                 max={100000}
@@ -186,12 +188,16 @@ const ImageTraceModal: React.FC<ImageTraceModalProps> = ({ onClose, onInsert }) 
                             disabled={!source || loading}
                             className="w-full px-2 py-1.5 rounded bg-cad-primary text-white text-[11px] font-semibold disabled:opacity-40"
                         >
-                            {loading ? "识别中…" : dirty ? "更新预览" : "重新识别"}
+                            {loading
+                                ? t("trace.tracing")
+                                : dirty
+                                  ? t("trace.updating")
+                                  : t("trace.trace")}
                         </button>
 
                         {error && <p className="text-[10px] text-red-500">{error}</p>}
                         <p className="text-[9px] text-cad-muted leading-relaxed">
-                            阈值越低保留的线条越多；简化容差越大，节点越少。透明区域视为背景。
+                            {t("trace.tip")}
                         </p>
                     </div>
 
@@ -199,18 +205,21 @@ const ImageTraceModal: React.FC<ImageTraceModalProps> = ({ onClose, onInsert }) 
                         <div className="flex items-center justify-between text-[10px] text-cad-muted">
                             <span>
                                 {result
-                                    ? `识别到 ${result.elements.length} 条轮廓（原始 ${result.contourCount} 条）`
-                                    : "选择图片后自动生成预览"}
+                                    ? t("trace.result", {
+                                          count: result.elements.length,
+                                          raw: result.contourCount,
+                                      })
+                                    : t("trace.awaiting")}
                             </span>
                             {result && (
                                 <span className="font-mono">
-                                    1px ≈ {result.scale.toFixed(3)} 单位
+                                    {t("trace.scale", { value: result.scale.toFixed(3) })}
                                 </span>
                             )}
                         </div>
                         <ElementPreview
                             elements={result?.elements ?? []}
-                            ariaLabel="参考图矢量化预览"
+                            ariaLabel={t("trace.previewAria")}
                             className="flex-1 w-full min-h-[260px] rounded-lg border border-cad-border bg-[#0b1220]"
                         />
                         <div className="flex items-center justify-end gap-2">
@@ -218,7 +227,7 @@ const ImageTraceModal: React.FC<ImageTraceModalProps> = ({ onClose, onInsert }) 
                                 onClick={onClose}
                                 className="px-3 py-1.5 rounded text-[11px] border border-cad-border text-cad-muted hover:text-cad-text"
                             >
-                                取消
+                                {t("common.cancel")}
                             </button>
                             <button
                                 onClick={() => {
@@ -230,7 +239,7 @@ const ImageTraceModal: React.FC<ImageTraceModalProps> = ({ onClose, onInsert }) 
                                 disabled={!result || result.elements.length === 0}
                                 className="px-3 py-1.5 rounded text-[11px] bg-cad-primary text-white font-semibold disabled:opacity-40"
                             >
-                                插入图纸
+                                {t("trace.insert")}
                             </button>
                         </div>
                     </div>

@@ -1,14 +1,15 @@
 import React, { useMemo, useState } from "react";
 import type { CADElement, DesignConventions } from "../types";
 import {
-    REVIEW_ISSUE_LABELS,
-    REVIEW_SEVERITY_LABELS,
     buildReviewFixPrompt,
     reviewDrawing,
     reviewIssueKey,
+    reviewIssueLabel,
+    reviewSeverityLabel,
     type ReviewIssue,
     type ReviewSeverity,
 } from "../lib/designReview";
+import { useI18n } from "../lib/i18n";
 
 interface DrawingReviewPanelProps {
     elements: CADElement[];
@@ -28,12 +29,7 @@ const SEVERITY_STYLES: Record<ReviewSeverity, string> = {
     info: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/30",
 };
 
-const FILTERS: Array<{ value: SeverityFilter; label: string }> = [
-    { value: "all", label: "全部" },
-    { value: "error", label: REVIEW_SEVERITY_LABELS.error },
-    { value: "warning", label: REVIEW_SEVERITY_LABELS.warning },
-    { value: "info", label: REVIEW_SEVERITY_LABELS.info },
-];
+const FILTERS: SeverityFilter[] = ["all", "error", "warning", "info"];
 
 const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
     elements,
@@ -41,9 +37,10 @@ const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
     onLocate,
     onAskAI,
 }) => {
+    const { t, locale } = useI18n();
     const issues = useMemo(
-        () => reviewDrawing(elements, { conventions: conventions ?? undefined }),
-        [elements, conventions],
+        () => reviewDrawing(elements, { conventions: conventions ?? undefined, locale }),
+        [elements, conventions, locale],
     );
     const [filter, setFilter] = useState<SeverityFilter>("all");
     const [ignored, setIgnored] = useState<Set<string>>(new Set());
@@ -81,7 +78,7 @@ const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
     const handleAskAI = () => {
         if (visible.length === 0) return;
         const ids = [...new Set(visible.flatMap((issue) => issue.elementIds))].slice(0, 50);
-        onAskAI(buildReviewFixPrompt(visible), ids);
+        onAskAI(buildReviewFixPrompt(visible, 8, locale), ids);
     };
 
     const handleIgnore = (issue: ReviewIssue) => {
@@ -97,22 +94,31 @@ const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
                         <span className="material-symbols-outlined text-[18px] text-cad-primary">
                             fact_check
                         </span>
-                        图纸检查
+                         {t("review.title")}
                     </h3>
                     <span className="text-[10px] text-cad-muted">
-                        {issues.length === 0 ? "无问题" : `${issues.length} 个问题`}
+                        {issues.length === 0
+                            ? t("review.noIssues")
+                            : t("review.issueCount", { count: issues.length })}
                     </span>
                 </div>
                 <p className="text-[10px] text-cad-muted">
-                    确定性规则检查几何退化、重复、文字重叠与图层组织，不上传图纸内容。
+                    {t("review.description")}
                 </p>
                 {conventions && (
                     <p className="text-[10px] text-cad-primary">
-                        已按项目设计约定检查图层归属与文字字高。
+                        {t("review.conventionsApplied")}
                     </p>
                 )}
                 <div className="flex flex-wrap items-center gap-1">
-                    {FILTERS.map((item) => {
+                    {FILTERS.map((value) => {
+                        const item = {
+                            value,
+                            label:
+                                value === "all"
+                                    ? t("review.all")
+                                    : reviewSeverityLabel(value, locale),
+                        };
                         const count = item.value === "all" ? issues.length : counts[item.value];
                         return (
                             <button
@@ -138,12 +144,14 @@ const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
                             {issues.length === 0 ? "task_alt" : "filter_alt_off"}
                         </span>
                         <p className="text-xs font-semibold text-cad-text">
-                            {issues.length === 0 ? "未发现明显问题" : "当前筛选下没有问题"}
+                            {issues.length === 0
+                                ? t("review.empty")
+                                : t("review.filteredEmpty")}
                         </p>
                         <p className="text-[10px] text-cad-muted">
                             {issues.length === 0
-                                ? "继续编辑后会自动重新检查。"
-                                : "切换筛选条件，或让 AI 做更深入的设计评审。"}
+                                ? t("review.emptyDetail")
+                                : t("review.emptyFilteredDetail")}
                         </p>
                     </div>
                 ) : (
@@ -160,18 +168,18 @@ const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
                                     <span
                                         className={`shrink-0 px-1 py-px rounded border text-[9px] ${SEVERITY_STYLES[issue.severity]}`}
                                     >
-                                        {REVIEW_SEVERITY_LABELS[issue.severity]}
+                                        {reviewSeverityLabel(issue.severity, locale)}
                                     </span>
                                     <span className="min-w-0 flex-1 text-[11px] font-semibold text-cad-text">
-                                        {REVIEW_ISSUE_LABELS[issue.code]}
+                                        {reviewIssueLabel(issue.code, locale)}
                                     </span>
                                     <button
                                         onClick={() => onLocate(issue)}
                                         disabled={!hasTargets}
                                         title={
                                             hasTargets
-                                                ? "选中并缩放到问题位置"
-                                                : "全局提示，无具体图元"
+                                                ? t("review.locate")
+                                                : t("review.globalHint")
                                         }
                                         className="p-0.5 rounded text-cad-muted hover:text-cad-primary disabled:opacity-30"
                                     >
@@ -181,7 +189,7 @@ const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
                                     </button>
                                     <button
                                         onClick={() => handleIgnore(issue)}
-                                        title="忽略这条问题"
+                                        title={t("review.ignore")}
                                         className="p-0.5 rounded text-cad-muted hover:text-cad-text"
                                     >
                                         <span className="material-symbols-outlined text-[15px]">
@@ -211,17 +219,17 @@ const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
                     disabled={visible.length === 0}
                     className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded bg-cad-primary text-white text-[11px] font-semibold disabled:opacity-40"
                 >
-                    <span className="material-symbols-outlined text-[16px]">auto_awesome</span>让 AI
-                    修复
+                    <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
+                    {t("review.askAI")}
                 </button>
                 <div className="flex items-center justify-between text-[9px] text-cad-muted">
-                    <span>AI 只收到问题摘要与相关图元 id</span>
+                    <span>{t("review.aiPrivacy")}</span>
                     {ignoredCount > 0 && (
                         <button
                             onClick={() => setIgnored(new Set())}
                             className="text-cad-primary hover:underline"
                         >
-                            恢复忽略 ({ignoredCount})
+                            {t("review.restoreIgnored", { count: ignoredCount })}
                         </button>
                     )}
                 </div>

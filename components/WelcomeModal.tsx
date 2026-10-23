@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { ProjectFile } from "../types";
 import { EXAMPLE_DRAWINGS } from "../services/examples";
+import { useI18n } from "../lib/i18n";
 
 interface WelcomeModalProps {
     visible: boolean;
@@ -14,12 +15,6 @@ interface WelcomeModalProps {
     onClose: () => void;
 }
 
-const ONBOARDING_STEPS = [
-    { title: "绘图", detail: "选择直线 / 圆 / 矩形，在画布上点两点即可；也可直接用 AI 对话生成。" },
-    { title: "标注与编辑", detail: "用 DIM 标注尺寸，选中图元后在属性面板精确修改坐标。" },
-    { title: "导出", detail: "工具栏导出 DXF，或打开 PLOT 生成 A4–A0 图框并另存为 PDF。" },
-];
-
 export const WelcomeModal: React.FC<WelcomeModalProps> = ({
     visible,
     files,
@@ -30,10 +25,17 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
     onOpenExample,
     onClose,
 }) => {
+    const { t } = useI18n();
     const [newFileName, setNewFileName] = useState("");
     const [showNewFileInput, setShowNewFileInput] = useState(false);
 
     if (!visible) return null;
+
+    const onboardingSteps = [
+        { title: t("welcome.step1Title"), detail: t("welcome.step1Detail") },
+        { title: t("welcome.step2Title"), detail: t("welcome.step2Detail") },
+        { title: t("welcome.step3Title"), detail: t("welcome.step3Detail") },
+    ];
 
     const handleCreateNew = () => {
         if (showNewFileInput) {
@@ -105,17 +107,20 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
                         </div>
                         <div>
                             <h2 className="text-xl font-bold text-cad-text font-display">
-                                Welcome to AI Ignite CAD
+                                {t("welcome.title")}
                             </h2>
                             <p className="text-xs text-cad-muted">
-                                {currentUser?.username ? `Hi, ${currentUser.username}!` : "Start designing"}
+                                {currentUser?.username
+                                    ? t("welcome.greeting", { name: currentUser.username })
+                                    : t("welcome.startDesigning")}
                             </p>
                         </div>
                     </div>
                     <button
                         onClick={onClose}
                         className="p-2 hover:bg-cad-border/50 rounded-lg transition-colors"
-                        title="Close"
+                        title={t("welcome.close")}
+                        aria-label={t("welcome.close")}
                     >
                         <span className="material-symbols-outlined text-[20px] text-cad-muted">
                             close
@@ -128,7 +133,7 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
                     {/* Quick Actions */}
                     <section className="mb-6">
                         <h3 className="text-xs font-bold text-cad-muted uppercase tracking-wider mb-3">
-                            Start
+                            {t("welcome.start")}
                         </h3>
                         <div className="grid grid-cols-2 gap-3">
                             {/* New File Card */}
@@ -143,10 +148,10 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
                                 </div>
                                 <div>
                                     <div className="text-sm font-bold text-cad-text">
-                                        New Drawing
+                                        {t("welcome.newDrawing")}
                                     </div>
                                     <div className="text-xs text-cad-muted">
-                                        Start from scratch
+                                        {t("welcome.startFromScratch")}
                                     </div>
                                 </div>
                             </button>
@@ -166,10 +171,10 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
                                 </div>
                                 <div>
                                     <div className="text-sm font-bold text-cad-text">
-                                        Import DXF
+                                        {t("welcome.importDrawing")}
                                     </div>
                                     <div className="text-xs text-cad-muted">
-                                        Open existing file
+                                        {t("welcome.openExisting")}
                                     </div>
                                 </div>
                             </button>
@@ -179,14 +184,14 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
                         {showNewFileInput && (
                             <div className="mt-3 p-3 bg-cad-bg border border-cad-primary rounded-lg animate-in slide-in-from-top-2 duration-200">
                                 <label className="block text-xs font-bold text-cad-muted mb-2">
-                                    File Name
+                                    {t("welcome.fileName")}
                                 </label>
                                 <div className="flex gap-2">
                                     <input
                                         autoFocus
                                         type="text"
                                         className="flex-1 bg-white dark:bg-black/20 border border-cad-border rounded px-3 py-2 text-sm outline-none focus:border-cad-primary transition-colors"
-                                        placeholder="My Drawing"
+                                        placeholder={t("welcome.newNamePlaceholder")}
                                         value={newFileName}
                                         onChange={(e) => setNewFileName(e.target.value)}
                                         onKeyDown={handleKeyDown}
@@ -195,7 +200,7 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
                                         onClick={handleCreateNew}
                                         className="px-4 py-2 bg-cad-primary text-white text-sm font-bold rounded hover:bg-cad-primaryHover transition-colors"
                                     >
-                                        Create
+                                        {t("welcome.create")}
                                     </button>
                                     <button
                                         onClick={() => {
@@ -204,7 +209,7 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
                                         }}
                                         className="px-4 py-2 bg-cad-border/50 text-cad-muted text-sm rounded hover:bg-cad-border transition-colors"
                                     >
-                                        Cancel
+                                        {t("welcome.cancel")}
                                     </button>
                                 </div>
                             </div>
@@ -214,10 +219,10 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
                     {/* Onboarding */}
                     <section className="mb-6">
                         <h3 className="text-xs font-bold text-cad-muted uppercase tracking-wider mb-3">
-                            三步上手
+                            {t("welcome.stepsTitle")}
                         </h3>
                         <ol className="grid grid-cols-3 gap-3">
-                            {ONBOARDING_STEPS.map((step, index) => (
+                            {onboardingSteps.map((step, index) => (
                                 <li
                                     key={step.title}
                                     className="p-3 bg-cad-bg border border-cad-border rounded-lg"
@@ -241,7 +246,7 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
                     {/* Examples */}
                     <section className="mb-6">
                         <h3 className="text-xs font-bold text-cad-muted uppercase tracking-wider mb-3">
-                            示例图纸
+                            {t("welcome.examples")}
                         </h3>
                         <div className="grid grid-cols-3 gap-3">
                             {EXAMPLE_DRAWINGS.map((example) => (
@@ -272,7 +277,7 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
                     {recentFiles.length > 0 && (
                         <section>
                             <h3 className="text-xs font-bold text-cad-muted uppercase tracking-wider mb-3">
-                                Recent
+                                {t("welcome.recentFiles")}
                             </h3>
                             <div className="space-y-1">
                                 {recentFiles.map((file) => {
@@ -318,8 +323,8 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
                             <span className="material-symbols-outlined text-[48px] opacity-30 mb-2">
                                 folder_open
                             </span>
-                            <p className="text-sm">No recent files</p>
-                            <p className="text-xs">Create a new drawing to get started</p>
+                            <p className="text-sm">{t("welcome.noRecentTitle")}</p>
+                            <p className="text-xs">{t("welcome.noRecentHint")}</p>
                         </div>
                     )}
                 </div>
@@ -327,13 +332,13 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
                 {/* Footer */}
                 <div className="px-6 py-3 border-t border-cad-border bg-cad-bg/50 flex items-center justify-between">
                     <div className="text-xs text-cad-muted">
-                        Press <kbd className="px-1.5 py-0.5 bg-cad-border rounded text-[10px] font-mono">Esc</kbd> to close
+                        {t("welcome.pressEsc")}
                     </div>
                     <button
                         onClick={onClose}
                         className="text-xs text-cad-primary hover:underline"
                     >
-                        Continue without opening
+                        {t("welcome.continueWithout")}
                     </button>
                 </div>
             </div>

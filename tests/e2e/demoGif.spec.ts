@@ -45,14 +45,14 @@ test("capture demo frames", async ({ page }) => {
 
   // 1. 登录
   await page.goto("/");
-  await page.getByRole("heading", { name: "Welcome back" }).waitFor();
+  await page.getByRole("heading", { name: "欢迎回来" }).waitFor();
   await shot(page, 0);
 
   // 2. 欢迎页：三步上手 + 示例
-  await page.getByLabel("Email Address").fill(TEST_USER.email);
-  await page.getByLabel("Password").fill("e2e-secret");
-  await page.getByRole("button", { name: /Sign In/ }).click();
-  await page.getByText("Welcome to AI Ignite CAD").waitFor();
+  await page.getByLabel("邮箱地址").fill(TEST_USER.email);
+  await page.getByLabel("密码", { exact: true }).fill("e2e-secret");
+  await page.getByRole("button", { name: /登录/ }).click();
+  await page.getByText("欢迎使用 AI Ignite CAD").waitFor();
   await page.waitForTimeout(300);
   await shot(page, 1);
 
@@ -78,24 +78,26 @@ test("capture demo frames", async ({ page }) => {
   await shot(page, 4);
 
   // 6. 图框打印预览
-  await page.getByRole("button", { name: /Plot/ }).click();
+  await page.locator('header [data-action="file-menu"]').click();
+  await page.getByRole("menuitem", { name: "打印 / 绘图" }).click();
   await page.waitForTimeout(500);
   await shot(page, 5);
   await page.keyboard.press("Escape");
 
   // 7. 版本历史
-  await page.getByRole("button", { name: /Versions/ }).click();
+  await page.locator('header [data-action="file-menu"]').click();
+  await page.getByRole("menuitem", { name: "版本历史" }).click();
   await page.waitForTimeout(500);
   await shot(page, 6);
   await page.keyboard.press("Escape");
 
   // 8. 暗色主题
-  await page.getByTitle("Switch to Dark Mode").click();
+  await page.getByTitle("切换到深色模式").click();
   await page.waitForTimeout(300);
   await shot(page, 7);
 
   // 9. 回到亮色并取消选择
-  await page.getByTitle("Switch to Light Mode").click();
+  await page.getByTitle("切换到浅色模式").click();
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);
   await shot(page, 8);

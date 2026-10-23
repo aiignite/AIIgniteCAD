@@ -1,33 +1,24 @@
-import React, { useState, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import React, { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import {
     SidePanelMode,
     BlockDefinition,
     BlockCategory,
     CADElement,
-    Assistant,
     DrawingSettings,
     ProjectFile,
     SnapType,
     DEFAULT_SNAP_TYPES,
-    AIActionResponse,
     DesignConventions,
 } from "../types";
-import type { TurnMeta } from "../hooks/useAIChat";
-import type { DesignContextMeta } from "../lib/aiContext";
-import ChatPanel from "./chat/ChatPanel";
 import DrawingReviewPanel from "./DrawingReviewPanel";
 import DesignConventionsPanel from "./DesignConventionsPanel";
-import AssistantsPanel from "./AssistantsPanel";
-import AISkillsPanel from "./AISkillsPanel";
-import LLMModelsPanel from "./LLMModelsPanel";
-import { useAIRegistry } from "../hooks/useAIRegistry";
 import { getBlockTree, createCategory, createBlock, moveItem } from "../services/blockService";
 import PropertyInspector from "./PropertyInspector";
 import { useCanvas } from "../store/canvasStore";
 import { zoomViewportToBounds } from "../store/viewport";
 import type { ReviewIssue } from "../lib/designReview";
 import { syncService } from "../services/syncService";
-import { SNAP_TYPE_LABELS } from "../lib/snapping";
+import { useI18n, type TranslationKey } from "../lib/i18n";
 
 /** 竖排图标导航按钮；定义在模块作用域，避免组件渲染时重建导致子树重挂载 */
 const NavButton = ({
@@ -52,8 +43,8 @@ const NavButton = ({
     </button>
 );
 
-/** 捕捉类型的中文标签，顺序即设置面板展示顺序 */
-const SNAP_TYPE_OPTIONS: Array<{ type: SnapType; label: string }> = [
+/** 捕捉类型与界面文案键，顺序即设置面板展示顺序 */
+const SNAP_TYPE_OPTIONS: Array<{ type: SnapType; labelKey: TranslationKey }> = [
     SnapType.ENDPOINT,
     SnapType.MIDPOINT,
     SnapType.CENTER,
@@ -62,7 +53,10 @@ const SNAP_TYPE_OPTIONS: Array<{ type: SnapType; label: string }> = [
     SnapType.PERPENDICULAR,
     SnapType.TANGENT,
     SnapType.NEAREST,
-].map((type) => ({ type, label: SNAP_TYPE_LABELS[type] }));
+].map((type) => ({
+    type,
+    labelKey: `snap.${type.toLowerCase()}` as TranslationKey,
+}));
 
 interface RightPanelProps {
     mode: SidePanelMode;
@@ -70,24 +64,16 @@ interface RightPanelProps {
     currentElements: CADElement[];
     onUpdateElement: (el: CADElement) => void;
     onApplyAIAction: (operation: string, elements?: CADElement[], params?: any) => void;
-    /** AI 批量动作先进入预览，由宿主确认后一次性提交；meta 用于回写本轮采纳结果 */
-    onPreviewAIActions: (actions: AIActionResponse[], meta: TurnMeta) => void;
     drawingSettings: DrawingSettings;
     onUpdateSettings: (settings: DrawingSettings) => void;
-    /** 画布「问 AI」写入对话输入框的草稿，nonce 递增表示一次新请求 */
-    chatDraft?: { text: string; nonce: number } | null;
-    /** 检查面板「让 AI 修复」：切到对话并带上问题摘要，可预选相关图元 */
+    /** 检查面板「让 AI 修复」：打开 AI 浮窗并带上问题摘要，可预选相关图元 */
     onAskAIFix?: (prompt: string, ids: string[]) => void;
     /** 当前项目设计约定与保存回调 */
     designConventions?: DesignConventions | null;
     onSaveDesignConventions?: (conventions: DesignConventions | null) => Promise<void> | void;
-    /** 被隔离隐藏的图元数量，AI 上下文需要知道当前可见性 */
-    hiddenObjectCount?: number;
     // Files Props
     files: ProjectFile[];
     activeFileId: string | null;
-    /** 项目身份键：服务端 id 回填时保持不变 */
-    projectChatKey?: string | null;
     onLoadFile: (file: ProjectFile) => void;
     onCreateFile: (name: string) => void;
     onRenameFile: (id: string, newName: string) => void;
@@ -104,17 +90,13 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     currentElements,
     onUpdateElement,
     onApplyAIAction,
-    onPreviewAIActions,
     drawingSettings,
     onUpdateSettings,
-    chatDraft,
     onAskAIFix,
     designConventions,
     onSaveDesignConventions,
     files,
     activeFileId,
-    projectChatKey,
-    hiddenObjectCount,
     onLoadFile,
     onCreateFile,
     onRenameFile,
@@ -123,6 +105,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     onLogout,
     onShowUserProfile,
 }) => {
+    const { t } = useI18n();
     // 图层可见性 / 锁定状态由画布 Store 统一维护，渲染与命中测试都依赖它
     const {
         state: canvasState,
@@ -138,40 +121,6 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         setCurrentLayer,
         moveLayer,
     } = useCanvas();
-
-    const assistantContextMeta = useMemo<DesignContextMeta>(() => {
-        const names = new Set<string>([
-            "0",
-            ...canvasState.layerOrder,
-            ...currentElements.map((element) => element.layer || "0"),
-        ]);
-        const activeProject = files.find((file) => file.id === activeFileId);
-        const hiddenLayerElements = currentElements.filter((element) =>
-            canvasState.hiddenLayers.includes(element.layer || "0"),
-        ).length;
-        return {
-            projectName: activeProject?.name,
-            units: drawingSettings.units,
-            layers: [...names].map((name) => ({
-                name,
-                visible: !canvasState.hiddenLayers.includes(name),
-                locked: canvasState.lockedLayers.includes(name),
-            })),
-            blockCount: activeProject?.blockReferences?.length ?? 0,
-            revision: canvasState.revision,
-            hiddenCount: hiddenLayerElements + (hiddenObjectCount ?? 0),
-        };
-    }, [
-        canvasState.layerOrder,
-        canvasState.hiddenLayers,
-        canvasState.lockedLayers,
-        canvasState.revision,
-        currentElements,
-        drawingSettings.units,
-        files,
-        activeFileId,
-        hiddenObjectCount,
-    ]);
 
     // 同步状态直接订阅 worker，设置面板无需逐层透传 props
     const syncStatus = useSyncExternalStore(
@@ -220,12 +169,6 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     const [searchQuery, setSearchQuery] = useState("");
     const [editingFileId, setEditingFileId] = useState<string | null>(null);
     const [editName, setEditName] = useState("");
-
-    // AI 注册表：模型 / 助手 / 技能共用一份状态，写入后自动重拉
-    const registry = useAIRegistry();
-
-    // Assistants State
-    const [selectedAssistant, setSelectedAssistant] = useState<Assistant | null>(null);
 
     // User Profile Edit State
     const [editingProfile, setEditingProfile] = useState(false);
@@ -344,7 +287,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     };
 
     const handleCreateFile = () => {
-        onCreateFile("Untitled Drawing");
+        onCreateFile(t("panel.untitledDrawing"));
     };
 
     const startEditingFile = (file: ProjectFile) => {
@@ -388,7 +331,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                 }}
                 className="px-3 py-2 text-left text-xs text-red-400 hover:bg-red-900/20 hover:text-red-300 flex items-center gap-2"
             >
-                <span className="material-symbols-outlined text-[14px]">delete</span> Delete
+                <span className="material-symbols-outlined text-[14px]">delete</span> {t("common.delete")}
             </button>
         </div>
     );
@@ -428,19 +371,19 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                         onClick={() => setPropTab("INSPECTOR")}
                         className={`flex-1 py-3 text-xs font-bold transition-colors border-b-2 ${propTab === "INSPECTOR" ? "text-cad-primary border-cad-primary bg-cad-primary/10" : "text-cad-muted border-transparent hover:text-cad-text"}`}
                     >
-                        Inspector
+                        {t("panel.inspector")}
                     </button>
                     <button
                         onClick={() => setPropTab("STRUCTURE")}
                         className={`flex-1 py-3 text-xs font-bold transition-colors border-b-2 ${propTab === "STRUCTURE" ? "text-cad-primary border-cad-primary bg-cad-primary/10" : "text-cad-muted border-transparent hover:text-cad-text"}`}
                     >
-                        Structure
+                        {t("panel.structure")}
                     </button>
                     <button
                         onClick={() => setPropTab("BLOCKS")}
                         className={`flex-1 py-3 text-xs font-bold transition-colors border-b-2 ${propTab === "BLOCKS" ? "text-cad-primary border-cad-primary bg-cad-primary/10" : "text-cad-muted border-transparent hover:text-cad-text"}`}
                     >
-                        Blocks
+                        {t("panel.blockLibrary")}
                     </button>
                 </div>
 
@@ -462,11 +405,11 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                         <div className="flex flex-col gap-2 p-4 overflow-y-auto h-full">
                             <div className="flex items-center justify-between mb-2">
                                 <span className="text-[10px] text-cad-muted font-bold uppercase">
-                                    Layers
+                                    {t("panel.layers")}
                                 </span>
                                 <div className="flex items-center gap-2">
                                     <span className="text-[10px] text-gray-500">
-                                        {currentElements.length} Entities
+                                        {t("panel.entities", { count: currentElements.length })}
                                     </span>
                                     <button
                                         onClick={() => setShowNewLayer((prev) => !prev)}
@@ -946,7 +889,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             >
                 <input
                     type="text"
-                    placeholder="Search blocks..."
+                    placeholder={t("panel.searchBlocks")}
                     className="w-full bg-cad-bg-secondary border border-gray-700 rounded p-2 mb-2 text-xs text-cad-text outline-none"
                     value={blockSearch}
                     onChange={(e) => setBlockSearch(e.target.value)}
@@ -955,7 +898,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                 {filteredTree.rootBlocks.map(renderBlockNode)}
 
                 {filteredTree.categories.length === 0 && filteredTree.rootBlocks.length === 0 && (
-                    <p className="text-gray-500 text-xs text-center mt-8">No blocks found</p>
+                    <p className="text-gray-500 text-xs text-center mt-8">{t("panel.noBlocks")}</p>
                 )}
             </div>
         </div>
@@ -970,18 +913,18 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             <div className="flex flex-col h-full bg-cad-bg">
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-cad-border bg-cad-panel">
-                    <h3 className="text-sm font-bold text-cad-text">Project Files</h3>
+                    <h3 className="text-sm font-bold text-cad-text">{t("panel.projectFiles")}</h3>
                     <div className="flex items-center gap-2">
                         <button
                             className="p-1 hover:bg-cad-text/10 rounded text-gray-400 hover:text-cad-text"
-                            title="Sort"
+                            title={t("panel.sort")}
                         >
                             <span className="material-symbols-outlined text-[20px]">sort</span>
                         </button>
                         <button
                             onClick={handleCreateFile}
                             className="flex items-center justify-center size-6 bg-cad-primary text-white rounded hover:bg-cad-primaryHover transition-colors shadow-sm"
-                            title="New File"
+                            title={t("panel.newFile")}
                         >
                             <span className="material-symbols-outlined text-[18px]">add</span>
                         </button>
@@ -996,7 +939,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                         </span>
                         <input
                             type="text"
-                            placeholder="Search files..."
+                            placeholder={t("panel.searchFiles")}
                             className="w-full h-8 pl-8 pr-3 rounded bg-cad-panel border border-cad-border text-xs text-cad-text focus:border-cad-primary focus:ring-1 focus:ring-cad-primary outline-none transition-all placeholder-gray-500"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
@@ -1074,7 +1017,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                             <span className="material-symbols-outlined text-[48px] opacity-20 mb-2">
                                 folder_off
                             </span>
-                            <p className="text-xs">No files found</p>
+                            <p className="text-xs">{t("panel.noFiles")}</p>
                         </div>
                     )}
                 </div>
@@ -1085,13 +1028,13 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     const renderSettings = () => (
         <div className="flex flex-col h-full bg-cad-bg">
             <div className="flex items-center justify-between p-4 border-b border-cad-border bg-cad-panel">
-                <h3 className="text-sm font-bold text-cad-text">Drawing Settings</h3>
+                <h3 className="text-sm font-bold text-cad-text">{t("settings.title")}</h3>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-6">
                 {/* Cloud Sync */}
                 <div className="space-y-3">
                     <h4 className="text-xs font-bold text-cad-muted uppercase tracking-wider">
-                        Cloud Sync
+                        {t("settings.cloudSync")}
                     </h4>
                     <div className="rounded border border-cad-border bg-cad-panel p-3 space-y-2">
                         <div className="flex items-center justify-between gap-2 text-xs">
@@ -1108,21 +1051,26 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                                     }`}
                                 />
                                 {!syncStatus.online
-                                    ? "Offline"
+                                    ? t("settings.offline")
                                     : syncStatus.syncing
-                                      ? "Syncing..."
+                                      ? t("settings.syncing")
                                       : syncStatus.pendingCount > 0 || syncStatus.failedCount > 0
-                                        ? "Changes pending"
-                                        : "Up to date"}
+                                        ? t("settings.pendingChanges")
+                                        : t("settings.upToDate")}
                             </span>
                             <span className="font-mono text-[10px] text-cad-muted">
-                                {syncStatus.pendingCount} pending / {syncStatus.failedCount} failed
+                                {t("settings.pendingFailed", {
+                                    pending: syncStatus.pendingCount,
+                                    failed: syncStatus.failedCount,
+                                })}
                             </span>
                         </div>
 
                         {syncStatus.lastSyncedAt && (
                             <p className="text-[10px] text-cad-muted">
-                                Last synced {new Date(syncStatus.lastSyncedAt).toLocaleTimeString()}
+                                {t("settings.lastSynced", {
+                                    time: new Date(syncStatus.lastSyncedAt).toLocaleTimeString(),
+                                })}
                             </p>
                         )}
 
@@ -1141,14 +1089,14 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                                 disabled={syncStatus.syncing || !syncStatus.online}
                                 className="flex-1 h-7 rounded border border-cad-border text-[11px] text-cad-text hover:bg-cad-border/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             >
-                                Sync now
+                                {t("settings.syncNow")}
                             </button>
                             <button
                                 onClick={() => void syncService.retryFailed()}
                                 disabled={syncStatus.syncing || syncStatus.failedCount === 0}
                                 className="flex-1 h-7 rounded border border-cad-border text-[11px] text-cad-text hover:bg-cad-border/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             >
-                                Retry failed
+                                {t("settings.retryFailed")}
                             </button>
                         </div>
                     </div>
@@ -1157,10 +1105,12 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                 {/* Coordinate System */}
                 <div className="space-y-3">
                     <h4 className="text-xs font-bold text-cad-muted uppercase tracking-wider">
-                        Coordinate System
+                        {t("settings.coordinateSystem")}
                     </h4>
                     <div className="space-y-2">
-                        <label className="text-xs text-cad-text font-medium">Drawing Units</label>
+                        <label className="text-xs text-cad-text font-medium">
+                            {t("settings.units")}
+                        </label>
                         <div className="flex rounded border border-cad-border bg-cad-panel overflow-hidden">
                             {(["mm", "cm", "m", "in", "ft"] as const).map((u) => (
                                 <button
@@ -1178,7 +1128,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                     <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
                             <label className="text-[10px] text-cad-muted font-medium">
-                                Grid Spacing
+                                {t("settings.gridSpacing")}
                             </label>
                             <input
                                 type="number"
@@ -1194,7 +1144,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                         </div>
                         <div className="space-y-1">
                             <label className="text-[10px] text-cad-muted font-medium">
-                                Snap Aperture (px)
+                                {t("settings.snapAperture")}
                             </label>
                             <input
                                 type="number"
@@ -1213,10 +1163,11 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                     {/* 对象捕捉类型开关 */}
                     <div className="space-y-1">
                         <label className="text-[10px] text-cad-muted font-medium">
-                            Object Snap
+                            {t("settings.objectSnap")}
                         </label>
                         <div className="grid grid-cols-2 gap-1">
-                            {SNAP_TYPE_OPTIONS.map(({ type, label }) => {
+                            {SNAP_TYPE_OPTIONS.map(({ type, labelKey }) => {
+                                const label = t(labelKey);
                                 const enabledTypes =
                                     drawingSettings.enabledSnapTypes ?? DEFAULT_SNAP_TYPES;
                                 const isEnabled = enabledTypes.includes(type);
@@ -1244,7 +1195,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                             })}
                         </div>
                         <p className="text-[10px] text-cad-muted">
-                            最近点默认关闭，开启后会吸附到图元任意位置。
+                            {t("settings.nearestHint")}
                         </p>
                     </div>
                 </div>
@@ -1254,12 +1205,12 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                 {/* Dimension Style */}
                 <div className="space-y-3">
                     <h4 className="text-xs font-bold text-cad-muted uppercase tracking-wider">
-                        Dimension Style
+                        {t("settings.dimensionStyle")}
                     </h4>
                     <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
                             <label className="text-[10px] text-cad-muted font-medium">
-                                Scale Factor
+                                {t("settings.scaleFactor")}
                             </label>
                             <input
                                 type="number"
@@ -1276,7 +1227,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                         </div>
                         <div className="space-y-1">
                             <label className="text-[10px] text-cad-muted font-medium">
-                                Precision
+                                {t("settings.precision")}
                             </label>
                             <input
                                 type="number"
@@ -1295,7 +1246,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                     </div>
                     <div className="p-3 bg-cad-panel rounded border border-cad-border flex flex-col items-center justify-center h-20 overflow-hidden relative">
                         <span className="text-[10px] text-cad-muted absolute top-1 left-2">
-                            Preview
+                            {t("settings.preview")}
                         </span>
                         {/* Mini preview of a dimension */}
                         <svg width="150" height="40" className="overflow-visible">
@@ -1345,7 +1296,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             return (
                 <div className="flex flex-col h-full bg-cad-bg">
                     <div className="flex items-center justify-between p-4 border-b border-cad-border bg-cad-panel">
-                        <h3 className="text-sm font-bold text-cad-text">Edit Profile</h3>
+                        <h3 className="text-sm font-bold text-cad-text">{t("panel.editProfile")}</h3>
                         <button
                             onClick={() => setEditingProfile(false)}
                             className="p-1 hover:bg-cad-text/10 rounded text-gray-400 hover:text-cad-text transition-colors"
@@ -1356,7 +1307,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
 
                     <div className="flex-1 overflow-y-auto p-4 space-y-4">
                         <div className="space-y-2">
-                            <label className="text-xs font-bold text-cad-muted">Username</label>
+                            <label className="text-xs font-bold text-cad-muted">{t("profile.username")}</label>
                             <input
                                 type="text"
                                 value={profileForm.username}
@@ -1367,7 +1318,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                             />
                         </div>
                         <div className="space-y-2">
-                            <label className="text-xs font-bold text-cad-muted">Email</label>
+                            <label className="text-xs font-bold text-cad-muted">{t("profile.email")}</label>
                             <input
                                 type="email"
                                 value={profileForm.email}
@@ -1396,7 +1347,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                             onClick={() => setEditingProfile(false)}
                             className="flex-1 py-2 px-3 bg-cad-border/50 text-cad-text text-xs font-bold rounded hover:bg-cad-border/70 transition-colors"
                         >
-                            Cancel
+                            {t("profile.cancel")}
                         </button>
                         <button
                             onClick={async () => {
@@ -1408,19 +1359,19 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                                     });
                                     setUserMessage({
                                         type: "success",
-                                        text: "Profile updated successfully",
+                                        text: t("profile.updated"),
                                     });
                                     setTimeout(() => setEditingProfile(false), 1500);
                                 } catch (e: any) {
                                     setUserMessage({
                                         type: "error",
-                                        text: e.message || "Failed to update profile",
+                                        text: e.message || t("profile.updateFailed"),
                                     });
                                 }
                             }}
                             className="flex-1 py-2 px-3 bg-cad-primary text-white text-xs font-bold rounded hover:bg-cad-primaryHover transition-colors"
                         >
-                            Save Changes
+                            {t("profile.saveChanges")}
                         </button>
                     </div>
                 </div>
@@ -1431,7 +1382,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             return (
                 <div className="flex flex-col h-full bg-cad-bg">
                     <div className="flex items-center justify-between p-4 border-b border-cad-border bg-cad-panel">
-                        <h3 className="text-sm font-bold text-cad-text">Change Password</h3>
+                        <h3 className="text-sm font-bold text-cad-text">{t("profile.changePassword")}</h3>
                         <button
                             onClick={() => setEditingPassword(false)}
                             className="p-1 hover:bg-cad-text/10 rounded text-gray-400 hover:text-cad-text transition-colors"
@@ -1443,7 +1394,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                     <div className="flex-1 overflow-y-auto p-4 space-y-4">
                         <div className="space-y-2">
                             <label className="text-xs font-bold text-cad-muted">
-                                Current Password
+                                {t("profile.currentPassword")}
                             </label>
                             <input
                                 type="password"
@@ -1455,11 +1406,11 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                                     })
                                 }
                                 className="w-full h-8 bg-white dark:bg-black/20 border border-cad-border rounded px-3 text-sm text-cad-text focus:border-cad-primary outline-none"
-                                placeholder="Enter current password"
+                                placeholder={t("profile.currentPasswordPlaceholder")}
                             />
                         </div>
                         <div className="space-y-2">
-                            <label className="text-xs font-bold text-cad-muted">New Password</label>
+                            <label className="text-xs font-bold text-cad-muted">{t("profile.newPassword")}</label>
                             <input
                                 type="password"
                                 value={passwordForm.newPassword}
@@ -1470,12 +1421,12 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                                     })
                                 }
                                 className="w-full h-8 bg-white dark:bg-black/20 border border-cad-border rounded px-3 text-sm text-cad-text focus:border-cad-primary outline-none"
-                                placeholder="Enter new password"
+                                placeholder={t("profile.newPasswordPlaceholder")}
                             />
                         </div>
                         <div className="space-y-2">
                             <label className="text-xs font-bold text-cad-muted">
-                                Confirm Password
+                                {t("profile.confirmPassword")}
                             </label>
                             <input
                                 type="password"
@@ -1487,7 +1438,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                                     })
                                 }
                                 className="w-full h-8 bg-white dark:bg-black/20 border border-cad-border rounded px-3 text-sm text-cad-text focus:border-cad-primary outline-none"
-                                placeholder="Confirm new password"
+                                placeholder={t("profile.confirmPasswordPlaceholder")}
                             />
                         </div>
 
@@ -1516,21 +1467,21 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                             }}
                             className="flex-1 py-2 px-3 bg-cad-border/50 text-cad-text text-xs font-bold rounded hover:bg-cad-border/70 transition-colors"
                         >
-                            Cancel
+                            {t("profile.cancel")}
                         </button>
                         <button
                             onClick={async () => {
                                 if (passwordForm.newPassword !== passwordForm.confirmPassword) {
                                     setUserMessage({
                                         type: "error",
-                                        text: "Passwords do not match",
+                                        text: t("profile.passwordMismatch"),
                                     });
                                     return;
                                 }
                                 if (passwordForm.newPassword.length < 6) {
                                     setUserMessage({
                                         type: "error",
-                                        text: "Password must be at least 6 characters",
+                                        text: t("profile.passwordTooShort"),
                                     });
                                     return;
                                 }
@@ -1542,7 +1493,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                                     });
                                     setUserMessage({
                                         type: "success",
-                                        text: "Password changed successfully",
+                                        text: t("profile.passwordChanged"),
                                     });
                                     setTimeout(() => {
                                         setEditingPassword(false);
@@ -1555,13 +1506,13 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                                 } catch (e: any) {
                                     setUserMessage({
                                         type: "error",
-                                        text: e.message || "Failed to change password",
+                                        text: e.message || t("profile.passwordChangeFailed"),
                                     });
                                 }
                             }}
                             className="flex-1 py-2 px-3 bg-cad-primary text-white text-xs font-bold rounded hover:bg-cad-primaryHover transition-colors"
                         >
-                            Update Password
+                            {t("profile.updatePassword")}
                         </button>
                     </div>
                 </div>
@@ -1571,11 +1522,11 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         return (
             <div className="flex flex-col h-full bg-cad-bg">
                 <div className="flex items-center justify-between p-4 border-b border-cad-border bg-cad-panel">
-                    <h3 className="text-sm font-bold text-cad-text">User Profile</h3>
+                    <h3 className="text-sm font-bold text-cad-text">{t("panel.userProfile")}</h3>
                     <button
                         onClick={() => onChangeMode(SidePanelMode.SETTINGS)}
                         className="p-1 hover:bg-cad-text/10 rounded text-gray-400 hover:text-cad-text transition-colors"
-                        title="Settings"
+                        title={t("profile.settings")}
                     >
                         <span className="material-symbols-outlined text-[20px]">settings</span>
                     </button>
@@ -1588,11 +1539,11 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                             {currentUser?.username?.substring(0, 2).toUpperCase() || "U"}
                         </div>
                         <h4 className="text-lg font-bold text-cad-text">
-                            {currentUser?.username || "User"}
+                            {currentUser?.username || t("profile.userFallback")}
                         </h4>
                         <p className="text-xs text-cad-muted mt-1">{currentUser?.email || ""}</p>
                         <span className="mt-3 px-3 py-1 bg-cad-primary/20 text-cad-primary text-xs font-semibold rounded-full border border-cad-primary/30">
-                            Engineer
+                            {t("profile.engineer")}
                         </span>
                     </div>
 
@@ -1600,22 +1551,26 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                     <div className="p-4 space-y-4">
                         <div className="space-y-3">
                             <h5 className="text-xs font-bold text-cad-muted uppercase tracking-wider">
-                                Account Details
+                                {t("profile.accountDetails")}
                             </h5>
 
                             <div className="bg-cad-panel rounded-lg border border-cad-border p-3 space-y-2">
                                 <div className="flex justify-between items-center">
-                                    <span className="text-xs text-cad-muted">User ID</span>
+                                    <span className="text-xs text-cad-muted">
+                                        {t("profile.userId")}
+                                    </span>
                                     <span className="text-xs font-mono text-cad-text truncate max-w-[150px]">
-                                        {currentUser?.id || "N/A"}
+                                        {currentUser?.id || t("profile.na")}
                                     </span>
                                 </div>
                                 <div className="flex justify-between items-center">
-                                    <span className="text-xs text-cad-muted">Member Since</span>
+                                    <span className="text-xs text-cad-muted">
+                                        {t("profile.memberSince")}
+                                    </span>
                                     <span className="text-xs text-cad-text">
                                         {currentUser?.createdAt
                                             ? new Date(currentUser.createdAt).toLocaleDateString()
-                                            : "N/A"}
+                                            : t("profile.na")}
                                     </span>
                                 </div>
                             </div>
@@ -1624,7 +1579,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                         {/* Quick Actions */}
                         <div className="space-y-3">
                             <h5 className="text-xs font-bold text-cad-muted uppercase tracking-wider">
-                                Quick Actions
+                                {t("profile.quickActions")}
                             </h5>
 
                             <button
@@ -1642,10 +1597,10 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                                 </span>
                                 <div>
                                     <p className="text-xs font-semibold text-cad-text">
-                                        Edit Profile
+                                        {t("panel.editProfile")}
                                     </p>
                                     <p className="text-[10px] text-cad-muted">
-                                        Update your information
+                                        {t("panel.updateInfo")}
                                     </p>
                                 </div>
                             </button>
@@ -1666,10 +1621,10 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                                 </span>
                                 <div>
                                     <p className="text-xs font-semibold text-cad-text">
-                                        Change Password
+                                        {t("profile.changePassword")}
                                     </p>
                                     <p className="text-[10px] text-cad-muted">
-                                        Update your security
+                                        {t("profile.changePasswordHint")}
                                     </p>
                                 </div>
                             </button>
@@ -1685,9 +1640,11 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                                 </span>
                                 <div>
                                     <p className="text-xs font-semibold text-cad-text">
-                                        Help & Support
+                                        {t("profile.helpSupport")}
                                     </p>
-                                    <p className="text-[10px] text-cad-muted">Get assistance</p>
+                                    <p className="text-[10px] text-cad-muted">
+                                        {t("profile.getAssistance")}
+                                    </p>
                                 </div>
                             </a>
                         </div>
@@ -1701,7 +1658,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                                 <span className="material-symbols-outlined text-[18px]">
                                     logout
                                 </span>
-                                <span className="text-xs font-bold">Logout</span>
+                                <span className="text-xs font-bold">{t("panel.logout")}</span>
                             </button>
                         </div>
                     </div>
@@ -1726,7 +1683,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             <div
                 className="hidden lg:flex w-1 bg-cad-border hover:bg-cad-primary cursor-col-resize relative z-30 transition-colors flex-shrink-0"
                 onMouseDown={handleAssistantResizeStart}
-                title="Drag to resize"
+                title={t("panel.dragResize")}
             />
 
             {/* Frame 2: AI / Dynamic Content (Resizable width) */}
@@ -1735,28 +1692,6 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                 style={isPanelCollapsed ? {} : { width: `${assistantPanelWidth}px` }}
                 data-collapsed={isPanelCollapsed}
             >
-                {mode === SidePanelMode.LLM_MODELS && <LLMModelsPanel registry={registry} />}
-                {mode === SidePanelMode.ASSISTANTS && <AssistantsPanel registry={registry} />}
-                {mode === SidePanelMode.SKILLS && <AISkillsPanel registry={registry} />}
-                {mode === SidePanelMode.CHAT && (
-                    <ChatPanel
-                        projectId={activeFileId}
-                        projectKey={projectChatKey ?? activeFileId}
-                        currentElements={currentElements}
-                        selectedIds={selectedIds}
-                        units={drawingSettings.units}
-                        contextMeta={assistantContextMeta}
-                        conventions={designConventions}
-                        assistants={registry.assistants}
-                        assistant={selectedAssistant}
-                        onAssistantChange={setSelectedAssistant}
-                        models={registry.models}
-                        onPreviewActions={onPreviewAIActions}
-                        draft={chatDraft}
-                        onOpenAssistants={() => onChangeMode(SidePanelMode.ASSISTANTS)}
-                        onOpenSkills={() => onChangeMode(SidePanelMode.SKILLS)}
-                    />
-                )}
                 {mode === SidePanelMode.REVIEW && (
                     <DrawingReviewPanel
                         elements={currentElements}
@@ -1786,7 +1721,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                         setIsPanelCollapsed(!isPanelCollapsed);
                     }}
                     className="group flex flex-col items-center gap-1 p-2 rounded-lg transition-all w-10 text-gray-500 hover:text-cad-text hover:bg-cad-text/5 relative z-50"
-                    title={isPanelCollapsed ? "Expand Panel" : "Collapse Panel"}
+                    title={isPanelCollapsed ? t("panel.expand") : t("panel.collapse")}
                 >
                     <span className="material-symbols-outlined text-[20px]">
                         {isPanelCollapsed
@@ -1798,44 +1733,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                 <div className="w-8 h-px bg-cad-border shrink-0"></div>
 
                 <NavButton
-                    icon="deployed_code"
-                    label="模型"
-                    active={mode === SidePanelMode.LLM_MODELS}
-                    onClick={() => {
-                        setIsPanelCollapsed(false);
-                        onChangeMode(SidePanelMode.LLM_MODELS);
-                    }}
-                />
-                <NavButton
-                    icon="group"
-                    label="助手"
-                    active={mode === SidePanelMode.ASSISTANTS}
-                    onClick={() => {
-                        setIsPanelCollapsed(false);
-                        onChangeMode(SidePanelMode.ASSISTANTS);
-                    }}
-                />
-                <NavButton
-                    icon="extension"
-                    label="技能"
-                    active={mode === SidePanelMode.SKILLS}
-                    onClick={() => {
-                        setIsPanelCollapsed(false);
-                        onChangeMode(SidePanelMode.SKILLS);
-                    }}
-                />
-                <NavButton
-                    icon="chat"
-                    label="对话"
-                    active={mode === SidePanelMode.CHAT}
-                    onClick={() => {
-                        setIsPanelCollapsed(false);
-                        onChangeMode(SidePanelMode.CHAT);
-                    }}
-                />
-                <NavButton
                     icon="rule"
-                    label="检查"
+                    label={t("panel.review")}
                     active={mode === SidePanelMode.REVIEW}
                     onClick={() => {
                         setIsPanelCollapsed(false);
@@ -1844,7 +1743,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                 />
                 <NavButton
                     icon="design_services"
-                    label="约定"
+                    label={t("panel.conventions")}
                     active={mode === SidePanelMode.CONVENTIONS}
                     onClick={() => {
                         setIsPanelCollapsed(false);
@@ -1853,7 +1752,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                 />
                 <NavButton
                     icon="folder_open"
-                    label="Files"
+                    label={t("panel.files")}
                     active={mode === SidePanelMode.FILES}
                     onClick={() => {
                         setIsPanelCollapsed(false);
@@ -1864,7 +1763,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                 <div className="flex-1"></div>
                 <NavButton
                     icon="settings"
-                    label="Settings"
+                    label={t("panel.settings")}
                     active={mode === SidePanelMode.SETTINGS}
                     onClick={() => {
                         setIsPanelCollapsed(false);
@@ -1879,14 +1778,14 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                             onShowUserProfile?.();
                         }}
                         className="size-8 rounded-full bg-gradient-to-br from-[#137fec] to-[#0b63c1] flex items-center justify-center text-[10px] font-bold text-white cursor-pointer mt-2 hover:scale-105 transition-transform"
-                        title="Click to view profile"
+                        title={t("panel.clickProfile")}
                     >
                         {currentUser.username?.substring(0, 2).toUpperCase()}
                     </div>
                 ) : (
                     <div
                         className="size-8 rounded-full bg-indigo-500 flex items-center justify-center text-[10px] font-bold text-white cursor-pointer mt-2"
-                        title="Not logged in"
+                        title={t("panel.notLoggedIn")}
                     >
                         U
                     </div>

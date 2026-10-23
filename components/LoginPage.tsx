@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useI18n } from "../lib/i18n";
 
 interface LoginPageProps {
   onLogin: (email: string, password: string) => Promise<void>;
@@ -11,6 +12,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   loading,
   onRegisterClick,
 }) => {
+  const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -23,6 +25,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       await onLogin(email, password);
     } catch (err) {
       console.error("Login failed:", err);
+      setError(err instanceof Error && err.message ? err.message : t("auth.loginFailed"));
     }
   };
 
@@ -144,10 +147,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
           <div className="space-y-4 max-w-lg">
             <p className="text-2xl font-medium text-white leading-tight">
-              Engineering limits broken.
+              {t("auth.tagline1")}
             </p>
             <p className="text-xl font-bold text-[#137fec] bg-clip-text text-transparent bg-gradient-to-r from-[#137fec] to-white">
-              The Future of Intelligent Design.
+              {t("auth.tagline2")}
             </p>
           </div>
 
@@ -158,33 +161,28 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           </div>
         </div>
 
-        <div className="relative z-10 text-xs text-gray-500 font-mono">
-          V5.2.0 IGNITE BUILD
-        </div>
+        <div className="relative z-10 text-xs text-gray-500 font-mono">{t("auth.build")}</div>
       </div>
 
       {/* Right Side - Login Form */}
       <div className="flex-1 flex items-center justify-center p-8 bg-white dark:bg-[#0d1116] text-[#24292f] dark:text-[#e6edf3]">
         <div className="w-full max-w-md space-y-8">
           <div className="space-y-2">
-            <h2 className="text-3xl font-bold tracking-tight">Welcome back</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Please enter your credentials to access your engineering
-              workspaces.
-            </p>
+            <h2 className="text-3xl font-bold tracking-tight">{t("auth.loginTitle")}</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{t("auth.loginSubtitle")}</p>
           </div>
 
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div className="space-y-4">
               <div className="space-y-2">
                 <label htmlFor="email" className="text-sm font-semibold">
-                  Email Address
+                  {t("auth.email")}
                 </label>
                 <input
                   id="email"
                   type="email"
                   required
-                  placeholder="engineer@firm.com"
+                  placeholder={t("auth.emailPlaceholder")}
                   className="w-full px-4 py-3 rounded-lg bg-gray-50 dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] focus:border-[#137fec] focus:ring-1 focus:ring-[#137fec] outline-none transition-all placeholder-gray-400"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -194,13 +192,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label htmlFor="password" className="text-sm font-semibold">
-                    Password
+                    {t("auth.password")}
                   </label>
                   <a
                     href="#"
                     className="text-xs font-semibold text-[#3b82f6] hover:text-[#2563eb]"
                   >
-                    Forgot password?
+                    {t("auth.forgotPassword")}
                   </a>
                 </div>
                 <div className="relative">
@@ -216,6 +214,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
                     className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
                   >
                     <span className="material-symbols-outlined text-[20px]">
@@ -237,7 +236,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 </span>
               ) : (
                 <>
-                  <span>Sign In</span>
+                  <span>{t("auth.signIn")}</span>
                   <span className="material-symbols-outlined text-[20px]">
                     arrow_forward
                   </span>
@@ -253,23 +252,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           </form>
 
           <div className="text-center text-sm">
-            <span className="text-gray-500">Don't have an account yet?</span>{" "}
+            <span className="text-gray-500">{t("auth.noAccount")}</span>{" "}
             <button
               onClick={onRegisterClick}
               className="font-bold text-[#3b82f6] hover:underline"
             >
-              Create Account
+              {t("auth.createAccount")}
             </button>
           </div>
 
           <div className="flex justify-between items-center text-[10px] text-gray-400 uppercase tracking-wider pt-8">
-            <span>v5.2.0 Ignite Build</span>
+            <span>{t("auth.build")}</span>
             <div className="space-x-4">
               <a href="#" className="hover:text-gray-600">
-                Security
+                {t("auth.security")}
               </a>
               <a href="#" className="hover:text-gray-600">
-                Docs
+                {t("auth.docs")}
               </a>
             </div>
           </div>

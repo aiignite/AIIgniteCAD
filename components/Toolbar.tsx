@@ -8,16 +8,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ToolType } from '../types';
 import { useCanvas } from '../store/canvasStore';
+import { useI18n, type TranslationKey } from '../lib/i18n';
 
 interface ToolEntry {
     tool: ToolType;
     icon: string;
-    label: string;
+    labelKey: TranslationKey;
 }
 
 interface ToolGroup {
     key: string;
-    label: string;
+    labelKey: TranslationKey;
     tools: ToolEntry[];
 }
 
@@ -25,30 +26,30 @@ interface ToolGroup {
 const PRIMARY_GROUPS: ToolGroup[] = [
     {
         key: 'navigate',
-        label: '导航',
+        labelKey: 'toolbar.navigate',
         tools: [
-            { tool: ToolType.SELECT, icon: 'arrow_selector_tool', label: '选择' },
-            { tool: ToolType.PAN, icon: 'drag_pan', label: '平移' },
+            { tool: ToolType.SELECT, icon: 'arrow_selector_tool', labelKey: 'toolbar.select' },
+            { tool: ToolType.PAN, icon: 'drag_pan', labelKey: 'toolbar.pan' },
         ],
     },
     {
         key: 'draw',
-        label: '绘图',
+        labelKey: 'toolbar.draw',
         tools: [
-            { tool: ToolType.LINE, icon: 'remove', label: '直线' },
-            { tool: ToolType.POLYLINE, icon: 'polyline', label: '多段线' },
-            { tool: ToolType.CIRCLE, icon: 'circle', label: '圆' },
-            { tool: ToolType.RECTANGLE, icon: 'rectangle', label: '矩形' },
-            { tool: ToolType.ARC, icon: 'architecture', label: '圆弧' },
-            { tool: ToolType.TEXT, icon: 'title', label: '文字' },
+            { tool: ToolType.LINE, icon: 'remove', labelKey: 'toolbar.line' },
+            { tool: ToolType.POLYLINE, icon: 'polyline', labelKey: 'toolbar.polyline' },
+            { tool: ToolType.CIRCLE, icon: 'circle', labelKey: 'toolbar.circle' },
+            { tool: ToolType.RECTANGLE, icon: 'rectangle', labelKey: 'toolbar.rectangle' },
+            { tool: ToolType.ARC, icon: 'architecture', labelKey: 'toolbar.arc' },
+            { tool: ToolType.TEXT, icon: 'title', labelKey: 'toolbar.text' },
         ],
     },
     {
         key: 'modify',
-        label: '修改',
+        labelKey: 'toolbar.modify',
         tools: [
-            { tool: ToolType.COPY, icon: 'content_copy', label: '复制' },
-            { tool: ToolType.TRIM, icon: 'content_cut', label: '修剪' },
+            { tool: ToolType.COPY, icon: 'content_copy', labelKey: 'toolbar.copy' },
+            { tool: ToolType.TRIM, icon: 'content_cut', labelKey: 'toolbar.trim' },
         ],
     },
 ];
@@ -57,40 +58,40 @@ const PRIMARY_GROUPS: ToolGroup[] = [
 const OVERFLOW_GROUPS: ToolGroup[] = [
     {
         key: 'draw',
-        label: '绘图',
+        labelKey: 'toolbar.draw',
         tools: [
-            { tool: ToolType.HATCH, icon: 'texture', label: '填充' },
+            { tool: ToolType.HATCH, icon: 'texture', labelKey: 'toolbar.hatch' },
         ],
     },
     {
         key: 'modify',
-        label: '修改',
+        labelKey: 'toolbar.modify',
         tools: [
-            { tool: ToolType.MIRROR, icon: 'flip', label: '镜像' },
-            { tool: ToolType.ROTATE, icon: 'rotate_right', label: '旋转' },
-            { tool: ToolType.SCALE, icon: 'aspect_ratio', label: '缩放选中' },
-            { tool: ToolType.OFFSET, icon: 'format_indent_increase', label: '偏移选中' },
-            { tool: ToolType.ARRAY, icon: 'grid_view', label: '阵列选中' },
+            { tool: ToolType.MIRROR, icon: 'flip', labelKey: 'toolbar.mirror' },
+            { tool: ToolType.ROTATE, icon: 'rotate_right', labelKey: 'toolbar.rotate' },
+            { tool: ToolType.SCALE, icon: 'aspect_ratio', labelKey: 'toolbar.scale' },
+            { tool: ToolType.OFFSET, icon: 'format_indent_increase', labelKey: 'toolbar.offset' },
+            { tool: ToolType.ARRAY, icon: 'grid_view', labelKey: 'toolbar.array' },
         ],
     },
     {
         key: 'annotate',
-        label: '标注',
+        labelKey: 'toolbar.annotate',
         tools: [
-            { tool: ToolType.DIMENSION, icon: 'straighten', label: '标注' },
-            { tool: ToolType.MEASURE, icon: 'square_foot', label: '测量' },
+            { tool: ToolType.DIMENSION, icon: 'straighten', labelKey: 'toolbar.dimension' },
+            { tool: ToolType.MEASURE, icon: 'square_foot', labelKey: 'toolbar.measure' },
         ],
     },
     {
         key: 'parametric',
-        label: '参数化',
+        labelKey: 'toolbar.parametric',
         tools: [
-            { tool: ToolType.GEAR, icon: 'settings', label: '齿轮' },
-            { tool: ToolType.POLYGON, icon: 'hexagon', label: '多边形' },
-            { tool: ToolType.ELLIPSE, icon: 'circle', label: '椭圆' },
-            { tool: ToolType.SPIRAL, icon: 'water_voc', label: '螺旋' },
-            { tool: ToolType.SPRING, icon: 'toys', label: '弹簧' },
-            { tool: ToolType.INVOLUTE, icon: 'show_chart', label: '渐开线' },
+            { tool: ToolType.GEAR, icon: 'settings', labelKey: 'toolbar.gear' },
+            { tool: ToolType.POLYGON, icon: 'hexagon', labelKey: 'toolbar.polygon' },
+            { tool: ToolType.ELLIPSE, icon: 'circle', labelKey: 'toolbar.ellipse' },
+            { tool: ToolType.SPIRAL, icon: 'water_voc', labelKey: 'toolbar.spiral' },
+            { tool: ToolType.SPRING, icon: 'toys', labelKey: 'toolbar.spring' },
+            { tool: ToolType.INVOLUTE, icon: 'show_chart', labelKey: 'toolbar.involute' },
         ],
     },
 ];
@@ -121,6 +122,7 @@ const ToolButton: React.FC<{
 );
 
 export const Toolbar: React.FC = () => {
+    const { t } = useI18n();
     const { state, setActiveTool } = useCanvas();
     const { activeTool } = state;
     const [showOverflow, setShowOverflow] = useState(false);
@@ -137,11 +139,11 @@ export const Toolbar: React.FC = () => {
     }, []);
 
     /** 渲染指定工具按钮 */
-    const renderTool = (tool: ToolType, icon: string, label: string) => (
+    const renderTool = (tool: ToolType, icon: string, labelKey: TranslationKey) => (
         <ToolButton
             tool={tool}
             icon={icon}
-            label={label}
+            label={t(labelKey)}
             active={activeTool === tool}
             onClick={() => setActiveTool(tool)}
         />
@@ -160,12 +162,12 @@ export const Toolbar: React.FC = () => {
                         <div
                             className="w-6 h-px bg-cad-border my-1 shrink-0"
                             data-group={group.key}
-                            title={`${group.label}工具`}
+                            title={t(group.labelKey)}
                         ></div>
                     )}
                     {group.tools.map(entry => (
                         <React.Fragment key={entry.tool}>
-                            {renderTool(entry.tool, entry.icon, entry.label)}
+                            {renderTool(entry.tool, entry.icon, entry.labelKey)}
                         </React.Fragment>
                     ))}
                 </React.Fragment>
@@ -179,7 +181,7 @@ export const Toolbar: React.FC = () => {
                     onClick={() => setShowOverflow(!showOverflow)}
                     className={`group relative flex size-9 items-center justify-center rounded transition-all shrink-0
                     ${showOverflow ? 'bg-cad-text/10 text-cad-text' : 'text-gray-400 hover:bg-cad-text/10 hover:text-cad-text'}`}
-                    title="更多工具"
+                    title={t('toolbar.more')}
                 >
                     <span className="material-symbols-outlined text-[20px]">more_horiz</span>
                 </button>
@@ -196,7 +198,7 @@ export const Toolbar: React.FC = () => {
                                     className="text-[10px] font-bold text-cad-muted uppercase px-2 py-1"
                                     data-group={group.key}
                                 >
-                                    {group.label}
+                                    {t(group.labelKey)}
                                 </div>
                                 {group.tools.map(entry => (
                                     <button
@@ -206,7 +208,7 @@ export const Toolbar: React.FC = () => {
                                         className={`flex items-center gap-3 px-2 py-1.5 rounded text-xs transition-colors
                                         ${activeTool === entry.tool ? 'bg-cad-primary/10 text-cad-primary' : 'text-cad-text hover:bg-cad-text/5'}`}
                                     >
-                                        <span className="material-symbols-outlined text-[18px]">{entry.icon}</span> {entry.label}
+                                        <span className="material-symbols-outlined text-[18px]">{entry.icon}</span> {t(entry.labelKey)}
                                     </button>
                                 ))}
                             </React.Fragment>

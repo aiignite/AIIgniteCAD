@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useI18n } from '../lib/i18n';
 
 interface RegisterPageProps {
     onRegister: (username: string, email: string, password: string) => Promise<void>;
@@ -7,6 +8,7 @@ interface RegisterPageProps {
 }
 
 export const RegisterPage: React.FC<RegisterPageProps> = ({ onRegister, loading, onBackToLogin }) => {
+    const { t } = useI18n();
     const [username, setUsername] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -19,29 +21,29 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onRegister, loading,
 
         // Validation
         if (username.length < 3) {
-            setError('用户名至少需要3个字符');
+            setError(t('auth.usernameTooShort'));
             return;
         }
 
         if (!email.includes('@')) {
-            setError('请输入有效的邮箱地址');
+            setError(t('auth.emailInvalid'));
             return;
         }
 
         if (password.length < 6) {
-            setError('密码至少需要6个字符');
+            setError(t('auth.passwordTooShort'));
             return;
         }
 
         if (password !== confirmPassword) {
-            setError('两次输入的密码不一致');
+            setError(t('auth.passwordMismatch'));
             return;
         }
 
         try {
             await onRegister(username, email, password);
         } catch (err: any) {
-            setError(err.message || '注册失败');
+            setError(err.message || t('auth.registerFailed'));
         }
     };
 
@@ -101,10 +103,10 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onRegister, loading,
 
                      <div className="space-y-4 max-w-lg">
                         <p className="text-2xl font-medium text-white leading-tight">
-                            Engineering limits broken.
+                            {t('auth.tagline1')}
                         </p>
                         <p className="text-xl font-bold text-[#137fec] bg-clip-text text-transparent bg-gradient-to-r from-[#137fec] to-white">
-                            The Future of Intelligent Design.
+                            {t('auth.tagline2')}
                         </p>
                      </div>
 
@@ -115,45 +117,43 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onRegister, loading,
                      </div>
                 </div>
 
-                <div className="relative z-10 text-xs text-gray-500 font-mono">
-                    V5.2.0 IGNITE BUILD
-                </div>
+                <div className="relative z-10 text-xs text-gray-500 font-mono">{t('auth.build')}</div>
             </div>
 
             {/* Right Side - Register Form */}
             <div className="flex-1 flex items-center justify-center p-8 bg-white dark:bg-[#0d1116] text-[#24292f] dark:text-[#e6edf3]">
                 <div className="w-full max-w-md space-y-8">
                     <div className="space-y-2">
-                        <h2 className="text-3xl font-bold tracking-tight">Create Account</h2>
+                        <h2 className="text-3xl font-bold tracking-tight">{t('auth.registerTitle')}</h2>
                         <p className="text-sm text-gray-500 dark:text-gray-400">
-                            Join AI Ignite CAD and start designing the future.
+                            {t('auth.registerSubtitle')}
                         </p>
                     </div>
 
                     <form className="space-y-5" onSubmit={handleSubmit}>
                         <div className="space-y-4">
                             <div className="space-y-2">
-                                <label htmlFor="username" className="text-sm font-semibold">Username</label>
+                                <label htmlFor="username" className="text-sm font-semibold">{t('auth.username')}</label>
                                 <input
                                     id="username"
                                     type="text"
                                     required
-                                    placeholder="engineer_john"
+                                    placeholder={t('auth.usernamePlaceholder')}
                                     minLength={3}
                                     className="w-full px-4 py-3 rounded-lg bg-gray-50 dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] focus:border-[#137fec] focus:ring-1 focus:ring-[#137fec] outline-none transition-all placeholder-gray-400"
                                     value={username}
                                     onChange={(e) => setUsername(e.target.value)}
                                 />
-                                <p className="text-xs text-gray-400">At least 3 characters</p>
+                                <p className="text-xs text-gray-400">{t('auth.usernameHint')}</p>
                             </div>
 
                             <div className="space-y-2">
-                                <label htmlFor="email" className="text-sm font-semibold">Email Address</label>
+                                <label htmlFor="email" className="text-sm font-semibold">{t('auth.email')}</label>
                                 <input
                                     id="email"
                                     type="email"
                                     required
-                                    placeholder="engineer@firm.com"
+                                    placeholder={t('auth.emailPlaceholder')}
                                     className="w-full px-4 py-3 rounded-lg bg-gray-50 dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] focus:border-[#137fec] focus:ring-1 focus:ring-[#137fec] outline-none transition-all placeholder-gray-400"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
@@ -161,7 +161,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onRegister, loading,
                             </div>
 
                             <div className="space-y-2">
-                                <label htmlFor="password" className="text-sm font-semibold">Password</label>
+                                <label htmlFor="password" className="text-sm font-semibold">{t('auth.password')}</label>
                                 <div className="relative">
                                     <input
                                         id="password"
@@ -174,11 +174,11 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onRegister, loading,
                                         onChange={(e) => setPassword(e.target.value)}
                                     />
                                 </div>
-                                <p className="text-xs text-gray-400">At least 6 characters</p>
+                                <p className="text-xs text-gray-400">{t('auth.passwordHint')}</p>
                             </div>
 
                             <div className="space-y-2">
-                                <label htmlFor="confirmPassword" className="text-sm font-semibold">Confirm Password</label>
+                                <label htmlFor="confirmPassword" className="text-sm font-semibold">{t('auth.confirmPassword')}</label>
                                 <div className="relative">
                                     <input
                                         id="confirmPassword"
@@ -201,11 +201,11 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onRegister, loading,
                             {loading ? (
                                 <>
                                     <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
-                                    <span>Creating Account...</span>
+                                    <span>{t('auth.creating')}</span>
                                 </>
                             ) : (
                                 <>
-                                    <span>Create Account</span>
+                                    <span>{t('auth.createAccount')}</span>
                                     <span className="material-symbols-outlined text-[20px]">arrow_forward</span>
                                 </>
                             )}
@@ -220,21 +220,21 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onRegister, loading,
 
                     <div className="text-center text-sm space-y-2">
                         <div className="flex items-center justify-center gap-2">
-                            <span className="text-gray-500">Already have an account?</span>
+                            <span className="text-gray-500">{t('auth.haveAccount')}</span>
                             <button
                                 onClick={onBackToLogin}
                                 className="font-bold text-[#3b82f6] hover:text-[#2563eb] hover:underline"
                             >
-                                Sign In
+                                {t('auth.signIn')}
                             </button>
                         </div>
                     </div>
 
                     <div className="flex justify-between items-center text-[10px] text-gray-400 uppercase tracking-wider pt-8">
-                         <span>v5.2.0 Ignite Build</span>
+                         <span>{t('auth.build')}</span>
                          <div className="space-x-4">
-                             <span>Privacy</span>
-                             <span>Terms</span>
+                             <span>{t('auth.privacy')}</span>
+                             <span>{t('auth.terms')}</span>
                          </div>
                     </div>
                 </div>

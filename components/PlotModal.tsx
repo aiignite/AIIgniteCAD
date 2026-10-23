@@ -23,6 +23,7 @@ import {
     SCALE_DENOMINATORS,
 } from "../lib/plot";
 import PlotSheet from "./PlotSheet";
+import { useI18n } from "../lib/i18n";
 
 interface PlotModalProps {
     elements: CADElement[];
@@ -44,6 +45,7 @@ export const PlotModal: React.FC<PlotModalProps> = ({
     author,
     onClose,
 }) => {
+    const { t } = useI18n();
     const [settings, setSettings] = useState<PlotSettings>(() =>
         createDefaultPlotSettings({
             title: defaultPlotTitle(projectName),
@@ -97,7 +99,7 @@ export const PlotModal: React.FC<PlotModalProps> = ({
                 className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-6"
                 role="dialog"
                 aria-modal="true"
-                aria-label="Plot and print"
+                aria-label={t("plot.aria")}
                 onMouseDown={(event) => {
                     if (event.target === event.currentTarget) onClose();
                 }}
@@ -106,18 +108,17 @@ export const PlotModal: React.FC<PlotModalProps> = ({
                     <div className="flex items-center justify-between px-5 py-3 border-b border-cad-border shrink-0">
                         <div>
                             <h2 className="text-base font-bold text-cad-text">
-                                Plot / Print
+                                {t("plot.title")}
                             </h2>
                             <p className="text-[11px] text-cad-muted mt-0.5">
-                                Vector output. Choose “Save as PDF” in the browser
-                                print dialog.
+                                {t("plot.subtitle")}
                             </p>
                         </div>
                         <button
                             onClick={onClose}
                             className="p-1.5 rounded text-cad-muted hover:text-cad-text hover:bg-cad-text/10 transition-colors"
-                            title="Close"
-                            aria-label="Close plot dialog"
+                            title={t("common.close")}
+                            aria-label={t("plot.close")}
                         >
                             <span className="material-symbols-outlined text-[20px]">
                                 close
@@ -140,7 +141,7 @@ export const PlotModal: React.FC<PlotModalProps> = ({
                         <div className="w-full lg:w-[340px] shrink-0 border-t lg:border-t-0 lg:border-l border-cad-border overflow-y-auto p-4 space-y-4">
                             <div>
                                 <label className={LABEL_CLASS} htmlFor="plot-paper">
-                                    Paper size
+                                    {t("plot.paper")}
                                 </label>
                                 <select
                                     id="plot-paper"
@@ -169,7 +170,7 @@ export const PlotModal: React.FC<PlotModalProps> = ({
                                     className={LABEL_CLASS}
                                     htmlFor="plot-orientation"
                                 >
-                                    Orientation
+                                    {t("plot.orientation")}
                                 </label>
                                 <select
                                     id="plot-orientation"
@@ -182,14 +183,14 @@ export const PlotModal: React.FC<PlotModalProps> = ({
                                         )
                                     }
                                 >
-                                    <option value="landscape">Landscape</option>
-                                    <option value="portrait">Portrait</option>
+                                    <option value="landscape">{t("plot.landscape")}</option>
+                                    <option value="portrait">{t("plot.portrait")}</option>
                                 </select>
                             </div>
 
                             <div>
                                 <label className={LABEL_CLASS} htmlFor="plot-scale-mode">
-                                    Scale
+                                    {t("plot.scale")}
                                 </label>
                                 <select
                                     id="plot-scale-mode"
@@ -202,12 +203,12 @@ export const PlotModal: React.FC<PlotModalProps> = ({
                                         )
                                     }
                                 >
-                                    <option value="fit">Fit to sheet</option>
-                                    <option value="fixed">Fixed scale</option>
+                                    <option value="fit">{t("plot.fit")}</option>
+                                    <option value="fixed">{t("plot.fixed")}</option>
                                 </select>
                                 {settings.scaleMode === "fixed" ? (
                                     <select
-                                        aria-label="Scale ratio"
+                                        aria-label={t("plot.scaleRatio")}
                                         className={`${FIELD_CLASS} mt-2`}
                                         value={settings.scaleDenominator}
                                         onChange={(event) =>
@@ -228,7 +229,7 @@ export const PlotModal: React.FC<PlotModalProps> = ({
                                     </select>
                                 ) : (
                                     <p className="mt-1.5 text-[11px] text-cad-muted">
-                                        Effective scale:{" "}
+                                        {t("plot.effectiveScale")}{" "}
                                         <span className="font-mono text-cad-text">
                                             {scaleLabel}
                                         </span>
@@ -238,7 +239,7 @@ export const PlotModal: React.FC<PlotModalProps> = ({
 
                             <div>
                                 <label className={LABEL_CLASS} htmlFor="plot-margin">
-                                    Margin (mm)
+                                    {t("plot.margin")}
                                 </label>
                                 <input
                                     id="plot-margin"
@@ -282,7 +283,7 @@ export const PlotModal: React.FC<PlotModalProps> = ({
                                             )
                                         }
                                     />
-                                    Title block and border
+                                    {t("plot.titleBlock")}
                                 </label>
                                 <label className="flex items-center gap-2 text-xs text-cad-text cursor-pointer">
                                     <input
@@ -296,14 +297,14 @@ export const PlotModal: React.FC<PlotModalProps> = ({
                                             )
                                         }
                                     />
-                                    Monochrome (black on white)
+                                    {t("plot.monochrome")}
                                 </label>
                             </div>
 
                             <div className="pt-1 border-t border-cad-border space-y-3">
                                 <div>
                                     <label className={LABEL_CLASS} htmlFor="plot-title">
-                                        Drawing title
+                                        {t("plot.drawingTitle")}
                                     </label>
                                     <input
                                         id="plot-title"
@@ -319,12 +320,12 @@ export const PlotModal: React.FC<PlotModalProps> = ({
                                         className={LABEL_CLASS}
                                         htmlFor="plot-number"
                                     >
-                                        Drawing no.
+                                        {t("plot.drawingNo")}
                                     </label>
                                     <input
                                         id="plot-number"
                                         className={FIELD_CLASS}
-                                        placeholder="e.g. AI-2026-001"
+                                        placeholder={t("plot.drawingNoPlaceholder")}
                                         value={settings.drawingNumber}
                                         onChange={(event) =>
                                             update(
@@ -336,7 +337,7 @@ export const PlotModal: React.FC<PlotModalProps> = ({
                                 </div>
                                 <div>
                                     <label className={LABEL_CLASS} htmlFor="plot-author">
-                                        Author
+                                        {t("plot.author")}
                                     </label>
                                     <input
                                         id="plot-author"
@@ -349,7 +350,7 @@ export const PlotModal: React.FC<PlotModalProps> = ({
                                 </div>
                                 <div>
                                     <label className={LABEL_CLASS} htmlFor="plot-date">
-                                        Date
+                                        {t("plot.date")}
                                     </label>
                                     <input
                                         id="plot-date"
@@ -369,15 +370,16 @@ export const PlotModal: React.FC<PlotModalProps> = ({
                         <div className="text-[11px] text-cad-muted">
                             {layout.overflow ? (
                                 <span className="text-amber-500 font-medium">
-                                    Drawing exceeds the selected scale and will be
-                                    clipped. Choose “Fit to sheet” or a smaller
-                                    ratio.
+                                    {t("plot.overflow")}
                                 </span>
                             ) : (
                                 <span>
-                                    Sheet{" "}
+                                    {t("plot.sheet")}{" "}
                                     {PAPER_SIZES[settings.paper]?.label ?? settings.paper} ·{" "}
-                                    {settings.orientation} · {scaleLabel}
+                                    {settings.orientation === "landscape"
+                                        ? t("plot.landscape")
+                                        : t("plot.portrait")}{" "}
+                                    · {scaleLabel}
                                 </span>
                             )}
                         </div>
@@ -386,7 +388,7 @@ export const PlotModal: React.FC<PlotModalProps> = ({
                                 onClick={onClose}
                                 className="h-8 px-3 rounded border border-cad-border text-xs font-bold text-cad-muted hover:bg-cad-text/10 hover:text-cad-text transition-colors"
                             >
-                                Cancel
+                                {t("plot.cancel")}
                             </button>
                             <button
                                 onClick={() => window.print()}
@@ -395,7 +397,7 @@ export const PlotModal: React.FC<PlotModalProps> = ({
                                 <span className="material-symbols-outlined text-[16px]">
                                     print
                                 </span>
-                                Print / Save PDF
+                                {t("plot.print")}
                             </button>
                         </div>
                     </div>

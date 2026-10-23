@@ -7,6 +7,7 @@
 
 import React from "react";
 import { telemetryService } from "../services/telemetryService";
+import { useI18n } from "../lib/i18n";
 
 interface ErrorBoundaryProps {
     children: React.ReactNode;
@@ -78,63 +79,78 @@ export class ErrorBoundary extends React.Component<
         if (!error) return this.props.children;
 
         return (
-            <div className="min-h-screen bg-cad-bg text-cad-text flex items-center justify-center p-6">
-                <div className="w-full max-w-2xl bg-cad-panel border border-cad-border rounded-xl shadow-2xl overflow-hidden">
-                    <div className="px-5 py-4 border-b border-cad-border">
-                        <h1 className="text-lg font-bold">Something went wrong</h1>
-                        <p className="text-xs text-cad-muted mt-1">
-                            The editor hit an unexpected error. Your last saved drawing and
-                            local changes are safe; reload to continue.
-                        </p>
-                    </div>
-
-                    <div className="p-5 space-y-4">
-                        <div className="rounded border border-red-500/40 bg-red-500/10 p-3">
-                            <p className="text-sm font-mono break-words">
-                                {error.message || "Unknown error"}
-                            </p>
-                        </div>
-
-                        <details className="text-xs text-cad-muted">
-                            <summary className="cursor-pointer hover:text-cad-text">
-                                Technical details
-                            </summary>
-                            <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[11px]">
-                                {error.stack?.slice(0, 4000) ?? "(no stack)"}
-                                {componentStack ? `\n\nComponent stack:${componentStack}` : ""}
-                            </pre>
-                        </details>
-
-                        <div className="flex flex-wrap items-center gap-2 pt-1">
-                            <button
-                                onClick={this.retry}
-                                className="px-3 py-1.5 rounded border border-cad-border text-xs font-bold hover:bg-cad-text/10"
-                            >
-                                Try again
-                            </button>
-                            <button
-                                onClick={this.reload}
-                                className="px-3 py-1.5 rounded bg-cad-primary hover:bg-cad-primaryHover text-white text-xs font-bold"
-                            >
-                                Reload editor
-                            </button>
-                            <button
-                                onClick={() => void this.copyDetails()}
-                                className="px-3 py-1.5 rounded border border-cad-border text-xs text-cad-muted hover:bg-cad-text/10 hover:text-cad-text"
-                            >
-                                {copied ? "Copied" : "Copy error details"}
-                            </button>
-                        </div>
-
-                        <p className="text-[11px] text-cad-muted">
-                            If the error keeps happening, copy the details and attach them to an
-                            issue so the cause can be traced.
-                        </p>
-                    </div>
-                </div>
-            </div>
+            <ErrorFallback
+                error={error}
+                componentStack={componentStack}
+                copied={copied}
+                onRetry={this.retry}
+                onReload={this.reload}
+                onCopy={() => void this.copyDetails()}
+            />
         );
     }
 }
+
+const ErrorFallback: React.FC<{
+    error: Error;
+    componentStack: string;
+    copied: boolean;
+    onRetry: () => void;
+    onReload: () => void;
+    onCopy: () => void;
+}> = ({ error, componentStack, copied, onRetry, onReload, onCopy }) => {
+    const { t } = useI18n();
+    return (
+        <div className="min-h-screen bg-cad-bg text-cad-text flex items-center justify-center p-6">
+            <div className="w-full max-w-2xl bg-cad-panel border border-cad-border rounded-xl shadow-2xl overflow-hidden">
+                <div className="px-5 py-4 border-b border-cad-border">
+                    <h1 className="text-lg font-bold">{t("error.title")}</h1>
+                    <p className="text-xs text-cad-muted mt-1">{t("error.subtitle")}</p>
+                </div>
+
+                <div className="p-5 space-y-4">
+                    <div className="rounded border border-red-500/40 bg-red-500/10 p-3">
+                        <p className="text-sm font-mono break-words">
+                            {error.message || t("error.unknown")}
+                        </p>
+                    </div>
+
+                    <details className="text-xs text-cad-muted">
+                        <summary className="cursor-pointer hover:text-cad-text">
+                            {t("error.technical")}
+                        </summary>
+                        <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[11px]">
+                            {error.stack?.slice(0, 4000) ?? "(no stack)"}
+                            {componentStack ? `\n\nComponent stack:${componentStack}` : ""}
+                        </pre>
+                    </details>
+
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <button
+                            onClick={onRetry}
+                            className="px-3 py-1.5 rounded border border-cad-border text-xs font-bold hover:bg-cad-text/10"
+                        >
+                            {t("error.retry")}
+                        </button>
+                        <button
+                            onClick={onReload}
+                            className="px-3 py-1.5 rounded bg-cad-primary hover:bg-cad-primaryHover text-white text-xs font-bold"
+                        >
+                            {t("error.reload")}
+                        </button>
+                        <button
+                            onClick={onCopy}
+                            className="px-3 py-1.5 rounded border border-cad-border text-xs text-cad-muted hover:bg-cad-text/10 hover:text-cad-text"
+                        >
+                            {copied ? t("error.copied") : t("error.copy")}
+                        </button>
+                    </div>
+
+                    <p className="text-[11px] text-cad-muted">{t("error.hint")}</p>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 export default ErrorBoundary;

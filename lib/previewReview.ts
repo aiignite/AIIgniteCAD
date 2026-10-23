@@ -11,6 +11,7 @@ import {
     reviewIssueKey,
     type ReviewConventions,
     type ReviewIssue,
+    type ReviewLocale,
     type ReviewSeverity,
 } from "./designReview";
 
@@ -33,9 +34,12 @@ export function reviewPreview(
     before: readonly CADElement[],
     after: readonly CADElement[],
     conventions?: ReviewConventions,
+    locale: ReviewLocale = "zh",
 ): PreviewReview {
-    const beforeKeys = new Set(reviewDrawing(before, { conventions }).map(reviewIssueKey));
-    const afterIssues = reviewDrawing(after, { conventions });
+    const beforeKeys = new Set(
+        reviewDrawing(before, { conventions, locale }).map(reviewIssueKey),
+    );
+    const afterIssues = reviewDrawing(after, { conventions, locale });
     const afterKeys = new Set(afterIssues.map(reviewIssueKey));
 
     const introduced = afterIssues

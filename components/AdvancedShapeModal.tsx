@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ToolType } from '../types';
+import { useI18n } from '../lib/i18n';
 
 interface AdvancedShapeModalProps {
     tool: ToolType;
@@ -12,6 +13,7 @@ export const AdvancedShapeModal: React.FC<AdvancedShapeModalProps> = ({
     onConfirm,
     onCancel
 }) => {
+    const { t } = useI18n();
     // Gear parameters
     const [numTeeth, setNumTeeth] = useState(20);
     const [module, setModule] = useState(5);
@@ -73,7 +75,7 @@ export const AdvancedShapeModal: React.FC<AdvancedShapeModalProps> = ({
                     <>
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-cad-text mb-2">
-                                Number of Teeth
+                                {t('shape.teeth')}
                             </label>
                             <input
                                 type="number"
@@ -86,7 +88,7 @@ export const AdvancedShapeModal: React.FC<AdvancedShapeModalProps> = ({
                         </div>
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-cad-text mb-2">
-                                Module (mm)
+                                {t('shape.module')}
                             </label>
                             <input
                                 type="number"
@@ -100,7 +102,7 @@ export const AdvancedShapeModal: React.FC<AdvancedShapeModalProps> = ({
                         </div>
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-cad-text mb-2">
-                                Pressure Angle (°)
+                                {t('shape.pressureAngle')}
                             </label>
                             <input
                                 type="number"
@@ -120,7 +122,7 @@ export const AdvancedShapeModal: React.FC<AdvancedShapeModalProps> = ({
                     <>
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-cad-text mb-2">
-                                Number of Sides
+                                {t('shape.sides')}
                             </label>
                             <input
                                 type="number"
@@ -133,7 +135,7 @@ export const AdvancedShapeModal: React.FC<AdvancedShapeModalProps> = ({
                         </div>
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-cad-text mb-2">
-                                Rotation (°)
+                                {t('shape.rotation')}
                             </label>
                             <input
                                 type="number"
@@ -152,7 +154,7 @@ export const AdvancedShapeModal: React.FC<AdvancedShapeModalProps> = ({
                     <>
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-cad-text mb-2">
-                                Radius X
+                                {t('shape.radiusX')}
                             </label>
                             <input
                                 type="number"
@@ -165,7 +167,7 @@ export const AdvancedShapeModal: React.FC<AdvancedShapeModalProps> = ({
                         </div>
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-cad-text mb-2">
-                                Radius Y
+                                {t('shape.radiusY')}
                             </label>
                             <input
                                 type="number"
@@ -178,7 +180,7 @@ export const AdvancedShapeModal: React.FC<AdvancedShapeModalProps> = ({
                         </div>
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-cad-text mb-2">
-                                Rotation (°)
+                                {t('shape.rotation')}
                             </label>
                             <input
                                 type="number"
@@ -197,7 +199,7 @@ export const AdvancedShapeModal: React.FC<AdvancedShapeModalProps> = ({
                     <>
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-cad-text mb-2">
-                                Number of Turns
+                                {t('shape.turns')}
                             </label>
                             <input
                                 type="number"
@@ -211,7 +213,7 @@ export const AdvancedShapeModal: React.FC<AdvancedShapeModalProps> = ({
                         </div>
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-cad-text mb-2">
-                                Start Radius
+                                {t('shape.startRadius')}
                             </label>
                             <input
                                 type="number"
@@ -224,7 +226,7 @@ export const AdvancedShapeModal: React.FC<AdvancedShapeModalProps> = ({
                         </div>
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-cad-text mb-2">
-                                Radius Increment per Turn
+                                {t('shape.radiusIncrement')}
                             </label>
                             <input
                                 type="number"
@@ -243,7 +245,7 @@ export const AdvancedShapeModal: React.FC<AdvancedShapeModalProps> = ({
                     <>
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-cad-text mb-2">
-                                Number of Coils
+                                {t('shape.coils')}
                             </label>
                             <input
                                 type="number"
@@ -256,7 +258,7 @@ export const AdvancedShapeModal: React.FC<AdvancedShapeModalProps> = ({
                         </div>
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-cad-text mb-2">
-                                Spring Radius
+                                {t('shape.springRadius')}
                             </label>
                             <input
                                 type="number"
@@ -275,7 +277,7 @@ export const AdvancedShapeModal: React.FC<AdvancedShapeModalProps> = ({
                     <>
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-cad-text mb-2">
-                                Base Radius
+                                {t('shape.baseRadius')}
                             </label>
                             <input
                                 type="number"
@@ -288,7 +290,7 @@ export const AdvancedShapeModal: React.FC<AdvancedShapeModalProps> = ({
                         </div>
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-cad-text mb-2">
-                                Number of Turns
+                                {t('shape.turns')}
                             </label>
                             <input
                                 type="number"
@@ -311,19 +313,19 @@ export const AdvancedShapeModal: React.FC<AdvancedShapeModalProps> = ({
     const getTitle = () => {
         switch (tool) {
             case ToolType.GEAR:
-                return 'Gear Parameters';
+                return t('shape.gear');
             case ToolType.POLYGON:
-                return 'Polygon Parameters';
+                return t('shape.polygon');
             case ToolType.ELLIPSE:
-                return 'Ellipse Parameters';
+                return t('shape.ellipse');
             case ToolType.SPIRAL:
-                return 'Spiral Parameters';
+                return t('shape.spiral');
             case ToolType.SPRING:
-                return 'Spring Parameters';
+                return t('shape.spring');
             case ToolType.INVOLUTE:
-                return 'Involute Parameters';
+                return t('shape.involute');
             default:
-                return 'Shape Parameters';
+                return t('shape.generic');
         }
     };
 
@@ -340,13 +342,13 @@ export const AdvancedShapeModal: React.FC<AdvancedShapeModalProps> = ({
                             onClick={handleConfirm}
                             className="flex-1 px-4 py-2 bg-cad-primary text-white rounded hover:bg-cad-primary/90 transition-colors font-medium"
                         >
-                            Create
+                            {t('common.create')}
                         </button>
                         <button
                             onClick={onCancel}
                             className="flex-1 px-4 py-2 bg-cad-bg border border-cad-border text-cad-text rounded hover:bg-cad-text/10 transition-colors font-medium"
                         >
-                            Cancel
+                            {t('common.cancel')}
                         </button>
                     </div>
                 </div>

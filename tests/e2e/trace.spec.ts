@@ -8,15 +8,16 @@ test("参考图在本地矢量化后插入图纸并可撤销", async ({ page }) 
         window.localStorage.setItem("auth_token", "e2e-token");
     });
     await page.goto("/");
-    await expect(page.getByText("Welcome to AI Ignite CAD")).toBeVisible();
-    await page.getByText("New Drawing", { exact: true }).click();
-    await page.getByPlaceholder("My Drawing").fill("Trace Drawing");
-    await page.getByRole("button", { name: "Create", exact: true }).click();
+    await expect(page.getByText("欢迎使用 AI Ignite CAD")).toBeVisible();
+    await page.getByText("新建图纸", { exact: true }).click();
+    await page.getByPlaceholder("图纸名称，例如：装配图").fill("Trace Drawing");
+    await page.getByRole("button", { name: "创建", exact: true }).click();
 
     const svg = page.locator("#drawing-surface svg");
     await expect(svg).toBeVisible();
 
-    await page.locator('header button[title="参考图转 CAD"]').click();
+    await page.locator('header [data-action="file-menu"]').click();
+    await page.getByRole("menuitem", { name: "参考图转 CAD" }).click();
     const dialog = page.getByRole("dialog", { name: "参考图转 CAD" });
     await expect(dialog).toBeVisible();
 

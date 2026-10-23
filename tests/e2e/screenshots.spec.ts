@@ -38,21 +38,21 @@ test("capture docs screenshots", async ({ page }) => {
 
   // 1. 登录页
   await page.goto("/");
-  await page.getByRole("heading", { name: "Welcome back" }).waitFor();
+  await page.getByRole("heading", { name: "欢迎回来" }).waitFor();
   await page.screenshot({ path: "docs/images/login.png", ...SHOT_OPTIONS });
 
   // 2. 登录后的欢迎面板
-  await page.getByLabel("Email Address").fill(TEST_USER.email);
-  await page.getByLabel("Password").fill("e2e-secret");
-  await page.getByRole("button", { name: /Sign In/ }).click();
-  await page.getByText("Welcome to AI Ignite CAD").waitFor();
+  await page.getByLabel("邮箱地址").fill(TEST_USER.email);
+  await page.getByLabel("密码", { exact: true }).fill("e2e-secret");
+  await page.getByRole("button", { name: /登录/ }).click();
+  await page.getByText("欢迎使用 AI Ignite CAD").waitFor();
   await page.waitForTimeout(350);
   await page.screenshot({ path: "docs/images/welcome.png", ...SHOT_OPTIONS });
 
   // 3. 新建图纸并绘制示例图形
-  await page.getByText("New Drawing", { exact: true }).click();
-  await page.getByPlaceholder("My Drawing").fill("Mechanical Demo");
-  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByText("新建图纸", { exact: true }).click();
+  await page.getByPlaceholder("图纸名称，例如：装配图").fill("Mechanical Demo");
+  await page.getByRole("button", { name: "创建", exact: true }).click();
   await page.locator("#drawing-surface svg").waitFor();
   await page.waitForTimeout(300);
 
@@ -78,7 +78,7 @@ test("capture docs screenshots", async ({ page }) => {
   await page.screenshot({ path: "docs/images/canvas.png", ...SHOT_OPTIONS });
 
   // 4. 暗色主题
-  await page.getByTitle("Switch to Dark Mode").click();
+  await page.getByTitle("切换到深色模式").click();
   await page.waitForTimeout(300);
   await page.screenshot({
     path: "docs/images/canvas-dark.png",

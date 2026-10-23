@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from "react";
 import { CADElement, Point } from "../types";
+import { useI18n } from "../lib/i18n";
 
 /** 属性面板可触发的批量变换操作 */
 export type TransformOperation = "SCALE" | "OFFSET" | "ARRAY";
@@ -37,6 +38,7 @@ export const PropertyInspector: React.FC<PropertyInspectorProps> = ({
   onUpdateElement,
   onApplyTransform,
 }) => {
+  const { t } = useI18n();
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(["general", "geometry"])
   );
@@ -48,7 +50,7 @@ export const PropertyInspector: React.FC<PropertyInspectorProps> = ({
           <span className="material-symbols-outlined text-3xl mb-2 block">
             info
           </span>
-          未选中对象
+          {t("property.noSelection")}
         </div>
       </div>
     );
@@ -59,14 +61,14 @@ export const PropertyInspector: React.FC<PropertyInspectorProps> = ({
     return (
       <div className="p-4 space-y-3">
         <div className="bg-cad-secondary rounded px-3 py-2 text-sm">
-          <strong>已选中 {selectedElements.length} 个对象</strong>
+          <strong>{t("property.multiSelected", { count: selectedElements.length })}</strong>
         </div>
         <CommonPropertiesPanel
           elements={selectedElements}
           onUpdateElement={onUpdateElement}
         />
         {onApplyTransform && (
-          <Section title="变换操作" section="transform" expanded={expandedSections} setExpanded={setExpandedSections}>
+          <Section title={t("property.transform")} section="transform" expanded={expandedSections} setExpanded={setExpandedSections}>
             <TransformOperations onApplyTransform={onApplyTransform} />
           </Section>
         )}
@@ -80,72 +82,72 @@ export const PropertyInspector: React.FC<PropertyInspectorProps> = ({
     <div className="h-full overflow-y-auto">
       <div className="p-4 space-y-3">
         {/* General Properties */}
-        <Section title="基本属性" section="general" expanded={expandedSections} setExpanded={setExpandedSections}>
+        <Section title={t("property.basic")} section="general" expanded={expandedSections} setExpanded={setExpandedSections}>
           <GeneralProperties element={element} onUpdateElement={onUpdateElement} />
         </Section>
 
         {/* Geometry Properties */}
-        <Section title="几何属性" section="geometry" expanded={expandedSections} setExpanded={setExpandedSections}>
+        <Section title={t("property.geometry")} section="geometry" expanded={expandedSections} setExpanded={setExpandedSections}>
           <GeometryProperties element={element} onUpdateElement={onUpdateElement} />
         </Section>
 
         {/* Type-Specific Properties */}
         {(element.type === "TEXT") && (
-          <Section title="文本属性" section="text" expanded={expandedSections} setExpanded={setExpandedSections}>
+          <Section title={t("property.textSection")} section="text" expanded={expandedSections} setExpanded={setExpandedSections}>
             <TextProperties element={element} onUpdateElement={onUpdateElement} />
           </Section>
         )}
 
         {(element.type === "CIRCLE" || element.type === "ARC") && (
-          <Section title="圆弧属性" section="arc" expanded={expandedSections} setExpanded={setExpandedSections}>
+          <Section title={t("property.arcSection")} section="arc" expanded={expandedSections} setExpanded={setExpandedSections}>
             <CircleArcProperties element={element} onUpdateElement={onUpdateElement} />
           </Section>
         )}
 
         {(element.type === "ELLIPSE") && (
-          <Section title="椭圆属性" section="ellipse" expanded={expandedSections} setExpanded={setExpandedSections}>
+          <Section title={t("property.ellipseSection")} section="ellipse" expanded={expandedSections} setExpanded={setExpandedSections}>
             <EllipseProperties element={element} onUpdateElement={onUpdateElement} />
           </Section>
         )}
 
         {(element.type === "GEAR") && (
-          <Section title="齿轮属性" section="gear" expanded={expandedSections} setExpanded={setExpandedSections}>
+          <Section title={t("property.gearSection")} section="gear" expanded={expandedSections} setExpanded={setExpandedSections}>
             <GearProperties element={element} onUpdateElement={onUpdateElement} />
           </Section>
         )}
 
         {(element.type === "SPIRAL") && (
-          <Section title="螺旋线属性" section="spiral" expanded={expandedSections} setExpanded={setExpandedSections}>
+          <Section title={t("property.spiralSection")} section="spiral" expanded={expandedSections} setExpanded={setExpandedSections}>
             <SpiralProperties element={element} onUpdateElement={onUpdateElement} />
           </Section>
         )}
 
         {(element.type === "SPRING") && (
-          <Section title="弹簧属性" section="spring" expanded={expandedSections} setExpanded={setExpandedSections}>
+          <Section title={t("property.springSection")} section="spring" expanded={expandedSections} setExpanded={setExpandedSections}>
             <SpringProperties element={element} onUpdateElement={onUpdateElement} />
           </Section>
         )}
 
         {(element.type === "LWPOLYLINE") && (
-          <Section title="多段线属性" section="polyline" expanded={expandedSections} setExpanded={setExpandedSections}>
+          <Section title={t("property.polylineSection")} section="polyline" expanded={expandedSections} setExpanded={setExpandedSections}>
             <PolylineProperties element={element} onUpdateElement={onUpdateElement} />
           </Section>
         )}
 
         {(element.type === "RECTANGLE") && (
-          <Section title="矩形属性" section="rectangle" expanded={expandedSections} setExpanded={setExpandedSections}>
+          <Section title={t("property.rectangleSection")} section="rectangle" expanded={expandedSections} setExpanded={setExpandedSections}>
             <RectangleProperties element={element} onUpdateElement={onUpdateElement} />
           </Section>
         )}
 
         {(element.type === "DIMENSION") && (
-          <Section title="标注属性" section="dimension" expanded={expandedSections} setExpanded={setExpandedSections}>
+          <Section title={t("property.dimensionSection")} section="dimension" expanded={expandedSections} setExpanded={setExpandedSections}>
             <DimensionProperties element={element} onUpdateElement={onUpdateElement} />
           </Section>
         )}
 
         {onApplyTransform && (
-          <Section title="变换操作" section="transform" expanded={expandedSections} setExpanded={setExpandedSections}>
+          <Section title={t("property.transform")} section="transform" expanded={expandedSections} setExpanded={setExpandedSections}>
             <TransformOperations onApplyTransform={onApplyTransform} />
           </Section>
         )}
@@ -207,6 +209,7 @@ const GeneralProperties: React.FC<{
   element: CADElement;
   onUpdateElement: (e: CADElement) => void;
 }> = ({ element, onUpdateElement }) => {
+  const { t } = useI18n();
   const handleLayerChange = (layer: string) => {
     onUpdateElement({ ...element, layer });
   };
@@ -218,14 +221,14 @@ const GeneralProperties: React.FC<{
   return (
     <div className="space-y-2 text-sm">
       <PropertyField label="ID" value={element.id} readOnly />
-      <PropertyField label="类型" value={element.type} readOnly />
+      <PropertyField label={t("property.type")} value={element.type} readOnly />
       <PropertySelect
-        label="图层"
+        label={t("property.layer")}
         value={element.layer || "0"}
         onChange={handleLayerChange}
       />
       <PropertyColorPicker
-        label="颜色"
+        label={t("property.color")}
         value={element.color || "#000000"}
         onChange={handleColorChange}
       />
@@ -238,32 +241,33 @@ const GeometryProperties: React.FC<{
   element: CADElement;
   onUpdateElement: (e: CADElement) => void;
 }> = ({ element, onUpdateElement }) => {
+  const { t } = useI18n();
   return (
     <div className="space-y-2 text-sm">
       {element.start && (
         <PropertyPoint
-          label="起点"
+          label={t("property.start")}
           value={element.start}
           onChange={(start) => onUpdateElement({ ...element, start })}
         />
       )}
       {element.end && (
         <PropertyPoint
-          label="终点"
+          label={t("property.end")}
           value={element.end}
           onChange={(end) => onUpdateElement({ ...element, end })}
         />
       )}
       {element.center && (
         <PropertyPoint
-          label="中心"
+          label={t("property.center")}
           value={element.center}
           onChange={(center) => onUpdateElement({ ...element, center })}
         />
       )}
       {element.radius && (
         <PropertyNumber
-          label="半径"
+          label={t("property.radius")}
           value={element.radius}
           onChange={(radius) => onUpdateElement({ ...element, radius })}
           min={0}
@@ -278,15 +282,16 @@ const TextProperties: React.FC<{
   element: CADElement;
   onUpdateElement: (e: CADElement) => void;
 }> = ({ element, onUpdateElement }) => {
+  const { t } = useI18n();
   return (
     <div className="space-y-2 text-sm">
       <PropertyField
-        label="文本内容"
+        label={t("property.text")}
         value={element.text || ""}
         onChange={(text) => onUpdateElement({ ...element, text })}
       />
       <PropertyNumber
-        label="字号"
+        label={t("property.fontSize")}
         value={element.fontSize || 12}
         onChange={(fontSize) => onUpdateElement({ ...element, fontSize })}
         min={6}
@@ -294,7 +299,7 @@ const TextProperties: React.FC<{
       />
       {element.start && (
         <PropertyPoint
-          label="位置"
+          label={t("property.position")}
           value={element.start}
           onChange={(start) => onUpdateElement({ ...element, start })}
         />
@@ -308,22 +313,23 @@ const CircleArcProperties: React.FC<{
   element: CADElement;
   onUpdateElement: (e: CADElement) => void;
 }> = ({ element, onUpdateElement }) => {
+  const { t } = useI18n();
   return (
     <div className="space-y-2 text-sm">
       {element.type === "ARC" && (
         <>
           <PropertyNumber
-            label="起始角"
+            label={t("property.startAngle")}
             value={element.startAngle || 0}
             onChange={(startAngle) => onUpdateElement({ ...element, startAngle })}
           />
           <PropertyNumber
-            label="结束角"
+            label={t("property.endAngle")}
             value={element.endAngle || 360}
             onChange={(endAngle) => onUpdateElement({ ...element, endAngle })}
           />
           <PropertyToggle
-            label="顺时针"
+            label={t("property.clockwise")}
             value={element.clockwise || false}
             onChange={(clockwise) => onUpdateElement({ ...element, clockwise })}
           />
@@ -338,22 +344,23 @@ const EllipseProperties: React.FC<{
   element: CADElement;
   onUpdateElement: (e: CADElement) => void;
 }> = ({ element, onUpdateElement }) => {
+  const { t } = useI18n();
   return (
     <div className="space-y-2 text-sm">
       <PropertyNumber
-        label="X轴半径"
+        label={t("property.radiusX")}
         value={element.radiusX || 0}
         onChange={(radiusX) => onUpdateElement({ ...element, radiusX })}
         min={0}
       />
       <PropertyNumber
-        label="Y轴半径"
+        label={t("property.radiusY")}
         value={element.radiusY || 0}
         onChange={(radiusY) => onUpdateElement({ ...element, radiusY })}
         min={0}
       />
       <PropertyNumber
-        label="旋转角度"
+        label={t("property.rotation")}
         value={element.rotation || 0}
         onChange={(rotation) => onUpdateElement({ ...element, rotation })}
       />
@@ -366,23 +373,24 @@ const RectangleProperties: React.FC<{
   element: CADElement;
   onUpdateElement: (e: CADElement) => void;
 }> = ({ element, onUpdateElement }) => {
+  const { t } = useI18n();
   return (
     <div className="space-y-2 text-sm">
       <PropertyNumber
-        label="宽度"
+        label={t("property.width")}
         value={element.width || 0}
         onChange={(width) => onUpdateElement({ ...element, width })}
         min={0}
       />
       <PropertyNumber
-        label="高度"
+        label={t("property.height")}
         value={element.height || 0}
         onChange={(height) => onUpdateElement({ ...element, height })}
         min={0}
       />
       {element.start && (
         <PropertyPoint
-          label="左上角"
+          label={t("property.topLeft")}
           value={element.start}
           onChange={(start) => onUpdateElement({ ...element, start })}
         />
@@ -396,37 +404,38 @@ const GearProperties: React.FC<{
   element: CADElement;
   onUpdateElement: (e: CADElement) => void;
 }> = ({ element, onUpdateElement }) => {
+  const { t } = useI18n();
   return (
     <div className="space-y-2 text-sm">
       <PropertyNumber
-        label="齿数"
+        label={t("property.teeth")}
         value={element.numTeeth || 20}
         onChange={(numTeeth) => onUpdateElement({ ...element, numTeeth })}
         min={3}
       />
       <PropertyNumber
-        label="模数"
+        label={t("property.module")}
         value={element.module || 1}
         onChange={(module) => onUpdateElement({ ...element, module })}
         min={0.1}
         step={0.1}
       />
       <PropertyNumber
-        label="压力角(°)"
+        label={t("property.pressureAngle")}
         value={element.pressureAngle || 20}
         onChange={(pressureAngle) => onUpdateElement({ ...element, pressureAngle })}
         min={14}
         max={25}
       />
       <PropertyNumber
-        label="齿顶高"
+        label={t("property.addendum")}
         value={element.addendum || 1}
         onChange={(addendum) => onUpdateElement({ ...element, addendum })}
         min={0.1}
         step={0.1}
       />
       <PropertyNumber
-        label="齿根深"
+        label={t("property.dedendum")}
         value={element.dedendum || 1.25}
         onChange={(dedendum) => onUpdateElement({ ...element, dedendum })}
         min={0.1}
@@ -441,16 +450,17 @@ const SpiralProperties: React.FC<{
   element: CADElement;
   onUpdateElement: (e: CADElement) => void;
 }> = ({ element, onUpdateElement }) => {
+  const { t } = useI18n();
   return (
     <div className="space-y-2 text-sm">
       <PropertyNumber
-        label="圈数"
+        label={t("property.turns")}
         value={element.turns || 5}
         onChange={(turns) => onUpdateElement({ ...element, turns })}
         min={1}
       />
       <PropertyNumber
-        label="半径增量"
+        label={t("property.radiusIncrement")}
         value={element.radiusIncrement || 10}
         onChange={(radiusIncrement) => onUpdateElement({ ...element, radiusIncrement })}
         min={0}
@@ -458,7 +468,7 @@ const SpiralProperties: React.FC<{
       />
       {element.center && (
         <PropertyPoint
-          label="中心"
+          label={t("property.center")}
           value={element.center}
           onChange={(center) => onUpdateElement({ ...element, center })}
         />
@@ -472,22 +482,23 @@ const SpringProperties: React.FC<{
   element: CADElement;
   onUpdateElement: (e: CADElement) => void;
 }> = ({ element, onUpdateElement }) => {
+  const { t } = useI18n();
   return (
     <div className="space-y-2 text-sm">
       <PropertyNumber
-        label="圈数"
+        label={t("property.turns")}
         value={element.coils || 10}
         onChange={(coils) => onUpdateElement({ ...element, coils })}
         min={1}
       />
       <PropertyNumber
-        label="弹簧半径"
+        label={t("property.springRadius")}
         value={element.springRadius || 20}
         onChange={(springRadius) => onUpdateElement({ ...element, springRadius })}
         min={1}
       />
       <PropertyNumber
-        label="线径"
+        label={t("property.wireDiameter")}
         value={element.wireRadius || 2}
         onChange={(wireRadius) => onUpdateElement({ ...element, wireRadius })}
         min={0.5}
@@ -495,7 +506,7 @@ const SpringProperties: React.FC<{
       />
       {element.center && (
         <PropertyPoint
-          label="中心"
+          label={t("property.center")}
           value={element.center}
           onChange={(center) => onUpdateElement({ ...element, center })}
         />
@@ -509,11 +520,12 @@ const PolylineProperties: React.FC<{
   element: CADElement;
   onUpdateElement: (e: CADElement) => void;
 }> = ({ element, onUpdateElement }) => {
+  const { t } = useI18n();
   const pointCount = element.points?.length || 0;
   
   return (
     <div className="space-y-2 text-sm">
-      <PropertyField label="顶点数" value={pointCount.toString()} readOnly />
+      <PropertyField label={t("property.vertices")} value={pointCount.toString()} readOnly />
       {element.points && element.points.length > 0 && (
         <div className="mt-2 p-2 bg-cad-bg rounded text-xs space-y-1 max-h-32 overflow-y-auto">
           {element.points.map((pt, idx) => (
@@ -532,32 +544,33 @@ const DimensionProperties: React.FC<{
   element: CADElement;
   onUpdateElement: (e: CADElement) => void;
 }> = ({ element, onUpdateElement }) => {
+  const { t } = useI18n();
   return (
     <div className="space-y-2 text-sm">
       {element.start && (
         <PropertyPoint
-          label="起点"
+          label={t("property.start")}
           value={element.start}
           onChange={(start) => onUpdateElement({ ...element, start })}
         />
       )}
       {element.end && (
         <PropertyPoint
-          label="终点"
+          label={t("property.end")}
           value={element.end}
           onChange={(end) => onUpdateElement({ ...element, end })}
         />
       )}
       {element.offsetPoint && (
         <PropertyPoint
-          label="偏移点"
+          label={t("property.offsetPoint")}
           value={element.offsetPoint}
           onChange={(offsetPoint) => onUpdateElement({ ...element, offsetPoint })}
         />
       )}
       {element.text && (
         <PropertyField
-          label="文本"
+          label={t("property.text")}
           value={element.text}
           onChange={(text) => onUpdateElement({ ...element, text })}
         />
@@ -575,6 +588,7 @@ const DimensionProperties: React.FC<{
 const TransformOperations: React.FC<{
   onApplyTransform: (operation: TransformOperation, params: TransformParams) => void;
 }> = ({ onApplyTransform }) => {
+  const { t } = useI18n();
   const [factor, setFactor] = useState(2);
   const [distance, setDistance] = useState(20);
   const [rows, setRows] = useState(2);
@@ -587,7 +601,7 @@ const TransformOperations: React.FC<{
       {/* 缩放 */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <label className="text-cad-text-secondary">缩放倍率:</label>
+          <label className="text-cad-text-secondary">{t("property.scaleFactor")}:</label>
           <input
             type="number"
             min={0.01}
@@ -602,14 +616,14 @@ const TransformOperations: React.FC<{
           disabled={factor <= 0}
           className="w-full py-1.5 rounded bg-cad-primary text-white text-xs font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
         >
-          以选中形心缩放
+          {t("property.scaleAbout")}
         </button>
       </div>
 
       {/* 偏移 */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <label className="text-cad-text-secondary">偏移距离:</label>
+          <label className="text-cad-text-secondary">{t("property.offsetDistance")}:</label>
           <input
             type="number"
             step={1}
@@ -623,7 +637,7 @@ const TransformOperations: React.FC<{
           disabled={distance === 0}
           className="w-full py-1.5 rounded border border-cad-border text-cad-text text-xs font-medium hover:bg-cad-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          偏移并保留原对象
+          {t("property.offsetKeep")}
         </button>
       </div>
 
@@ -631,7 +645,7 @@ const TransformOperations: React.FC<{
       <div className="space-y-1.5">
         <div className="grid grid-cols-2 gap-2">
           <div className="flex items-center justify-between gap-1">
-            <label className="text-cad-text-secondary text-xs">行:</label>
+            <label className="text-cad-text-secondary text-xs">{t("property.rows")}:</label>
             <input
               type="number"
               min={1}
@@ -641,7 +655,7 @@ const TransformOperations: React.FC<{
             />
           </div>
           <div className="flex items-center justify-between gap-1">
-            <label className="text-cad-text-secondary text-xs">列:</label>
+            <label className="text-cad-text-secondary text-xs">{t("property.columns")}:</label>
             <input
               type="number"
               min={1}
@@ -651,7 +665,7 @@ const TransformOperations: React.FC<{
             />
           </div>
           <div className="flex items-center justify-between gap-1">
-            <label className="text-cad-text-secondary text-xs">行距:</label>
+            <label className="text-cad-text-secondary text-xs">{t("property.rowGap")}:</label>
             <input
               type="number"
               value={rowSpacing}
@@ -660,7 +674,7 @@ const TransformOperations: React.FC<{
             />
           </div>
           <div className="flex items-center justify-between gap-1">
-            <label className="text-cad-text-secondary text-xs">列距:</label>
+            <label className="text-cad-text-secondary text-xs">{t("property.columnGap")}:</label>
             <input
               type="number"
               value={columnSpacing}
@@ -675,12 +689,12 @@ const TransformOperations: React.FC<{
           }
           className="w-full py-1.5 rounded border border-cad-border text-cad-text text-xs font-medium hover:bg-cad-hover transition-colors"
         >
-          生成矩形阵列
+          {t("property.makeArray")}
         </button>
       </div>
 
       <p className="text-[10px] text-cad-muted leading-relaxed">
-        缩放与偏移以选中对象的形心为基点；阵列会保留原对象并选中新副本。
+        {t("property.transformHint")}
       </p>
     </div>
   );
@@ -691,6 +705,7 @@ const CommonPropertiesPanel: React.FC<{
   elements: CADElement[];
   onUpdateElement: (e: CADElement) => void;
 }> = ({ elements, onUpdateElement }) => {
+  const { t } = useI18n();
   const handleLayerChange = (layer: string) => {
     elements.forEach((el) => {
       onUpdateElement({ ...el, layer });
@@ -705,8 +720,8 @@ const CommonPropertiesPanel: React.FC<{
 
   return (
     <div className="space-y-2 text-sm">
-      <PropertySelect label="图层" value="0" onChange={handleLayerChange} />
-      <PropertyColorPicker label="颜色" value="#000000" onChange={handleColorChange} />
+      <PropertySelect label={t("property.layer")} value="0" onChange={handleLayerChange} />
+      <PropertyColorPicker label={t("property.color")} value="#000000" onChange={handleColorChange} />
     </div>
   );
 };
@@ -814,19 +829,22 @@ const PropertySelect: React.FC<PropertySelectProps> = ({
   label,
   value,
   onChange,
-}) => (
-  <div className="flex items-center justify-between">
-    <label className="text-cad-text-secondary">{label}:</label>
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="bg-cad-bg border border-cad-border rounded px-2 py-1 text-xs flex-1 ml-2"
-    >
-      <option value="0">默认</option>
-      <option value="AI_GENERATED">AI生成</option>
-    </select>
-  </div>
-);
+}) => {
+  const { t } = useI18n();
+  return (
+    <div className="flex items-center justify-between">
+      <label className="text-cad-text-secondary">{label}:</label>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="bg-cad-bg border border-cad-border rounded px-2 py-1 text-xs flex-1 ml-2"
+      >
+        <option value="0">{t("property.defaultLayer")}</option>
+        <option value="AI_GENERATED">{t("property.aiGenerated")}</option>
+      </select>
+    </div>
+  );
+};
 
 interface PropertyColorPickerProps {
   label: string;

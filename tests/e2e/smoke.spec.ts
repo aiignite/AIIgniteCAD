@@ -17,15 +17,20 @@ async function openLoggedInApp(page: Page): Promise<ApiMock> {
     window.localStorage.setItem("auth_token", "e2e-token");
   });
   await page.goto("/");
-  await expect(page.getByText("Welcome to AI Ignite CAD")).toBeVisible();
+  await expect(page.getByText("欢迎使用 AI Ignite CAD")).toBeVisible();
   return api;
 }
 
+async function openFileMenu(page: Page, item: string): Promise<void> {
+  await page.locator('header [data-action="file-menu"]').click();
+  await page.getByRole("menuitem", { name: item }).click();
+}
+
 async function createDrawing(page: Page, name: string): Promise<void> {
-  await page.getByText("New Drawing", { exact: true }).click();
-  await page.getByPlaceholder("My Drawing").fill(name);
-  await page.getByRole("button", { name: "Create", exact: true }).click();
-  await expect(page.getByText("Welcome to AI Ignite CAD")).toBeHidden();
+  await page.getByText("新建图纸", { exact: true }).click();
+  await page.getByPlaceholder("图纸名称，例如：装配图").fill(name);
+  await page.getByRole("button", { name: "创建", exact: true }).click();
+  await expect(page.getByText("欢迎使用 AI Ignite CAD")).toBeHidden();
   await expect(page.locator("#drawing-surface svg")).toBeVisible();
   await expect(
     page.locator("header").getByText(name, { exact: true }),
@@ -60,17 +65,35 @@ test("登录后进入欢迎界面并保存 token", async ({ page }) => {
   const api = await installApiMock(page);
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
-  await page.getByLabel("Email Address").fill(TEST_USER.email);
-  await page.getByLabel("Password").fill("e2e-secret");
-  await page.getByRole("button", { name: /Sign In/ }).click();
+  await expect(page.getByRole("heading", { name: "欢迎回来" })).toBeVisible();
+  await page.getByLabel("邮箱地址").fill(TEST_USER.email);
+  await page.getByLabel("密码", { exact: true }).fill("e2e-secret");
+  await page.getByRole("button", { name: /登录/ }).click();
 
-  await expect(page.getByText("Welcome to AI Ignite CAD")).toBeVisible();
-  await expect(page.getByText(`Hi, ${TEST_USER.username}!`)).toBeVisible();
+  await expect(page.getByText("欢迎使用 AI Ignite CAD")).toBeVisible();
+  await expect(page.getByText(`你好，${TEST_USER.username}！`)).toBeVisible();
   expect(api.state.loginAttempts).toBe(1);
 
   const token = await page.evaluate(() => localStorage.getItem("auth_token"));
   expect(token).toBe("e2e-token");
+});
+
+test("语言默认中文，可切换英文并在刷新后保持", async ({ page }) => {
+  await openLoggedInApp(page);
+  await createDrawing(page, "Language Drawing");
+
+  await expect(page.getByRole("button", { name: /切换语言/ })).toBeVisible();
+  await expect(page.locator('header [data-action="file-menu"]')).toContainText("文件");
+
+  await page.getByRole("button", { name: /切换语言/ }).click();
+  await expect(page.locator('header [data-action="file-menu"]')).toContainText("File");
+  await expect(
+    page.locator("header button").filter({ hasText: "Export" }),
+  ).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByText("Welcome to AI Ignite CAD")).toBeVisible();
+  await expect(page.getByText("New drawing", { exact: true })).toBeVisible();
 });
 
 test("在画布上绘制直线", async ({ page }) => {
@@ -83,6 +106,23 @@ test("在画布上绘制直线", async ({ page }) => {
   await expect(
     page.locator("#drawing-surface svg").locator("line"),
   ).toHaveCount(3);
+});
+
+test("导入 DWG 时调用转换接口并把图元写入画布", async ({ page }) => {
+  await openLoggedInApp(page);
+  await createDrawing(page, "DWG Drawing");
+
+  const svg = page.locator("#drawing-surface svg");
+  const before = await svg.locator("line").count();
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "plan.dwg",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from("AC1027\x00\x00\x00\x00payload", "binary"),
+  });
+
+  await expect(svg.locator("line")).toHaveCount(before + 1);
+  await expect(page.getByText(/已导入 plan\.dwg/)).toBeVisible();
 });
 
 test("添加尺寸标注", async ({ page }) => {
@@ -186,7 +226,7 @@ test("导出 DXF 文件", async ({ page }) => {
   await drawLine(page);
 
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: /Export/ }).click();
+  await page.locator("header button").filter({ hasText: "导出" }).click();
   const download = await downloadPromise;
 
   expect(download.suggestedFilename()).toMatch(/\.dxf$/);
@@ -203,8 +243,8 @@ test("图框打印预览包含图元并可调用浏览器打印", async ({ page 
   await createDrawing(page, "Plot Drawing");
   await drawLine(page);
 
-  await page.getByRole("button", { name: "Plot / Print" }).click();
-  const dialog = page.getByRole("dialog", { name: "Plot and print" });
+  await openFileMenu(page, "打印 / 绘图");
+  const dialog = page.getByRole("dialog", { name: "打印与绘图" });
   await expect(dialog).toBeVisible();
 
   const sheet = dialog.locator("#plot-sheet");
@@ -213,8 +253,8 @@ test("图框打印预览包含图元并可调用浏览器打印", async ({ page 
     sheet.locator('[data-plot-elements="true"] line'),
   ).toHaveCount(1);
 
-  await page.getByLabel("Paper size").selectOption("A4");
-  await page.getByLabel("Orientation").selectOption("portrait");
+  await page.getByLabel("纸张尺寸").selectOption("A4");
+  await page.getByLabel("方向").selectOption("portrait");
   await expect(sheet).toHaveAttribute("aria-label", /Plot sheet A4/);
 
   await page.evaluate(() => {
@@ -223,7 +263,7 @@ test("图框打印预览包含图元并可调用浏览器打印", async ({ page 
       (window as any).__printCalls += 1;
     };
   });
-  await page.getByRole("button", { name: "Print / Save PDF" }).click();
+  await page.getByRole("button", { name: "打印 / 另存 PDF" }).click();
   expect(await page.evaluate(() => (window as any).__printCalls)).toBe(1);
 
   // 打印媒体下只保留图框，应用本体必须隐藏
@@ -243,7 +283,7 @@ test("图框打印预览包含图元并可调用浏览器打印", async ({ page 
 
   await page.emulateMedia({ media: "screen" });
 
-  await page.getByRole("button", { name: "Close plot dialog" }).click();
+  await page.getByRole("button", { name: "关闭打印设置" }).click();
   await expect(dialog).toBeHidden();
 });
 
@@ -252,29 +292,29 @@ test("版本历史可保存、对比并恢复", async ({ page }) => {
   await createDrawing(page, "Version Drawing");
   const firstCount = await drawLine(page);
 
-  await page.getByTitle("Version History").click();
-  const dialog = page.getByRole("dialog", { name: "Version history" });
+  await openFileMenu(page, "版本历史");
+  const dialog = page.getByRole("dialog", { name: "版本历史" });
   await expect(dialog).toBeVisible();
-  await page.getByLabel("Version name").fill("Baseline line");
-  await page.getByRole("button", { name: "Save version" }).click();
+  await page.getByLabel("版本名称").fill("Baseline line");
+  await page.getByRole("button", { name: "保存版本" }).click();
   await expect(dialog.getByText("Baseline line").first()).toBeVisible();
   await expect(dialog.getByText("v1", { exact: true }).first()).toBeVisible();
 
   const projectId = [...api.state.projects.keys()][0];
   expect(api.state.versions.get(projectId)?.[0]?.elementCount).toBe(1);
 
-  await page.getByRole("button", { name: "Close version history" }).click();
+  await page.getByRole("button", { name: "关闭版本历史" }).click();
   await expect(dialog).toBeHidden();
 
   await drawLine(page);
 
-  await page.getByTitle("Version History").click();
+  await openFileMenu(page, "版本历史");
   await expect(dialog).toBeVisible();
-  await page.getByLabel("Compare version 1").check();
-  await expect(dialog.getByText("Current → v1")).toBeVisible();
+  await page.getByLabel("对比版本 v1").check();
+  await expect(dialog.getByText("当前 → v1")).toBeVisible();
 
-  await page.getByRole("button", { name: "Restore this version" }).click();
-  await page.getByRole("button", { name: "Restore", exact: true }).click();
+  await page.getByRole("button", { name: "恢复此版本" }).click();
+  await page.locator('[data-action="restore-confirm"]').click();
   await expect(dialog).toBeHidden();
 
   const svg = page.locator("#drawing-surface svg");
@@ -292,14 +332,14 @@ test("刷新后从服务端恢复图纸", async ({ page }) => {
   await createDrawing(page, "Persistent Drawing");
   await drawLine(page);
 
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.locator('header button[title="保存"]').click();
   await expect.poll(() => api.state.elementSaves).toBeGreaterThan(0);
   await expect
     .poll(() => [...api.state.projects.values()][0]?.elements.length ?? 0)
     .toBe(1);
 
   await page.reload();
-  await expect(page.getByText("Welcome to AI Ignite CAD")).toBeVisible();
+  await expect(page.getByText("欢迎使用 AI Ignite CAD")).toBeVisible();
   await page.getByText("Persistent Drawing", { exact: true }).click();
 
   const svg = page.locator("#drawing-surface svg");
@@ -609,7 +649,7 @@ test("欢迎页：三步上手与内置示例可直接打开", async ({ page }) 
   await expect(page.locator('[data-example="gear"]')).toBeVisible();
 
   await page.locator('[data-example="gear"]').click();
-  await expect(page.getByText("Welcome to AI Ignite CAD")).toBeHidden();
+  await expect(page.getByText("欢迎使用 AI Ignite CAD")).toBeHidden();
   await expect(page.locator("header").getByText("齿轮.dxf", { exact: true })).toBeVisible();
 
   const svg = page.locator("#drawing-surface svg");

@@ -11,6 +11,8 @@ import { getElementBoundingBox } from "./geometry";
 
 export type ReviewSeverity = "error" | "warning" | "info";
 
+export type ReviewLocale = "zh" | "en";
+
 export type ReviewIssueCode =
     | "zero-length"
     | "invalid-circle"
@@ -45,6 +47,8 @@ export interface ReviewOptions {
     textOverlapRatio?: number;
     /** 项目设计约定：约定里的图层与字高会参与确定性检查 */
     conventions?: ReviewConventions;
+    /** 问题描述语言，默认中文 */
+    locale?: ReviewLocale;
 }
 
 const EPSILON = 1e-6;
@@ -58,6 +62,83 @@ const DEFAULT_FONT_SIZE = 12;
 /** AI 绘图工具写死的图层，由工具本身决定，不参与图层约定检查 */
 const RESERVED_AI_LAYER = "AI_GENERATED";
 const SEVERITY_ORDER: Record<ReviewSeverity, number> = { error: 0, warning: 1, info: 2 };
+
+type ReviewMessageSet = {
+    zeroLength: (id: string) => string;
+    invalidCircle: (id: string) => string;
+    degenerateRectangle: (id: string) => string;
+    nearClosed: (id: string, gap: number) => string;
+    textOverlap: (a: string, b: string) => string;
+    duplicate: (count: number, ids: string) => string;
+    missingDimension: string;
+    unorganizedLayers: (count: number) => string;
+    layerNotAllowed: (layer: string, allowed: string) => string;
+    emptyLayer: (name: string, purpose: string) => string;
+    textHeight: (sizes: string, hint: string) => string;
+    sizeHint: (height: number) => string;
+    none: string;
+    summary: (total: number, error: number, warning: number, info: number) => string;
+    fixIntro: string;
+    fixOutro: string;
+    fixRest: (count: number) => string;
+    fixIds: (ids: string) => string;
+};
+
+const REVIEW_MESSAGES: Record<ReviewLocale, ReviewMessageSet> = {
+    zh: {
+        zeroLength: (id) => `直线 ${id} 长度为 0，无法用于后续编辑或导出。`,
+        invalidCircle: (id) => `圆 ${id} 的半径必须大于 0。`,
+        degenerateRectangle: (id) => `矩形 ${id} 的宽或高为 0。`,
+        nearClosed: (id, gap) => `多段线 ${id} 首尾仅差 ${gap}，看起来应当闭合。`,
+        textOverlap: (a, b) => `文字「${a}」与「${b}」重叠，可能影响读图。`,
+        duplicate: (count, ids) => `${count} 个图元几何完全重合：${ids}。`,
+        missingDimension: "图中没有尺寸标注；如需出图，请补充主要轮廓的尺寸。",
+        unorganizedLayers: (count) =>
+            `${count} 个图元都位于图层 0；建议按轮廓、标注、辅助线拆分图层，便于隐藏与出图。`,
+        layerNotAllowed: (layer, allowed) =>
+            `图层「${layer}」不在项目约定图层清单内（约定：${allowed}）；请把图元归入约定图层或补充约定。`,
+        emptyLayer: (name, purpose) =>
+            `约定图层「${name}」${purpose}在图中没有图元，确认是否遗漏。`,
+        textHeight: (sizes, hint) => `图中文字字高不统一（${sizes}）；${hint}请统一后再出图。`,
+        sizeHint: (height) => `项目约定建议字高 ${height}，`,
+        none: "未发现明显问题。",
+        summary: (total, error, warning, info) =>
+            `发现 ${total} 个问题（error ${error} / warning ${warning} / info ${info}）。`,
+        fixIntro: "请检查并修复当前图纸中的以下问题：",
+        fixOutro:
+            "请先读取相关图元确认现状，再给出修复动作；不要改动无关图元，并在完成后说明修改了哪些内容。",
+        fixRest: (count) => `其余 ${count} 条略。`,
+        fixIds: (ids) => `（图元：${ids}）`,
+    },
+    en: {
+        zeroLength: (id) => `Line ${id} has zero length and cannot be edited or exported.`,
+        invalidCircle: (id) => `Circle ${id} must have a radius greater than 0.`,
+        degenerateRectangle: (id) => `Rectangle ${id} has zero width or height.`,
+        nearClosed: (id, gap) =>
+            `Polyline ${id} is almost closed (gap ${gap}); it probably should be closed.`,
+        textOverlap: (a, b) => `Text "${a}" and "${b}" overlap and may be hard to read.`,
+        duplicate: (count, ids) => `${count} elements are exactly coincident: ${ids}.`,
+        missingDimension:
+            "The drawing has no dimensions; add dimensions for the main outlines before plotting.",
+        unorganizedLayers: (count) =>
+            `${count} elements are all on layer 0; split outlines, dimensions and construction lines into layers so they can be hidden and plotted.`,
+        layerNotAllowed: (layer, allowed) =>
+            `Layer "${layer}" is not in the project convention list (${allowed}); move the elements to a convention layer or update the conventions.`,
+        emptyLayer: (name, purpose) =>
+            `Convention layer "${name}"${purpose} has no elements; check whether something is missing.`,
+        textHeight: (sizes, hint) =>
+            `Text heights are inconsistent (${sizes}); ${hint}unify them before plotting.`,
+        sizeHint: (height) => `the project convention recommends ${height}, `,
+        none: "No obvious issues found.",
+        summary: (total, error, warning, info) =>
+            `Found ${total} issues (error ${error} / warning ${warning} / info ${info}).`,
+        fixIntro: "Please check and fix the following issues in the current drawing:",
+        fixOutro:
+            "Read the related elements first, then propose fixes; do not change unrelated elements and summarize what you changed when done.",
+        fixRest: (count) => `The remaining ${count} items are omitted.`,
+        fixIds: (ids) => ` (elements: ${ids})`,
+    },
+};
 
 const distance = (a: Point, b: Point): number => Math.hypot(a.x - b.x, a.y - b.y);
 
@@ -147,6 +228,7 @@ export function reviewDrawing(
     const byId = new Map(elements.map((element) => [element.id, element]));
     const issues: ReviewIssue[] = [];
     const overlapThreshold = options.textOverlapRatio ?? TEXT_OVERLAP_RATIO;
+    const messages = REVIEW_MESSAGES[options.locale ?? "zh"];
 
     for (const element of elements) {
         if (element.type === "LINE" && element.start && element.end) {
@@ -154,7 +236,7 @@ export function reviewDrawing(
                 issues.push({
                     code: "zero-length",
                     severity: "error",
-                    message: `直线 ${element.id} 长度为 0，无法用于后续编辑或导出。`,
+                    message: messages.zeroLength(element.id),
                     elementIds: [element.id],
                     bbox: boxOf([element.id], byId),
                 });
@@ -164,7 +246,7 @@ export function reviewDrawing(
             issues.push({
                 code: "invalid-circle",
                 severity: "error",
-                message: `圆 ${element.id} 的半径必须大于 0。`,
+                message: messages.invalidCircle(element.id),
                 elementIds: [element.id],
                 bbox: boxOf([element.id], byId),
             });
@@ -176,7 +258,7 @@ export function reviewDrawing(
                 issues.push({
                     code: "degenerate-rectangle",
                     severity: "error",
-                    message: `矩形 ${element.id} 的宽或高为 0。`,
+                    message: messages.degenerateRectangle(element.id),
                     elementIds: [element.id],
                     bbox: boxOf([element.id], byId),
                 });
@@ -190,7 +272,7 @@ export function reviewDrawing(
                 issues.push({
                     code: "near-closed-contour",
                     severity: "warning",
-                    message: `多段线 ${element.id} 首尾仅差 ${round(gap)}，看起来应当闭合。`,
+                    message: messages.nearClosed(element.id, round(gap)),
                     elementIds: [element.id],
                     bbox: boxOf([element.id], byId),
                 });
@@ -215,9 +297,10 @@ export function reviewDrawing(
             issues.push({
                 code: "text-overlap",
                 severity: "warning",
-                message: `文字「${(a.element.text ?? "").slice(0, 12)}」与「${(
-                    b.element.text ?? ""
-                ).slice(0, 12)}」重叠，可能影响读图。`,
+                message: messages.textOverlap(
+                    (a.element.text ?? "").slice(0, 12),
+                    (b.element.text ?? "").slice(0, 12),
+                ),
                 elementIds: [a.element.id, b.element.id],
                 bbox: boxOf([a.element.id, b.element.id], byId),
             });
@@ -240,7 +323,7 @@ export function reviewDrawing(
         issues.push({
             code: "duplicate",
             severity: "warning",
-            message: `${ids.length} 个图元几何完全重合：${ids.slice(0, 6).join(", ")}。`,
+            message: messages.duplicate(ids.length, ids.slice(0, 6).join(", ")),
             elementIds: ids,
             bbox: boxOf(ids, byId),
         });
@@ -255,7 +338,7 @@ export function reviewDrawing(
         issues.push({
             code: "missing-dimension",
             severity: "info",
-            message: "图中没有尺寸标注；如需出图，请补充主要轮廓的尺寸。",
+            message: messages.missingDimension,
             elementIds: drawable.slice(0, 20).map((element) => element.id),
         });
     }
@@ -268,12 +351,12 @@ export function reviewDrawing(
         issues.push({
             code: "unorganized-layers",
             severity: "info",
-            message: `${drawable.length} 个图元都位于图层 0；建议按轮廓、标注、辅助线拆分图层，便于隐藏与出图。`,
+            message: messages.unorganizedLayers(drawable.length),
             elementIds: [],
         });
     }
 
-    issues.push(...reviewConventions(elements, byId, options.conventions));
+    issues.push(...reviewConventions(elements, byId, options.conventions, messages));
 
     return issues.sort(
         (a, b) =>
@@ -289,6 +372,7 @@ function reviewConventions(
     elements: readonly CADElement[],
     byId: Map<string, CADElement>,
     conventions: ReviewConventions | undefined,
+    messages: ReviewMessageSet,
 ): ReviewIssue[] {
     const issues: ReviewIssue[] = [];
     if (!conventions) return issues;
@@ -313,7 +397,7 @@ function reviewConventions(
             issues.push({
                 code: "layer-rule-violation",
                 severity: "warning",
-                message: `图层「${layer}」不在项目约定图层清单内（约定：${allowedText}）；请把图元归入约定图层或补充约定。`,
+                message: messages.layerNotAllowed(layer, allowedText),
                 elementIds: ids,
                 bbox: boxOf(ids, byId),
             });
@@ -325,7 +409,10 @@ function reviewConventions(
             issues.push({
                 code: "empty-convention-layer",
                 severity: "info",
-                message: `约定图层「${rule.name}」${rule.purpose ? `（${rule.purpose}）` : ""}在图中没有图元，确认是否遗漏。`,
+                message: messages.emptyLayer(
+                    rule.name,
+                    rule.purpose ? `（${rule.purpose}）` : "",
+                ),
                 elementIds: [],
             });
         }
@@ -356,9 +443,12 @@ function reviewConventions(
         issues.push({
             code: "text-height-inconsistent",
             severity: "info",
-            message: `图中文字字高不统一（${sizeText}）；${
-                conventions.textHeight ? `项目约定建议字高 ${conventions.textHeight}，` : ""
-            }请统一后再出图。`,
+            message: messages.textHeight(
+                sizeText,
+                conventions.textHeight
+                    ? messages.sizeHint(conventions.textHeight)
+                    : "",
+            ),
             elementIds: outliers,
         });
     }
@@ -367,36 +457,83 @@ function reviewConventions(
 }
 
 /** 供工具结果使用的紧凑摘要 */
-export function summarizeReview(issues: readonly ReviewIssue[]): string {
-    if (issues.length === 0) return "未发现明显问题。";
+export function summarizeReview(
+    issues: readonly ReviewIssue[],
+    locale: ReviewLocale = "zh",
+): string {
+    const messages = REVIEW_MESSAGES[locale];
+    if (issues.length === 0) return messages.none;
     const counts = issues.reduce<Record<string, number>>((acc, issue) => {
         acc[issue.severity] = (acc[issue.severity] ?? 0) + 1;
         return acc;
     }, {});
-    return `发现 ${issues.length} 个问题（error ${counts.error ?? 0} / warning ${
-        counts.warning ?? 0
-    } / info ${counts.info ?? 0}）。`;
+    return messages.summary(
+        issues.length,
+        counts.error ?? 0,
+        counts.warning ?? 0,
+        counts.info ?? 0,
+    );
 }
 
-export const REVIEW_SEVERITY_LABELS: Record<ReviewSeverity, string> = {
-    error: "错误",
-    warning: "警告",
-    info: "提示",
+const REVIEW_SEVERITY_LABELS_BY_LOCALE: Record<
+    ReviewLocale,
+    Record<ReviewSeverity, string>
+> = {
+    zh: {
+        error: "错误",
+        warning: "警告",
+        info: "提示",
+    },
+    en: {
+        error: "Error",
+        warning: "Warning",
+        info: "Info",
+    },
 };
 
-export const REVIEW_ISSUE_LABELS: Record<ReviewIssueCode, string> = {
-    "zero-length": "零长度直线",
-    "invalid-circle": "无效圆",
-    "degenerate-rectangle": "退化矩形",
-    duplicate: "重复图元",
-    "near-closed-contour": "未闭合轮廓",
-    "text-overlap": "文字重叠",
-    "missing-dimension": "缺少尺寸标注",
-    "unorganized-layers": "图层未整理",
-    "layer-rule-violation": "图层未登记",
-    "empty-convention-layer": "约定图层为空",
-    "text-height-inconsistent": "字高不统一",
+const REVIEW_ISSUE_LABELS_BY_LOCALE: Record<
+    ReviewLocale,
+    Record<ReviewIssueCode, string>
+> = {
+    zh: {
+        "zero-length": "零长度直线",
+        "invalid-circle": "无效圆",
+        "degenerate-rectangle": "退化矩形",
+        duplicate: "重复图元",
+        "near-closed-contour": "未闭合轮廓",
+        "text-overlap": "文字重叠",
+        "missing-dimension": "缺少尺寸标注",
+        "unorganized-layers": "图层未整理",
+        "layer-rule-violation": "图层未登记",
+        "empty-convention-layer": "约定图层为空",
+        "text-height-inconsistent": "字高不统一",
+    },
+    en: {
+        "zero-length": "Zero-length line",
+        "invalid-circle": "Invalid circle",
+        "degenerate-rectangle": "Degenerate rectangle",
+        duplicate: "Duplicate elements",
+        "near-closed-contour": "Near-closed contour",
+        "text-overlap": "Overlapping text",
+        "missing-dimension": "Missing dimensions",
+        "unorganized-layers": "Unorganized layers",
+        "layer-rule-violation": "Layer not in conventions",
+        "empty-convention-layer": "Empty convention layer",
+        "text-height-inconsistent": "Inconsistent text height",
+    },
 };
+
+export const REVIEW_SEVERITY_LABELS: Record<ReviewSeverity, string> =
+    REVIEW_SEVERITY_LABELS_BY_LOCALE.zh;
+
+export const REVIEW_ISSUE_LABELS: Record<ReviewIssueCode, string> =
+    REVIEW_ISSUE_LABELS_BY_LOCALE.zh;
+
+export const reviewSeverityLabel = (severity: ReviewSeverity, locale: ReviewLocale): string =>
+    REVIEW_SEVERITY_LABELS_BY_LOCALE[locale][severity];
+
+export const reviewIssueLabel = (code: ReviewIssueCode, locale: ReviewLocale): string =>
+    REVIEW_ISSUE_LABELS_BY_LOCALE[locale][code];
 
 /** 忽略与定位的稳定键：同一规则 + 同一组图元视为同一条问题 */
 export function reviewIssueKey(issue: ReviewIssue): string {
@@ -404,22 +541,22 @@ export function reviewIssueKey(issue: ReviewIssue): string {
 }
 
 /** 把可见问题整理成可直接发给 AI 的修复请求，只携带摘要不携带图元 JSON */
-export function buildReviewFixPrompt(issues: readonly ReviewIssue[], maxItems = 8): string {
+export function buildReviewFixPrompt(
+    issues: readonly ReviewIssue[],
+    maxItems = 8,
+    locale: ReviewLocale = "zh",
+): string {
     if (issues.length === 0) return "";
+    const messages = REVIEW_MESSAGES[locale];
     const lines = issues.slice(0, maxItems).map((issue) => {
         const ids = issue.elementIds.slice(0, 6).join(", ");
-        return `- [${REVIEW_SEVERITY_LABELS[issue.severity]}] ${issue.message}${
-            ids ? `（图元：${ids}）` : ""
+        return `- [${reviewSeverityLabel(issue.severity, locale)}] ${issue.message}${
+            ids ? messages.fixIds(ids) : ""
         }`;
     });
-    const rest = issues.length > maxItems ? `\n- 其余 ${issues.length - maxItems} 条略。` : "";
-    return [
-        "请检查并修复当前图纸中的以下问题：",
-        ...lines,
-        rest,
-        "",
-        "请先读取相关图元确认现状，再给出修复动作；不要改动无关图元，并在完成后说明修改了哪些内容。",
-    ]
+    const rest =
+        issues.length > maxItems ? `\n- ${messages.fixRest(issues.length - maxItems)}` : "";
+    return [messages.fixIntro, ...lines, rest, "", messages.fixOutro]
         .filter((line) => line !== "")
         .join("\n");
 }

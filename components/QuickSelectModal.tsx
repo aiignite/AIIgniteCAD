@@ -7,6 +7,7 @@
 
 import React, { useMemo, useState } from "react";
 import type { CADElement } from "../types";
+import { useI18n, type TranslationKey, type Translate } from "../lib/i18n";
 import {
     EMPTY_QUICK_SELECT_FILTER,
     filterQuickSelect,
@@ -25,30 +26,34 @@ interface QuickSelectModalProps {
     onCancel: () => void;
 }
 
-/** 图元类型的中文名 */
-const TYPE_LABELS: Record<string, string> = {
-    LINE: "直线",
-    CIRCLE: "圆",
-    RECTANGLE: "矩形",
-    LWPOLYLINE: "多段线",
-    TEXT: "文字",
-    DIMENSION: "标注",
-    ARC: "圆弧",
-    BLOCK_REFERENCE: "块引用",
-    ELLIPSE: "椭圆",
-    GEAR: "齿轮",
-    SPIRAL: "螺旋",
-    SPRING: "弹簧",
-    HATCH: "填充",
+/** 图元类型对应的界面文案 */
+const TYPE_LABEL_KEYS: Record<string, TranslationKey> = {
+    LINE: "toolbar.line",
+    CIRCLE: "toolbar.circle",
+    RECTANGLE: "toolbar.rectangle",
+    LWPOLYLINE: "toolbar.polyline",
+    TEXT: "toolbar.text",
+    DIMENSION: "toolbar.dimension",
+    ARC: "toolbar.arc",
+    BLOCK_REFERENCE: "common.element.blockReference",
+    ELLIPSE: "toolbar.ellipse",
+    GEAR: "toolbar.gear",
+    SPIRAL: "toolbar.spiral",
+    SPRING: "toolbar.spring",
+    HATCH: "toolbar.hatch",
 };
 
-const typeLabel = (type: string): string => TYPE_LABELS[type] ?? type;
+const typeLabel = (type: string, t: Translate): string => {
+    const key = TYPE_LABEL_KEYS[type];
+    return key ? t(key) : type;
+};
 
 export const QuickSelectModal: React.FC<QuickSelectModalProps> = ({
     elements,
     onConfirm,
     onCancel,
 }) => {
+    const { t } = useI18n();
     const [filter, setFilter] = useState<QuickSelectFilter>(EMPTY_QUICK_SELECT_FILTER);
 
     const facets = useMemo(() => quickSelectFacets(elements, filter), [elements, filter]);
@@ -78,12 +83,12 @@ export const QuickSelectModal: React.FC<QuickSelectModalProps> = ({
                     }
                     className="text-[10px] text-cad-muted hover:text-cad-text"
                 >
-                    不限
+                    {t("common.any")}
                 </button>
             </div>
             <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
                 {values.length === 0 && (
-                    <span className="text-[11px] text-cad-muted">没有可选值</span>
+                    <span className="text-[11px] text-cad-muted">{t("quickSelect.empty")}</span>
                 )}
                 {values.map((item) => {
                     const active = filter[dimension].includes(item.value);
@@ -114,19 +119,17 @@ export const QuickSelectModal: React.FC<QuickSelectModalProps> = ({
                 data-action="quick-select-modal"
                 className="bg-cad-panel border border-cad-border p-4 rounded-lg shadow-xl w-96 animate-in zoom-in-95 duration-200"
             >
-                <h3 className="text-sm font-bold mb-1">快速选择 (QSELECT)</h3>
-                <p className="text-[11px] text-cad-muted mb-4">
-                    按类型、图层与颜色筛选图元，维度之间取交集。
-                </p>
+                <h3 className="text-sm font-bold mb-1">{t("quickSelect.title")}</h3>
+                <p className="text-[11px] text-cad-muted mb-4">{t("quickSelect.hint")}</p>
 
-                {renderRow("类型", "types", facets.types, (value) => (
-                    <span>{typeLabel(value)}</span>
+                {renderRow(t("quickSelect.type"), "types", facets.types, (value) => (
+                    <span>{typeLabel(value, t)}</span>
                 ))}
-                {renderRow("图层", "layers", facets.layers, (value) => (
+                {renderRow(t("quickSelect.layer"), "layers", facets.layers, (value) => (
                     <span>{value}</span>
                 ))}
                 {renderRow(
-                    "颜色",
+                    t("quickSelect.color"),
                     "colors",
                     facets.colors,
                     (value) => (
@@ -145,7 +148,7 @@ export const QuickSelectModal: React.FC<QuickSelectModalProps> = ({
                         data-action="quick-select-count"
                         className="text-xs text-cad-muted"
                     >
-                        将选中 {matched.length} 个图元
+                        {t("quickSelect.result", { count: matched.length })}
                     </span>
                     <div className="flex gap-2">
                         <button
@@ -153,7 +156,7 @@ export const QuickSelectModal: React.FC<QuickSelectModalProps> = ({
                             onClick={onCancel}
                             className="px-3 py-1.5 text-xs text-cad-muted hover:bg-cad-border/50 rounded"
                         >
-                            取消
+                            {t("common.cancel")}
                         </button>
                         <button
                             type="button"
@@ -162,7 +165,7 @@ export const QuickSelectModal: React.FC<QuickSelectModalProps> = ({
                             disabled={matched.length === 0}
                             className="px-3 py-1.5 text-xs bg-cad-primary text-white rounded hover:bg-cad-primaryHover disabled:opacity-40 disabled:hover:bg-cad-primary"
                         >
-                            选择
+                            {t("common.select")}
                         </button>
                     </div>
                 </div>

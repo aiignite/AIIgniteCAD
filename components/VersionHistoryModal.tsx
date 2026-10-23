@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ProjectVersion, ProjectVersionSummary } from "../types";
 import { apiService } from "../services/apiService";
 import { diffElementSets, summarizeElementTypes } from "../lib/versionDiff";
+import { useI18n } from "../lib/i18n";
 import ElementPreview from "./ElementPreview";
 
 interface VersionHistoryModalProps {
@@ -34,6 +35,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
     onRestore,
     onNotify,
 }) => {
+    const { t } = useI18n();
     const [versions, setVersions] = useState<ProjectVersionSummary[]>([]);
     const [hasMore, setHasMore] = useState(false);
     const [loadingList, setLoadingList] = useState(true);
@@ -71,7 +73,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
             .catch((error) => {
                 if (!cancelled) {
                     setListError(
-                        error instanceof Error ? error.message : "Failed to load versions",
+                        error instanceof Error ? error.message : t("versions.failedLoad"),
                     );
                 }
             })
@@ -99,12 +101,12 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                 const result = await apiService.getProjectVersion(projectId, versionId);
                 setDetails((current) => ({ ...current, [versionId]: result.version }));
             } catch (error) {
-                onNotify(error instanceof Error ? error.message : "Failed to load version");
+                onNotify(error instanceof Error ? error.message : t("versions.failedLoad"));
             } finally {
                 inFlightDetailsRef.current.delete(versionId);
             }
         },
-        [projectId, details, onNotify],
+        [projectId, details, onNotify, t],
     );
 
     // setState 只在 Promise 回调中执行，避免 effect 同步更新引发级联渲染
@@ -123,7 +125,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
             setHasMore(result.hasMore);
             setFocusedId((current) => current ?? result.versions[0]?.id ?? null);
         } catch (error) {
-            setListError(error instanceof Error ? error.message : "Failed to load versions");
+            setListError(error instanceof Error ? error.message : t("versions.failedLoad"));
         } finally {
             setLoadingList(false);
         }
@@ -138,7 +140,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
             setVersions((current) => [...current, ...result.versions]);
             setHasMore(result.hasMore);
         } catch (error) {
-            onNotify(error instanceof Error ? error.message : "Failed to load versions");
+            onNotify(error instanceof Error ? error.message : t("versions.failedLoad"));
         } finally {
             setLoadingList(false);
         }
@@ -159,7 +161,10 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
             const target = details[second.id];
             if (!base || !target) return null;
             return {
-                label: `v${first.versionNumber} → v${second.versionNumber}`,
+                label: t("versions.range", {
+                    from: first.versionNumber,
+                    to: second.versionNumber,
+                }),
                 diff: diffElementSets(
                     base.snapshotData.elements ?? [],
                     target.snapshotData.elements ?? [],
@@ -169,7 +174,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
 
         if (focusedDetail) {
             return {
-                label: `Current → v${focusedDetail.versionNumber}`,
+                label: t("versions.currentTo", { version: focusedDetail.versionNumber }),
                 diff: diffElementSets(
                     currentSnapshot.elements ?? [],
                     focusedDetail.snapshotData.elements ?? [],
@@ -178,7 +183,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
         }
 
         return null;
-    }, [compareSummaries, details, focusedDetail, currentSnapshot]);
+    }, [compareSummaries, details, focusedDetail, currentSnapshot, t]);
 
     const previewSnapshot = useMemo(() => {
         if (compareSummaries.length === 2) {
@@ -207,9 +212,9 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
             }));
             setFocusedId(summary.id);
             setMessage("");
-            onNotify(`Version v${summary.versionNumber} saved`);
+            onNotify(t("versions.saved", { version: summary.versionNumber }));
         } catch (error) {
-            onNotify(error instanceof Error ? error.message : "Failed to save version");
+            onNotify(error instanceof Error ? error.message : t("versions.failedSave"));
         } finally {
             setCreating(false);
         }
@@ -247,7 +252,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
             });
             onClose();
         } catch (error) {
-            onNotify(error instanceof Error ? error.message : "Failed to restore version");
+            onNotify(error instanceof Error ? error.message : t("versions.failedRestore"));
         } finally {
             setRestoring(false);
         }
@@ -258,7 +263,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
             role="dialog"
             aria-modal="true"
-            aria-label="Version history"
+            aria-label={t("versions.title")}
             onMouseDown={(event) => {
                 if (event.target === event.currentTarget) onClose();
             }}
@@ -266,7 +271,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
             <div className="bg-cad-panel border border-cad-border rounded-xl shadow-2xl w-[min(1100px,95vw)] h-[min(760px,90vh)] flex flex-col overflow-hidden">
                 <div className="flex items-center justify-between px-5 py-3 border-b border-cad-border">
                     <div>
-                        <h2 className="text-base font-bold text-cad-text">Version History</h2>
+                        <h2 className="text-base font-bold text-cad-text">{t("versions.title")}</h2>
                         <p className="text-[11px] text-cad-muted font-mono">
                             {projectName || projectId}
                         </p>
@@ -274,8 +279,8 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                     <button
                         onClick={onClose}
                         className="p-1.5 rounded hover:bg-cad-text/10 text-cad-muted hover:text-cad-text transition-colors"
-                        title="Close"
-                        aria-label="Close version history"
+                        title={t("common.close")}
+                        aria-label={t("versions.close")}
                     >
                         <span className="material-symbols-outlined text-[20px]">close</span>
                     </button>
@@ -292,8 +297,8 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                                     onKeyDown={(event) => {
                                         if (event.key === "Enter") void handleCreate();
                                     }}
-                                    placeholder="Version name (optional)"
-                                    aria-label="Version name"
+                                    placeholder={t("versions.namePlaceholder")}
+                                    aria-label={t("versions.nameLabel")}
                                     maxLength={200}
                                     className="flex-1 min-w-0 bg-cad-bg border border-cad-border rounded px-2 py-1.5 text-xs text-cad-text placeholder:text-cad-muted focus:outline-none focus:border-cad-primary"
                                 />
@@ -302,17 +307,17 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                                     disabled={creating}
                                     className="px-3 py-1.5 rounded bg-cad-primary hover:bg-cad-primaryHover disabled:opacity-50 text-white text-xs font-bold transition-colors"
                                 >
-                                    {creating ? "Saving..." : "Save version"}
+                                    {creating ? t("common.saving") : t("versions.save")}
                                 </button>
                             </div>
                             <p className="mt-1.5 text-[10px] text-cad-muted font-mono">
-                                Auto-version every 20 edits
+                                {t("versions.autoHint")}
                             </p>
                         </div>
 
                         <div className="flex-1 overflow-y-auto p-2 space-y-1">
                             {loadingList && versions.length === 0 && (
-                                <p className="text-xs text-cad-muted p-3">Loading versions...</p>
+                                <p className="text-xs text-cad-muted p-3">{t("versions.loading")}</p>
                             )}
                             {listError && (
                                 <div className="p-3 text-xs text-red-400">
@@ -321,13 +326,13 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                                         onClick={() => void reload()}
                                         className="mt-2 px-2 py-1 rounded border border-cad-border hover:bg-cad-text/10"
                                     >
-                                        Retry
+                                        {t("common.retry")}
                                     </button>
                                 </div>
                             )}
                             {!loadingList && !listError && versions.length === 0 && (
                                 <div className="p-4 text-xs text-cad-muted">
-                                    No versions yet. Save the current drawing to create v1.
+                                    {t("versions.empty")}
                                 </div>
                             )}
 
@@ -353,7 +358,9 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                                                         v{version.versionNumber}
                                                     </span>
                                                     <span className="text-[10px] text-cad-muted font-mono">
-                                                        {version.elementCount} elements
+                                                        {t("versions.elementCount", {
+                                                            count: version.elementCount,
+                                                        })}
                                                     </span>
                                                     {version.changeSummary && (
                                                         <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">
@@ -366,7 +373,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                                                     )}
                                                 </div>
                                                 <div className="text-[11px] text-cad-text truncate">
-                                                    {version.commitMessage || "Untitled version"}
+                                                    {version.commitMessage || t("versions.untitled")}
                                                 </div>
                                                 <div className="text-[10px] text-cad-muted truncate">
                                                     {formatDate(version.createdAt)}
@@ -375,22 +382,26 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                                             <div className="flex flex-col items-end gap-1">
                                                 <label
                                                     className="flex items-center gap-1 text-[10px] text-cad-muted cursor-pointer"
-                                                    title="Select for comparison"
+                                                    title={t("versions.selectToCompare")}
                                                 >
                                                     <input
                                                         type="checkbox"
                                                         checked={compared}
                                                         onChange={() => toggleCompare(version.id)}
-                                                        aria-label={`Compare version ${version.versionNumber}`}
+                                                        aria-label={t("versions.compareVersion", {
+                                                            version: version.versionNumber,
+                                                        })}
                                                     />
-                                                    cmp
+                                                    {t("versions.compare")}
                                                 </label>
                                                 <button
                                                     onClick={() => requestRestore(version)}
                                                     className="text-[10px] text-cad-primary hover:underline"
-                                                    title={`Restore version ${version.versionNumber}`}
+                                                    title={t("versions.restoreTitle", {
+                                                        version: version.versionNumber,
+                                                    })}
                                                 >
-                                                    restore
+                                                    {t("versions.restore")}
                                                 </button>
                                             </div>
                                         </div>
@@ -404,7 +415,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                                     disabled={loadingList}
                                     className="w-full py-2 text-[11px] text-cad-muted border border-cad-border rounded hover:bg-cad-text/10 disabled:opacity-50"
                                 >
-                                    {loadingList ? "Loading..." : "Load older versions"}
+                                    {loadingList ? t("common.loading") : t("versions.loadMore")}
                                 </button>
                             )}
                         </div>
@@ -415,8 +426,8 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                         {!previewSnapshot && (
                             <div className="flex-1 flex items-center justify-center text-xs text-cad-muted">
                                 {focusedId && !focusedDetail
-                                    ? "Loading snapshot..."
-                                    : "Select a version to preview"}
+                                    ? t("versions.loadingSnapshot")
+                                    : t("versions.selectPreview")}
                             </div>
                         )}
 
@@ -426,11 +437,13 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                                     <div>
                                         <div className="text-sm font-bold text-cad-text">
                                             {compareSummaries.length === 2
-                                                ? "Version comparison"
-                                                : `v${focusedSummary?.versionNumber ?? ""}`}
+                                                ? t("versions.comparison")
+                                                : t("versions.version", {
+                                                      version: focusedSummary?.versionNumber ?? "",
+                                                  })}
                                         </div>
                                         <div className="text-[11px] text-cad-muted">
-                                            {focusedSummary?.commitMessage || "Untitled version"}
+                                            {focusedSummary?.commitMessage || t("versions.untitled")}
                                         </div>
                                     </div>
                                     <div className="text-[10px] text-cad-muted font-mono text-right">
@@ -442,7 +455,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                                     elements={previewSnapshot.elements ?? []}
                                     dimScale={previewSnapshot.settings?.dimScale ?? 1}
                                     dimPrecision={previewSnapshot.settings?.dimPrecision ?? 2}
-                                    ariaLabel="Version preview"
+                                    ariaLabel={t("versions.previewAria")}
                                 />
 
                                 {comparison && (
@@ -452,7 +465,9 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                                                 {comparison.label}
                                             </span>
                                             <span className="text-[10px] text-cad-muted">
-                                                {comparison.diff.unchanged} unchanged
+                                                {t("versions.unchanged", {
+                                                    count: comparison.diff.unchanged,
+                                                })}
                                             </span>
                                         </div>
                                         <div className="grid grid-cols-3 gap-2 text-[11px]">
@@ -509,29 +524,31 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                                     {confirmId === focusedSummary?.id ? (
                                         <div className="flex items-center justify-between gap-3">
                                             <p className="text-[11px] text-cad-muted">
-                                                Restore v{focusedSummary?.versionNumber}? The
-                                                current drawing stays in undo history (Ctrl+Z).
+                                                {t("versions.restorePrompt", {
+                                                    version: focusedSummary?.versionNumber ?? "",
+                                                })}
                                             </p>
                                             <div className="flex gap-2 shrink-0">
                                                 <button
                                                     onClick={() => setConfirmId(null)}
                                                     className="px-3 py-1.5 rounded border border-cad-border text-xs text-cad-muted hover:bg-cad-text/10"
                                                 >
-                                                    Cancel
+                                                    {t("versions.cancelRestore")}
                                                 </button>
                                                 <button
+                                                    data-action="restore-confirm"
                                                     onClick={() => void handleRestore()}
                                                     disabled={restoring}
                                                     className="px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black text-xs font-bold"
                                                 >
-                                                    {restoring ? "Restoring..." : "Restore"}
+                                                    {restoring ? t("versions.restoring") : t("versions.restore")}
                                                 </button>
                                             </div>
                                         </div>
                                     ) : (
                                         <div className="flex items-center justify-between gap-3">
                                             <p className="text-[11px] text-cad-muted">
-                                                Restoring keeps the current drawing in undo history.
+                                                {t("versions.restoreHint")}
                                             </p>
                                             <button
                                                 onClick={() =>
@@ -540,7 +557,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                                                 disabled={!focusedSummary || !focusedDetail}
                                                 className="px-3 py-1.5 rounded border border-amber-500/50 text-amber-500 text-xs font-bold hover:bg-amber-500/10 disabled:opacity-50"
                                             >
-                                                Restore this version
+                                                {t("versions.confirmRestore")}
                                             </button>
                                         </div>
                                     )}

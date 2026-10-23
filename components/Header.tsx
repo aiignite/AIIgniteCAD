@@ -1,37 +1,57 @@
-import React, { useRef, useState, useEffect } from "react";
-import { exportToDXF, parseDXF } from "../services/dxfService";
+import React, { useState, useEffect, useRef } from "react";
+import { exportToDXF } from "../services/dxfService";
 import { CADElement } from "../types";
+import { useI18n } from "../lib/i18n";
 
 interface HeaderProps {
     elements: CADElement[];
-    onImport: (elements: CADElement[]) => void;
+    onImportClick: () => void;
     onUndo?: () => void;
     onRedo?: () => void;
     currentUser?: any;
     onLogout?: () => Promise<void>;
     fileName?: string;
     onSave?: () => void;
+    onSaveVersion?: () => void;
     onOpenVersions?: () => void;
     onOpenPlot?: () => void;
     onOpenImageTrace?: () => void;
+    /** 顶部 AI 助手入口：打开非模态浮窗 */
+    aiOpen?: boolean;
+    onToggleAI?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
     elements,
-    onImport,
+    onImportClick,
     onUndo,
     onRedo,
     currentUser,
     onLogout,
-    fileName = "Untitled.dxf",
+    fileName,
     onSave,
+    onSaveVersion,
     onOpenVersions,
     onOpenPlot,
     onOpenImageTrace,
+    aiOpen = false,
+    onToggleAI,
 }) => {
-    const fileInputRef = useRef<HTMLInputElement>(null);
+    const { locale, setLocale, t } = useI18n();
     // 初始值直接从 DOM 读取，避免挂载后再 setState 触发级联渲染
     const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains("dark"));
+    const [fileMenuOpen, setFileMenuOpen] = useState(false);
+    const fileMenuRef = useRef<HTMLDivElement>(null);
+    const displayName = fileName ?? `${t("common.untitled")}.dxf`;
+
+    useEffect(() => {
+        if (!fileMenuOpen) return;
+        const handleClickOutside = (event: MouseEvent) => {
+            if (!fileMenuRef.current?.contains(event.target as Node)) setFileMenuOpen(false);
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [fileMenuOpen]);
 
     const toggleTheme = () => {
         if (document.documentElement.classList.contains("dark")) {
@@ -54,33 +74,8 @@ export const Header: React.FC<HeaderProps> = ({
         URL.revokeObjectURL(url);
     };
 
-    const handleImportClick = () => {
-        fileInputRef.current?.click();
-    };
-
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const text = event.target?.result as string;
-                const imported = parseDXF(text);
-                onImport(imported);
-            };
-            reader.readAsText(file);
-        }
-    };
-
     return (
         <header className="flex items-center justify-between whitespace-nowrap border-b border-cad-border bg-cad-bg pl-2 pr-4 h-14 shrink-0 z-30 shadow-sm transition-colors duration-300">
-            <input
-                type="file"
-                ref={fileInputRef}
-                className="hidden"
-                accept=".dxf"
-                onChange={handleFileChange}
-            />
-
             <div className="flex items-center gap-3">
                 <div className="size-10 shrink-0">
                     <svg
@@ -178,24 +173,24 @@ export const Header: React.FC<HeaderProps> = ({
                         AI Ignite CAD
                     </h2>
                     <span className="text-[10px] text-cad-muted font-mono transform translate-y-[-1px]">
-                        {fileName}
+                        {displayName}
                     </span>
                 </div>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1 text-cad-muted">
                     <button
                         onClick={onUndo}
                         className="p-1.5 hover:text-cad-text hover:bg-cad-text/10 rounded transition-colors"
-                        title="Undo (Ctrl+Z)"
+                        title={t("header.undo")}
                     >
                         <span className="material-symbols-outlined text-[20px]">undo</span>
                     </button>
                     <button
                         onClick={onRedo}
                         className="p-1.5 hover:text-cad-text hover:bg-cad-text/10 rounded transition-colors"
-                        title="Redo (Ctrl+Y)"
+                        title={t("header.redo")}
                     >
                         <span className="material-symbols-outlined text-[20px]">redo</span>
                     </button>
@@ -205,44 +200,130 @@ export const Header: React.FC<HeaderProps> = ({
 
                 <button
                     onClick={onSave}
-                    className="text-cad-muted hover:text-cad-text text-xs font-medium px-2 transition-colors"
+                    className="flex items-center gap-1.5 h-8 px-2.5 rounded text-cad-muted hover:text-cad-text hover:bg-cad-text/10 text-xs font-medium transition-colors"
+                    title={t("header.save")}
                 >
-                    Save
+                    <span className="material-symbols-outlined text-[18px]">save</span>
+                    <span className="hidden md:inline">{t("header.save")}</span>
+                </button>
+
+                <div className="relative" ref={fileMenuRef}>
+                    <button
+                        data-action="file-menu"
+                        onClick={() => setFileMenuOpen((open) => !open)}
+                        aria-haspopup="menu"
+                        aria-expanded={fileMenuOpen}
+                        className={`flex items-center gap-1.5 h-8 px-2.5 rounded text-xs font-medium transition-colors ${
+                            fileMenuOpen
+                                ? "bg-cad-text/10 text-cad-text"
+                                : "text-cad-muted hover:text-cad-text hover:bg-cad-text/10"
+                        }`}
+                        title={t("header.fileMenu")}
+                    >
+                        <span className="material-symbols-outlined text-[18px]">folder_open</span>
+                        <span>{t("header.fileMenu")}</span>
+                        <span className="material-symbols-outlined text-[16px]">expand_more</span>
+                    </button>
+                    {fileMenuOpen && (
+                        <div
+                            role="menu"
+                            aria-label={t("header.fileMenu")}
+                            className="absolute right-0 top-full mt-1 w-56 rounded-lg border border-cad-border bg-cad-panel shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100"
+                        >
+                            <FileMenuItem
+                                icon="upload_file"
+                                label={t("header.import")}
+                                onClick={() => {
+                                    setFileMenuOpen(false);
+                                    onImportClick?.();
+                                }}
+                            />
+                            <FileMenuItem
+                                icon="image"
+                                label={t("header.trace")}
+                                onClick={() => {
+                                    setFileMenuOpen(false);
+                                    onOpenImageTrace?.();
+                                }}
+                            />
+                            <div className="h-px bg-cad-border my-1" />
+                            <FileMenuItem
+                                icon="download"
+                                label={t("header.exportDxf")}
+                                onClick={() => {
+                                    setFileMenuOpen(false);
+                                    handleExport();
+                                }}
+                            />
+                            <FileMenuItem
+                                icon="print"
+                                label={t("header.plot")}
+                                onClick={() => {
+                                    setFileMenuOpen(false);
+                                    onOpenPlot?.();
+                                }}
+                            />
+                            <div className="h-px bg-cad-border my-1" />
+                            <FileMenuItem
+                                icon="history"
+                                label={t("header.versions")}
+                                onClick={() => {
+                                    setFileMenuOpen(false);
+                                    onOpenVersions?.();
+                                }}
+                            />
+                            <FileMenuItem
+                                icon="save_as"
+                                label={t("header.saveVersion")}
+                                onClick={() => {
+                                    setFileMenuOpen(false);
+                                    onSaveVersion?.();
+                                }}
+                            />
+                        </div>
+                    )}
+                </div>
+
+                <div className="h-5 w-px bg-cad-border"></div>
+
+                <button
+                    onClick={onToggleAI}
+                    aria-label={aiOpen ? t("header.aiClose") : t("header.aiOpen")}
+                    aria-pressed={aiOpen}
+                    title={aiOpen ? t("header.aiClose") : t("header.aiOpen")}
+                    className={`flex items-center gap-2 h-8 px-3 rounded transition-colors ${
+                        aiOpen
+                            ? "bg-cad-primary text-white shadow-lg shadow-blue-500/20"
+                            : "border border-cad-border text-cad-muted hover:text-cad-text hover:bg-cad-text/10"
+                    }`}
+                >
+                    <span className="material-symbols-outlined text-[18px]">smart_toy</span>
+                    <span className="hidden lg:inline text-xs font-bold">AI</span>
                 </button>
 
                 <button
-                    onClick={handleImportClick}
-                    className="text-cad-muted hover:text-cad-text text-xs font-medium px-2 transition-colors"
+                    onClick={() => setLocale(locale === "zh" ? "en" : "zh")}
+                    title={t("header.languageToggle", {
+                        language: locale === "zh" ? t("header.languageZh") : t("header.languageEn"),
+                    })}
+                    aria-label={t("header.languageToggle", {
+                        language: locale === "zh" ? t("header.languageZh") : t("header.languageEn"),
+                    })}
+                    className="flex items-center gap-1 h-8 px-2 rounded text-cad-muted hover:text-cad-text hover:bg-cad-text/10 transition-colors"
                 >
-                    Import
+                    <span className="material-symbols-outlined text-[18px]">translate</span>
+                    <span className="text-[11px] font-bold">{locale === "zh" ? "中文" : "EN"}</span>
                 </button>
 
                 <button
-                    onClick={onOpenImageTrace}
-                    className="flex items-center gap-1 text-cad-muted hover:text-cad-text text-xs font-medium px-2 transition-colors"
-                    title="参考图转 CAD"
+                    onClick={toggleTheme}
+                    className="size-8 rounded-full bg-cad-panel border border-cad-border flex items-center justify-center text-xs font-bold text-cad-text cursor-pointer hover:bg-cad-border transition-colors"
+                    title={isDark ? t("header.themeToLight") : t("header.themeToDark")}
+                    aria-label={isDark ? t("header.themeToLight") : t("header.themeToDark")}
                 >
-                    <span className="material-symbols-outlined text-[18px]">image</span>
-                    <span className="hidden lg:inline">Trace</span>
-                </button>
-
-                <button
-                    onClick={onOpenVersions}
-                    className="flex items-center gap-1 text-cad-muted hover:text-cad-text text-xs font-medium px-2 transition-colors"
-                    title="Version History"
-                >
-                    <span className="material-symbols-outlined text-[18px]">history</span>
-                    <span className="hidden lg:inline">Versions</span>
-                </button>
-
-                <button
-                    onClick={onOpenPlot}
-                    className="flex items-center gap-1 text-cad-muted hover:text-cad-text text-xs font-medium px-2 transition-colors"
-                    title="Plot / Print"
-                    aria-label="Plot / Print"
-                >
-                    <span className="material-symbols-outlined text-[18px]">print</span>
-                    <span className="hidden lg:inline">Plot</span>
+                    <span className="material-symbols-outlined text-[18px]">
+                        {isDark ? "light_mode" : "dark_mode"}
+                    </span>
                 </button>
 
                 <button
@@ -250,21 +331,26 @@ export const Header: React.FC<HeaderProps> = ({
                     className="hidden sm:flex items-center gap-2 h-8 px-4 bg-cad-primary hover:bg-cad-primaryHover text-white text-sm font-bold rounded transition-colors shadow-lg shadow-blue-500/20"
                 >
                     <span className="material-symbols-outlined text-[18px]">download</span>
-                    <span>Export</span>
-                </button>
-
-                <button
-                    onClick={toggleTheme}
-                    className="size-8 rounded-full bg-cad-panel border border-cad-border flex items-center justify-center text-xs font-bold text-cad-text cursor-pointer hover:bg-cad-border transition-colors"
-                    title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
-                >
-                    <span className="material-symbols-outlined text-[18px]">
-                        {isDark ? "light_mode" : "dark_mode"}
-                    </span>
+                    <span>{t("header.export")}</span>
                 </button>
             </div>
         </header>
     );
 };
+
+const FileMenuItem: React.FC<{
+    icon: string;
+    label: string;
+    onClick: () => void;
+}> = ({ icon, label, onClick }) => (
+    <button
+        role="menuitem"
+        onClick={onClick}
+        className="flex w-full items-center gap-2.5 rounded px-2.5 py-2 text-xs text-cad-text hover:bg-cad-text/10 transition-colors text-left"
+    >
+        <span className="material-symbols-outlined text-[18px] text-cad-muted">{icon}</span>
+        <span>{label}</span>
+    </button>
+);
 
 export default Header;

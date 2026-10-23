@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import { useI18n } from '../lib/i18n';
 
 /** 矩形阵列参数 */
 export interface ArrayParams {
@@ -28,6 +29,7 @@ interface ArrayModalProps {
 }
 
 export const ArrayModal: React.FC<ArrayModalProps> = ({ visible, onConfirm, onCancel }) => {
+    const { t } = useI18n();
     const [columns, setColumns] = useState(2);
     const [rows, setRows] = useState(2);
     const [columnSpacing, setColumnSpacing] = useState(100);
@@ -48,12 +50,12 @@ export const ArrayModal: React.FC<ArrayModalProps> = ({ visible, onConfirm, onCa
     return (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[2px]">
             <div className="bg-cad-panel border border-cad-border p-4 rounded-lg shadow-xl w-80 animate-in zoom-in-95 duration-200">
-                <h3 className="text-sm font-bold mb-1">Array Settings (矩形阵列)</h3>
-                <p className="text-[11px] text-cad-muted mb-4">对当前选中对象创建矩形阵列，原始对象保留。</p>
+                <h3 className="text-sm font-bold mb-1">{t('array.title')}</h3>
+                <p className="text-[11px] text-cad-muted mb-4">{t('array.hint')}</p>
 
                 <div className="grid grid-cols-2 gap-3">
                     <div>
-                        <label className="text-xs text-cad-muted mb-1 block">Columns (列数)</label>
+                        <label className="text-xs text-cad-muted mb-1 block">{t('array.columns')}</label>
                         <input
                             type="number"
                             min="1"
@@ -64,7 +66,7 @@ export const ArrayModal: React.FC<ArrayModalProps> = ({ visible, onConfirm, onCa
                         />
                     </div>
                     <div>
-                        <label className="text-xs text-cad-muted mb-1 block">Rows (行数)</label>
+                        <label className="text-xs text-cad-muted mb-1 block">{t('array.rows')}</label>
                         <input
                             type="number"
                             min="1"
@@ -78,7 +80,7 @@ export const ArrayModal: React.FC<ArrayModalProps> = ({ visible, onConfirm, onCa
 
                 <div className="grid grid-cols-2 gap-3 mt-3">
                     <div>
-                        <label className="text-xs text-cad-muted mb-1 block">Column Spacing (列间距)</label>
+                        <label className="text-xs text-cad-muted mb-1 block">{t('array.columnSpacing')}</label>
                         <input
                             type="number"
                             min="1"
@@ -89,7 +91,7 @@ export const ArrayModal: React.FC<ArrayModalProps> = ({ visible, onConfirm, onCa
                         />
                     </div>
                     <div>
-                        <label className="text-xs text-cad-muted mb-1 block">Row Spacing (行间距)</label>
+                        <label className="text-xs text-cad-muted mb-1 block">{t('array.rowSpacing')}</label>
                         <input
                             type="number"
                             min="1"
@@ -106,13 +108,13 @@ export const ArrayModal: React.FC<ArrayModalProps> = ({ visible, onConfirm, onCa
                         onClick={onCancel}
                         className="px-3 py-1.5 text-xs text-cad-muted hover:bg-cad-border/50 rounded"
                     >
-                        Cancel
+                        {t('common.cancel')}
                     </button>
                     <button
                         onClick={handleConfirm}
                         className="px-3 py-1.5 text-xs bg-cad-primary text-white rounded hover:bg-cad-primaryHover"
                     >
-                        Apply
+                        {t('common.apply')}
                     </button>
                 </div>
             </div>

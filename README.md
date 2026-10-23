@@ -1,6 +1,6 @@
 # AIIgniteCAD
 
-> 浏览器里的 AI 辅助 2D CAD：自然语言绘图、DXF 导入导出、块系统、离线优先同步。
+> 浏览器里的 AI 辅助 2D CAD：自然语言绘图、DXF / DWG 导入与 DXF 导出、块系统、离线优先同步。
 
 [![CI](https://github.com/aiignite/AIIgniteCAD/actions/workflows/ci.yml/badge.svg)](https://github.com/aiignite/AIIgniteCAD/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -21,7 +21,7 @@ docker compose up -d db
 ./start.sh                    # 前端 http://localhost:3220 · 后端 http://localhost:3225
 ```
 
-打开首页 → 注册 → 在欢迎页选择「示例图纸」（齿轮 / 弹簧 / 建筑平面）→ 导出 DXF。**无需 LLM API Key**：绘图、DXF 导入导出、离线保存全部可用，配置模型后才启用 AI 对话。
+打开首页 → 注册 → 在欢迎页选择「示例图纸」（齿轮 / 弹簧 / 建筑平面）→ 导出 DXF。**无需 LLM API Key**：绘图、DXF 导入导出、离线保存全部可用；DWG 导入需要 Docker Compose 启动 LibreDWG 转换器。配置模型后才启用 AI 对话。
 
 目录：[功能特性](#功能特性) · [快速开始](#快速开始) · [系统架构](#系统架构) · [AI](#ai模型助手技能与工具循环) · [离线同步](#离线优先与同步) · [版本历史](#版本历史) · [图框打印](#图框与打印) · [可观测性](#可观测性) · [API 安全](#api-安全) · [命令与快捷键](#命令与快捷键) · [技术栈](#技术栈) · [项目结构](#项目结构) · [测试](#测试与质量门禁) · [文档索引](#文档索引) · [已知限制](#已知限制) · [贡献](#贡献与许可证)
 
@@ -34,8 +34,9 @@ docker compose up -d db
 | 标注测量   | 线性尺寸标注、距离测量                                                                                                                      |
 | 参数化图形 | 齿轮、渐开线、螺旋、弹簧、正多边形、椭圆；正弦 / 余弦、对数螺旋、二次 / 三次贝塞尔曲线，生成后自动校验                                     |
 | 块系统     | 块定义 / 引用、嵌套与循环引用检测、旋转 / 缩放 / 镜像、分层块库                                                                             |
-| 文件与输出 | DXF 导入导出（LINE / CIRCLE / ARC / LWPOLYLINE / TEXT 等）；图框打印 A4–A0 / Letter、横竖版、适配或固定比例、标题栏、单色矢量输出            |
+| 文件与输出 | DXF 导入导出（LINE / CIRCLE / ARC / LWPOLYLINE / TEXT / ELLIPSE / INSERT 块 / MTEXT / DIMENSION）；DWG 经 LibreDWG sidecar 转 DXF 后导入；图框打印 A4–A0 / Letter、横竖版、适配或固定比例、标题栏、单色矢量输出 |
 | AI         | 模型注册表 + 解析链与故障转移、助手（系统提示 / 工具白名单 / 轮次上限）、技能路由与导入导出、Agent 工具循环、计划与多方案、服务端会话与用量台账 |
+| 界面语言   | 默认中文，可切换英文；主界面、对话框、通知与 AI 对话主流程使用同一套扁平字典，切换结果写入 `localStorage` |
 | 参考图     | 本地参考图转 CAD：阈值提取轮廓 + 简化，生成多段线到 TRACE 图层（图片不上传）                                                               |
 | 存储同步   | IndexedDB 本地优先 + PostgreSQL 云端同步；幂等重放与冲突提示                                                                               |
 | 协作与组织 | JWT 鉴权、项目隔离、图层管理、版本历史（自动 / 手动、对比、可撤销恢复）、图纸检查面板与设计约定；实验性实时协作（房间广播图元差集与光标，默认关闭，[ADR 0012](docs/adr/0012-experimental-collaboration.md)） |
@@ -89,13 +90,22 @@ PostgreSQL 15（18 张表）
 
 `lib/` 为不依赖 React 与浏览器 API 的纯函数层，副作用与 IO 在 `services/`；各绘制工具是 `tools/` 里实现 `CanvasTool` 的独立状态机。更完整的模块边界与设计取舍见 [docs/architecture](docs/architecture/) 和 [ADR](docs/adr/)。
 
+## 界面语言与菜单
+
+- 默认中文，页头语言按钮在中 / EN 之间切换，选择写入 `localStorage`，刷新后保持；不跟随浏览器语言，避免国内用户首次打开看到英文。
+- 文案集中在 `lib/i18n.tsx` 的扁平字典：`TranslationKey` 由中文字典推导，英文必须实现同一组键，单元测试校验键集合一致、无空文案与插值行为。
+- 需要跨层复用的确定性文案（如图纸检查的问题描述）接收 `ReviewLocale` 参数，不在 `lib/` 引入 React。
+- 布局保持「左侧工具条 + 右侧检查器 + 底部命令行」三区；顶栏只保留高频与全局动作（撤销 / 重做、保存、AI、语言、主题、导出），文件类动作收进「文件」菜单：导入 DXF / DWG、参考图转 CAD、导出 DXF、打印 / 绘图、版本历史、保存版本（[ADR 0020](docs/adr/0020-i18n-and-header-menu.md)）。
+
 ## AI：模型、助手、技能与工具循环
 
 AI 通过 OpenAI / Anthropic / Google / Ollama 四种 Provider 调用。后端把 CAD 工具定义随请求发送给模型，以 SSE 流式回传文本与工具调用；工具在**浏览器侧的虚拟画布副本**上执行，模型每轮一次 HTTP 请求，回传结果后续跑下一轮。
 
 AI 生成的变更在确认前先以**幽灵层**画在真实图纸上：紫色虚线是提议结果、红色虚线是将被移除的现状。预览弹窗可收起为底部工具条，在图纸上下文中核对落点；确认后按差分增量一次 `commitAction`，整批动作仍只占一步撤销。
 
-### CAD 工具（28 个，前后端定义一致）
+对话不再占用右侧栏：页头 **AI** 图标打开非模态浮窗，浮窗可拖动、八向缩放，也可一键切换为贴右抽屉；助手 / 技能 / 模型 / 会话按钮在对话内以抽屉展开，画布始终保持可操作。输入时防抖解析**候选技能**并显示分数与命中原因，可逐项移除后再发送；候选与回合激活共用同一套后端打分。详见 [ADR 0019](docs/adr/0019-ai-window-and-skill-candidates.md)。
+
+### CAD 工具（31 个，前后端定义一致）
 
 | 工具                                                                                        | 作用                                                                  |
 | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
@@ -112,6 +122,9 @@ AI 生成的变更在确认前先以**幽灵层**画在真实图纸上：紫色�
 | `check_drawing`                                                                             | 只读：检查几何退化、重复、文字重叠、图层组织与缺失标注                |
 | `list_blocks`                                                                               | 只读：检索块库中的可复用符号（名称 / 分类 / 描述）                     |
 | `insert_block`                                                                              | 按块库 id 插入符号，支持缩放与旋转                                    |
+| `insert_block_by_name`                                                                      | 按自然语言中的块名插入；同名歧义时列出候选，避免插错                  |
+| `save_selection_as_block`                                                                   | 把选中图元保存为块库条目（可带描述与基点），确认后在服务端执行        |
+| `save_version`                                                                              | 把当前图纸保存为一个版本，确认后在服务端执行                          |
 | `zoom_to_selection`                                                                         | 视图：缩放到指定图元或当前选择集                                      |
 | `propose_plan`                                                                              | 计划模式专用：提交带工具与参数的执行计划，等待用户确认                |
 | `propose_variants`                                                                          | 多方案模式专用：提交 2–3 个备选方案（名称、摘要、步骤），等待用户选择 |
@@ -129,13 +142,13 @@ AI 生成的变更在确认前先以**幽灵层**画在真实图纸上：紫色�
 - **计划模式**：显式规划、跨 3 类操作或大图整理请求自动进入。该轮只下发只读工具与 `propose_plan`，模型先确认现状再提交计划；提示词单独给出「计划步骤可引用的写工具」清单（由工具定义自动生成，与本轮可调用清单区分）。用户可在卡片中改标题、调顺序、删步骤，确认后由前端在草稿上执行写步骤，仍只弹一次预览、只占一步撤销（[ADR 0014](docs/adr/0014-design-ops-plan-and-review.md)、[ADR 0017](docs/adr/0017-ai-gap-closing-and-conventions-downstream.md)）。
 - **多方案生成**：请求含「多方案 / 方案对比 / 备选」等意图时进入，该轮只下发只读工具与 `propose_variants`。模型返回 2–3 个方案，每个在草稿上独立执行并渲染缩略预览，卡片按**几何差分**显示「新增 N / 修改 M / 移除 K」而非模型自述；采用其一后只走一次预览、只占一步撤销，未采用的方案不落图。
 - **图纸检查面板**：右侧导航「检查」基于同一套确定性规则列出错误 / 警告 / 提示，支持筛选、定位（选中并缩放）、忽略与「让 AI 修复」；修复请求只携带问题摘要与相关图元 id，不发送完整图元 JSON。
-- **块与符号复用**：块库目录（`/api/blocks/tree`）在每轮请求前拉取并压成扁平目录（按项目缓存 60 秒，块或分类增删改后立即失效），模型先用 `list_blocks` 找可复用符号，再用 `insert_block` 插入。插入在草稿上把块展开为图元（平移 / 缩放 / 旋转复用既有变换函数），因此与普通绘制走同一条预览与单步撤销管线。块库读取失败与空库是两种状态：不可用时明确回报「块库当前不可用……不是空库」，模型据此改走绘图工具而不是凭空重画库里已有的符号。
+- **块与符号复用**：块库目录（`/api/blocks/tree`）在每轮请求前拉取并压成扁平目录（按项目缓存 60 秒，块或分类增删改后立即失效），模型先用 `list_blocks` 找可复用符号，再用 `insert_block` / `insert_block_by_name` 插入。按名字插入时前端做大小写无关的精确匹配与唯一子串匹配，多个候选会列出来让用户澄清；选中图元也可以经 `save_selection_as_block` 反向存入块库。插入与建块都在草稿上展开 / 收集为图元，沿用同一条预览与单步撤销管线；建块与 `save_version` 作为附加操作在预览里一并确认，不额外绕过确认流程。块库读取失败与空库是两种状态：不可用时明确回报「块库当前不可用……不是空库」，模型据此改走绘图工具而不是凭空重画库里已有的符号。
 
 ### 设计记忆与参考图
 
 - **设计约定**：每个项目可保存制图标准、单位、字高、标注精度、图层命名规则与备注，随项目走 IndexedDB / 同步队列持久化（`projects.design_conventions`）；右侧导航「约定」维护，AI 每轮自动注入摘要。约定同时**下沉到确定性检查**：检查面板、AI 质量门禁与 `check_drawing` 都按约定核对图层归属与文字字高是否统一。
 - **版本记忆**：创建版本时对比上一版快照，按轻量几何签名计算新增 / 删除 / 修改数量、类型分布与涉及图层，写入 `project_versions.change_summary`；最近 5 个版本连同提交信息注入 prompt，让 AI 知道「上一版改了什么」。
-- **参考图转 CAD**：页头「Trace」打开，图片仅在浏览器本地用 `createImageBitmap` + Canvas 读取，不上传。按阈值提取轮廓（marching squares）、RDP 简化后生成 `LWPOLYLINE` 到 `TRACE` 图层，可调阈值 / 反色 / 简化强度 / 目标宽度，预览确认后一次插入并占一步撤销。能力来源见 [ADR 0015](docs/adr/0015-design-conventions-and-variants.md)。
+- **参考图转 CAD**：页头文件菜单「参考图转 CAD」打开，图片仅在浏览器本地用 `createImageBitmap` + Canvas 读取，不上传。按阈值提取轮廓（marching squares）、RDP 简化后生成 `LWPOLYLINE` 到 `TRACE` 图层，可调阈值 / 反色 / 简化强度 / 目标宽度，预览确认后一次插入并占一步撤销。能力来源见 [ADR 0015](docs/adr/0015-design-conventions-and-variants.md)。
 
 ### 质量门禁与反馈闭环
 
@@ -153,7 +166,7 @@ Provider 报错且**尚未吐出任何内容**时才按候选顺序换模型重�
 
 - **助手**：系统提示词真正注入请求，并限定可用工具白名单与最大工具轮次；一个项目可切换助手而不改代码。
 - **技能 Playbook**：内置种子技能在首次使用时按 code upsert 进 `ai_skills`（`isSystem=true`），与用户自建技能同库同表，可在技能面板停用、编辑或克隆。每个技能除提示词外还包含执行步骤、完成检查、示例请求、所需设计上下文与反关键词，**全部字段都会进入提示词**——步骤、检查、示例按技能成块输出，反关键词渲染成「不适用场景」；每次更新递增 `version`。
-- **路由**：显式固定 > 助手绑定 > 关键词 > 会话连续性构成语言意图，选择集类型与设计上下文只在已有意图时加分，反关键词命中扣分；低于阈值不激活，最多 3 个，提示词字符有上限。审查技能激活时本轮只下发只读工具（[ADR 0013](docs/adr/0013-skill-playbook-design-context.md)）。
+- **路由**：显式固定 > 候选保留 > 助手绑定 > 关键词 > 历史关键词衰减 > 会话连续性构成语言意图，选择集类型与设计上下文只在已有意图时加分，反关键词命中扣分；低于阈值不激活，最多 3 个，提示词字符有上限。当前消息无命中时回看最近 3 条用户消息（`0.5^depth` 衰减）；不足 8 字的“继续 / 好的”沿用上一轮技能。审查技能激活时本轮只下发只读工具（[ADR 0013](docs/adr/0013-skill-playbook-design-context.md)、[ADR 0019](docs/adr/0019-ai-window-and-skill-candidates.md)）。
 - **只读设计工具**：`query_elements` / `measure_geometry` / `check_drawing` 在浏览器草稿上确定性执行，模型先查、再量、后回答；结果有字符预算裁剪，不会把非法 JSON 回传给模型。
 - **写入校验三径合一**：技能编辑器手写路径、导入路径与后端共用同一套字段级校验（工具名白名单、上下文信号、长度与数值范围），错误定位到具体输入框而不是笼统 400。每个技能可导出为带版本号的 JSON（`aiignite-skill` / v1），导入时先在浏览器侧完整校验，代码被占用时自动追加副本后缀，落库前给出预览。
 
@@ -163,7 +176,7 @@ Provider 报错且**尚未吐出任何内容**时才按候选顺序换模型重�
 - 发送给模型的画布上下文分 **brief / standard / deep** 三档：brief 档给出统计、选中 id 与一行事实（有无标注、块引用数、隐藏 / 锁定图层数）；standard 档增加图层可见性 / 锁定明细（截断时说明另有几个隐藏或锁定）、块引用、标注覆盖与修订号；审查、测量、布局类问题或大图扩展到最多 30 个选中图元。仍禁止倾倒全量 JSON。
 - 每轮请求的 `blockCount` 计入「持久块引用 + 本轮草稿刚插入的块」，模型不会重复插同一个块。
 - 长对话生成**确定性 digest** 写入 `contextSummary` 并记录水位线，早于水位线的消息不再逐条注入（不调用模型做摘要，保证可测试）。回合结束把 `applied` / `discarded`（带 `reason`，如 cancelled、stopped）、受影响图元 id 与本轮激活技能 code 回写到本轮用户消息的 metadata。
-- 右侧面板分 **模型 / 助手 / 技能 / 对话 / 检查 / 约定** 六个视图，共用一份注册表状态，写入后自动重拉。
+- 右侧面板保留 **检查 / 约定 / 文件 / 设置 / 用户** 视图；模型 / 助手 / 技能 / 对话迁入页头 AI 浮窗，助手、技能、模型共用一份注册表状态，写入后自动重拉（[ADR 0019](docs/adr/0019-ai-window-and-skill-candidates.md)）。
 
 测试分层、用例与文件映射、指标名全清单见 [docs/guides/TESTING.md](docs/guides/TESTING.md)。日常门禁只需 `npm test` 与 `npm run test:e2e`，均无需真实 API Key 或数据库。AI 侧指标按「请求 / 失败 / 故障转移 / 重试、工具调用与拒绝、耗时与上下文规模、token 与成本、回合采纳与反馈、技能写入」分类统计；Provider 返回 usage 时直接记录，否则按 4 字符 ≈ 1 token 估算并标记 `usageEstimated`。
 
@@ -177,7 +190,7 @@ Provider 报错且**尚未吐出任何内容**时才按候选顺序换模型重�
 
 ## 版本历史
 
-- 顶部 **Versions** 打开版本面板，可命名保存当前图形；每 20 次提交自动创建版本，失败后 60 秒退避重试。
+- 文件菜单「版本历史」打开版本面板，可命名保存当前图形；每 20 次提交自动创建版本，失败后 60 秒退避重试。
 - 版本列表只返回元数据（版本号、`elementCount`、名称、时间）与 `+N / -M / ~K` 差异摘要，快照详情按需加载；分页以 `versionNumber` 为游标。
 - 支持勾选任意两个版本对比，也支持当前图形与选中版本对比，结果统计新增 / 删除 / 修改数量及图元类型。
 - 恢复版本通过 `commitAction` 写入撤销历史并立即持久化，恢复后可用 `Ctrl/Cmd + Z` 回退。
@@ -185,7 +198,7 @@ Provider 报错且**尚未吐出任何内容**时才按候选顺序换模型重�
 
 ## 图框与打印
 
-- 顶部 **Plot** 打开打印面板，支持 A4 / A3 / A2 / A1 / A0 / Letter 与横竖版，边距 5–30mm。
+- 文件菜单「打印 / 绘图」打开打印面板，支持 A4 / A3 / A2 / A1 / A0 / Letter 与横竖版，边距 5–30mm。
 - 比例可选 **Fit to sheet** 或固定 1:1 / 1:2 / 1:5 / … / 1:1000；固定比例超出绘图区时会提示裁切。
 - 可选图框与标题栏（图名、图号、比例、图幅、日期、作者）以及单色输出（白纸黑线）。
 - 预览与打印共用 `components/PlotSheet.tsx`，布局统一走 `lib/plot.ts`，图元打印样式通过 `CADElementRenderer` 的 `overrides` 传入；输出为 SVG 矢量，在浏览器打印对话框选「另存为 PDF」即得矢量 PDF。
@@ -212,11 +225,12 @@ LOG_LEVEL=debug npm run dev   # backend/
 
 ## API 安全
 
-- **限流**（超限返回 `429` 与 `Retry-After`、`RateLimit-*` 头；只读的 `GET /api/auth/me` 不计数）：认证写操作每 IP 每 15 分钟 20 次，`/api/llm/*` 每用户每分钟 30 次，`/api/chat/*` 每用户每 5 分钟 120 次，`/api/skills/*` 600 次 / 5 分钟，`/api/blocks/*` 300 次 / 5 分钟；额度分别由 `AUTH` / `AI` / `CHAT` / `SKILL` / `BLOCK` 前缀的 `RATE_LIMIT_MAX` 与 `RATE_LIMIT_WINDOW_MS` 调整，`RATE_LIMIT_DISABLED=true` 仅用于紧急排障。限流桶在进程内存，多实例部署需在网关层另行限制。
+- **限流**（超限返回 `429` 与 `Retry-After`、`RateLimit-*` 头；只读的 `GET /api/auth/me` 不计数）：认证写操作每 IP 每 15 分钟 20 次，`/api/llm/*` 每用户每分钟 30 次，`/api/chat/*` 每用户每 5 分钟 120 次，`/api/skills/*` 600 次 / 5 分钟，`/api/blocks/*` 300 次 / 5 分钟，`/api/import/dwg` 每用户每 10 分钟 20 次；额度分别由 `AUTH` / `AI` / `CHAT` / `SKILL` / `BLOCK` / `IMPORT` 前缀的 `RATE_LIMIT_MAX` 与 `RATE_LIMIT_WINDOW_MS` 调整，`RATE_LIMIT_DISABLED=true` 仅用于紧急排障。限流桶在进程内存，多实例部署需在网关层另行限制。
 - `/api/llm/chat` 在触达数据库与 Provider 前做完整 Agent 回合校验：`phase` 只能是 `user_turn` / `tool_results`，`message` 必填且 ≤ 32000 字符，`round` 受绝对轮次上限约束，`turnId` / `sessionId` / `projectId` / `assistantId` / `modelId` ≤ 128 字符，`pinnedSkillCodes` ≤ 5 个，`canvasContext` 与 `toolResults` 各自有条数与长度上限——超限的回传内容直接 400，不会进入 prompt。
 - 模型 API Key 以 AES-256-GCM 加密落库，响应只返回 `hasApiKey` 与 `maskSecret` 预览，`apiKeyEncrypted` 由 `serializers.ts` 统一剔除。
 - 引用的模型必须归属当前用户（或系统内置 `userId=null`）且处于启用状态，否则解析链抛 `MODEL_FORBIDDEN` / `MODEL_DISABLED`。
-- 模型 `baseUrl` 由 `urlGuard` 做 SSRF 校验：拒绝非 http(s) 与私网 / 回环地址（Ollama 作为本地推理例外放行），生产强制 https；放行内网自建网关需显式配置 `AI_ALLOWED_ENDPOINTS`。
+- DWG 导入只接受 `application/octet-stream`，先校验 `AC10xx` 文件头，再转发给内网 `dwg-converter`；默认单文件 50 MB，转换器只挂在 compose 内网，不对外暴露端口。
+- 模型 `baseUrl` 由 `urlGuard` 做 SSRF 校验：拒绝非 http(s) 地址，云元数据与链路本地地址始终拒绝；内网 / 回环默认只对 Ollama 或白名单放行，生产强制 https。局域网 OpenAI 兼容网关（如 CCSwitch）使用 HTTP 时开启 `AI_ALLOW_PRIVATE_ENDPOINTS=true`，仅 IP 字面量生效；内网域名需加入 `AI_ALLOWED_ENDPOINTS`。公网 HTTP 不会被这两个开关放行。
 - helmet 输出严格 CSP（`default-src 'none'`）、一年期 HSTS、`X-Frame-Options: DENY`、`Referrer-Policy: no-referrer` 并关闭 `X-Powered-By`，安全头集中在 `backend/src/app.ts`。
 - 生产环境未设置 `JWT_SECRET` 时服务拒绝启动；CI 对前后端执行 `npm audit --omit=dev --audit-level=high`，high / critical 生产依赖漏洞阻断合并。日志与错误响应不包含 API Key、密码、Authorization 头或完整请求体。
 
@@ -290,6 +304,7 @@ AIIgniteCAD/
 │   ├── prisma/             # schema 与 migrations
 │   ├── src/                # routes / lib / middleware / services(cadEngine, aiEngine)
 │   └── tests/              # Supertest + Prisma mock
+├── dwg-converter/          # LibreDWG dwg2dxf sidecar（独立容器，GPL-3.0）
 ├── docs/                   # architecture / guides / reports / adr / images
 └── examples/               # 可导入的 DXF 与 AI 提示词示例
 ```
@@ -324,6 +339,7 @@ npm run docs:screenshots         # 重新生成 docs/images
 - **实时协作仍属实验性**：默认关闭，通过状态栏「协作 实验」开启；同一图元并发修改时最后写入胜，可能覆盖他人一次修改；只支持已同步到服务端的项目。
 - **3D 与参数化约束求解**不在当前范围。
 - **AI 依赖外部模型**：未配置模型时仅 AI 对话不可用，绘图与 DXF 功能不受影响。
+- **DWG 导入依赖转换器**：需要登录并连接后端，且启动 `dwg-converter` 容器；当前覆盖 R13–R2018 的常见 2D 图元，`SPLINE` / `HATCH` 等暂不导入。LibreDWG 为 GPL-3.0，作为独立进程/容器调用，对外分发镜像时需履行相应源码提供义务。
 - **指标与限流为进程内状态**：重启清零、多实例不共享，未接外部时序库。
 - **移动端未适配**：当前面向桌面浏览器。
 - `docs/reports/` 保留历史实现报告，部分描述反映当时状态，以代码与 ADR 为准。

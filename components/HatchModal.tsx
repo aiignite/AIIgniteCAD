@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { HatchPattern, HatchPatternType } from '../types';
+import { useI18n, type TranslationKey } from '../lib/i18n';
 
 interface HatchModalProps {
   visible: boolean;
@@ -7,18 +8,18 @@ interface HatchModalProps {
   onCancel: () => void;
 }
 
-const patternOptions: { value: HatchPatternType; label: string; icon: string }[] = [
-  { value: 'SOLID', label: 'Solid (实体)', icon: 'square' },
-  { value: 'HORIZONTAL', label: 'Horizontal (水平线)', icon: 'horizontal_rule' },
-  { value: 'VERTICAL', label: 'Vertical (垂直线)', icon: 'vertical_align_center' },
-  { value: 'DIAGONAL_RIGHT', label: 'Diagonal Right (右斜)', icon: 'remove' },
-  { value: 'DIAGONAL_LEFT', label: 'Diagonal Left (左斜)', icon: 'add' },
-  { value: 'CROSS', label: 'Cross (交叉)', icon: 'close' },
-  { value: 'GRID', label: 'Grid (网格)', icon: 'grid_on' },
-  { value: 'DOT', label: 'Dot (点阵)', icon: 'radio_button_unchecked' },
-  { value: 'ANSI31', label: 'ANSI 31 (标准斜线)', icon: 'format_overline' },
-  { value: 'ANSI32', label: 'ANSI 32 (标准垂直)', icon: 'vertical_align_top' },
-  { value: 'ISO02W100', label: 'ISO 02W100 (ISO标准)', icon: 'architecture' },
+const patternOptions: { value: HatchPatternType; labelKey: TranslationKey; icon: string }[] = [
+  { value: 'SOLID', labelKey: 'hatch.pattern.solid', icon: 'square' },
+  { value: 'HORIZONTAL', labelKey: 'hatch.pattern.horizontal', icon: 'horizontal_rule' },
+  { value: 'VERTICAL', labelKey: 'hatch.pattern.vertical', icon: 'vertical_align_center' },
+  { value: 'DIAGONAL_RIGHT', labelKey: 'hatch.pattern.diagonalRight', icon: 'remove' },
+  { value: 'DIAGONAL_LEFT', labelKey: 'hatch.pattern.diagonalLeft', icon: 'add' },
+  { value: 'CROSS', labelKey: 'hatch.pattern.cross', icon: 'close' },
+  { value: 'GRID', labelKey: 'hatch.pattern.grid', icon: 'grid_on' },
+  { value: 'DOT', labelKey: 'hatch.pattern.dot', icon: 'radio_button_unchecked' },
+  { value: 'ANSI31', labelKey: 'hatch.pattern.ansi31', icon: 'format_overline' },
+  { value: 'ANSI32', labelKey: 'hatch.pattern.ansi32', icon: 'vertical_align_top' },
+  { value: 'ISO02W100', labelKey: 'hatch.pattern.iso02w100', icon: 'architecture' },
 ];
 
 const colorOptions = [
@@ -27,6 +28,7 @@ const colorOptions = [
 ];
 
 export const HatchModal: React.FC<HatchModalProps> = ({ visible, onConfirm, onCancel }) => {
+  const { t } = useI18n();
   const [selectedPattern, setSelectedPattern] = useState<HatchPatternType>('ANSI31');
   const [spacing, setSpacing] = useState(10);
   const [angle, setAngle] = useState(0);
@@ -45,11 +47,11 @@ export const HatchModal: React.FC<HatchModalProps> = ({ visible, onConfirm, onCa
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[2px]">
       <div className="bg-cad-panel border border-cad-border p-4 rounded-lg shadow-xl w-80 animate-in zoom-in-95 duration-200">
-        <h3 className="text-sm font-bold mb-4">Hatch Settings (填充设置)</h3>
+        <h3 className="text-sm font-bold mb-4">{t('hatch.title')}</h3>
 
         <div className="space-y-4">
           <div>
-            <label className="text-xs text-cad-muted mb-2 block">Pattern Type (图案类型)</label>
+            <label className="text-xs text-cad-muted mb-2 block">{t('hatch.pattern')}</label>
             <div className="grid grid-cols-4 gap-2 max-h-32 overflow-y-auto">
               {patternOptions.map(opt => (
                 <button
@@ -60,7 +62,8 @@ export const HatchModal: React.FC<HatchModalProps> = ({ visible, onConfirm, onCa
                       ? 'bg-cad-primary border-cad-primary text-white'
                       : 'border-cad-border hover:border-cad-primary/50'
                   }`}
-                  title={opt.label}
+                  title={t(opt.labelKey)}
+                  aria-label={t(opt.labelKey)}
                 >
                   <span className="material-symbols-outlined text-lg">{opt.icon}</span>
                 </button>
@@ -70,7 +73,7 @@ export const HatchModal: React.FC<HatchModalProps> = ({ visible, onConfirm, onCa
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-cad-muted mb-1 block">Spacing (间距)</label>
+              <label className="text-xs text-cad-muted mb-1 block">{t('hatch.spacing')}</label>
               <input
                 type="number"
                 min="1"
@@ -81,7 +84,7 @@ export const HatchModal: React.FC<HatchModalProps> = ({ visible, onConfirm, onCa
               />
             </div>
             <div>
-              <label className="text-xs text-cad-muted mb-1 block">Angle (角度)°</label>
+              <label className="text-xs text-cad-muted mb-1 block">{t('hatch.angle')}</label>
               <input
                 type="number"
                 min="0"
@@ -94,7 +97,7 @@ export const HatchModal: React.FC<HatchModalProps> = ({ visible, onConfirm, onCa
           </div>
 
           <div>
-            <label className="text-xs text-cad-muted mb-2 block">Color (颜色)</label>
+            <label className="text-xs text-cad-muted mb-2 block">{t('hatch.color')}</label>
             <div className="flex flex-wrap gap-2">
               {colorOptions.map(color => (
                 <button
@@ -118,13 +121,13 @@ export const HatchModal: React.FC<HatchModalProps> = ({ visible, onConfirm, onCa
             onClick={onCancel}
             className="px-3 py-1.5 text-xs text-cad-muted hover:bg-cad-border/50 rounded"
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             onClick={handleConfirm}
             className="px-3 py-1.5 text-xs bg-cad-primary text-white rounded hover:bg-cad-primaryHover"
           >
-            Apply
+            {t('common.apply')}
           </button>
         </div>
       </div>

@@ -7,10 +7,10 @@ test("设计约定保存后随项目同步，并在刷新后回填", async ({ pa
         window.localStorage.setItem("auth_token", "e2e-token");
     });
     await page.goto("/");
-    await expect(page.getByText("Welcome to AI Ignite CAD")).toBeVisible();
-    await page.getByText("New Drawing", { exact: true }).click();
-    await page.getByPlaceholder("My Drawing").fill("Convention Drawing");
-    await page.getByRole("button", { name: "Create", exact: true }).click();
+    await expect(page.getByText("欢迎使用 AI Ignite CAD")).toBeVisible();
+    await page.getByText("新建图纸", { exact: true }).click();
+    await page.getByPlaceholder("图纸名称，例如：装配图").fill("Convention Drawing");
+    await page.getByRole("button", { name: "创建", exact: true }).click();
     await expect(page.locator("#drawing-surface svg")).toBeVisible();
 
     await page.locator('nav button[title="约定"]').click();
@@ -43,7 +43,7 @@ test("设计约定保存后随项目同步，并在刷新后回填", async ({ pa
     });
 
     await page.reload();
-    await expect(page.getByText("Welcome to AI Ignite CAD")).toBeVisible();
+    await expect(page.getByText("欢迎使用 AI Ignite CAD")).toBeVisible();
     await page.getByText("Convention Drawing", { exact: true }).click();
     await expect(page.locator("#drawing-surface svg")).toBeVisible();
     await page.locator('nav button[title="约定"]').click();

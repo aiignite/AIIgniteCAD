@@ -8,6 +8,7 @@ import { useCanvas } from '../store/canvasStore';
 import { getCanvasStatus, subscribeCanvasStatus } from '../store/canvasStatus';
 import { useCommandInput } from '../hooks/useCommandInput';
 import { snapTypeLabel } from '../lib/snapping';
+import { useI18n } from '../lib/i18n';
 import { CollaborationToggle } from './CollaborationToggle';
 
 interface FooterProps {
@@ -33,6 +34,7 @@ const ToggleButton: React.FC<{ label: string; active: boolean; onClick: () => vo
 );
 
 export const Footer: React.FC<FooterProps> = ({ onCommand, hiddenCount, onShowAllObjects }) => {
+    const { t } = useI18n();
     const { state, dispatch } = useCanvas();
     const { orthoMode, polarMode, snapMode, gridMode, drawingSettings } = state;
     const commandInput = useCommandInput(onCommand);
@@ -53,7 +55,7 @@ export const Footer: React.FC<FooterProps> = ({ onCommand, hiddenCount, onShowAl
                 <span className="text-cad-primary font-mono text-sm mr-2 font-bold">&gt;</span>
                 <input 
                     className="bg-transparent border-none text-cad-text text-sm w-full focus:ring-0 placeholder-gray-500 font-mono focus:outline-none transition-colors duration-300" 
-                    placeholder={commandInput.prompt ?? "输入命令（LINE、CIRCLE、SCALE 1.5、OFFSET 20、ARRAY 3 2 100 100）"} 
+                    placeholder={commandInput.prompt ?? t("footer.commandPlaceholder")} 
                     type="text"
                     value={commandInput.value}
                     onChange={(e) => commandInput.onChange(e.target.value)}
@@ -66,9 +68,9 @@ export const Footer: React.FC<FooterProps> = ({ onCommand, hiddenCount, onShowAl
                         </span>
                     ) : (
                         <div className="hidden md:flex items-center gap-2">
-                            <span className="text-[10px] text-cad-muted font-mono border border-cad-border rounded px-1.5 py-0.5 cursor-pointer hover:bg-cad-text/10 hover:text-cad-text transition-colors">Esc 取消</span>
-                            <span className="text-[10px] text-cad-muted font-mono border border-cad-border rounded px-1.5 py-0.5 cursor-pointer hover:bg-cad-text/10 hover:text-cad-text transition-colors">Tab 补全</span>
-                            <span className="text-[10px] text-cad-muted font-mono border border-cad-border rounded px-1.5 py-0.5 cursor-pointer hover:bg-cad-text/10 hover:text-cad-text transition-colors">↑↓ 历史</span>
+                            <span className="text-[10px] text-cad-muted font-mono border border-cad-border rounded px-1.5 py-0.5 cursor-pointer hover:bg-cad-text/10 hover:text-cad-text transition-colors">{t("footer.esc")}</span>
+                            <span className="text-[10px] text-cad-muted font-mono border border-cad-border rounded px-1.5 py-0.5 cursor-pointer hover:bg-cad-text/10 hover:text-cad-text transition-colors">{t("footer.tab")}</span>
+                            <span className="text-[10px] text-cad-muted font-mono border border-cad-border rounded px-1.5 py-0.5 cursor-pointer hover:bg-cad-text/10 hover:text-cad-text transition-colors">{t("footer.history")}</span>
                         </div>
                     )}
                 </div>
@@ -81,34 +83,36 @@ export const Footer: React.FC<FooterProps> = ({ onCommand, hiddenCount, onShowAl
                         className="text-cad-text truncate max-w-[380px]"
                         title={canvasStatus.hint}
                     >
-                        {canvasStatus.hint || "就绪"}
+                        {canvasStatus.hint || t("footer.ready")}
                     </span>
                     <span className="hidden md:inline">X <span className="text-cad-text">{coordinate(canvasStatus.x)}</span></span>
                     <span className="hidden md:inline">Y <span className="text-cad-text">{coordinate(canvasStatus.y)}</span></span>
-                    <span>缩放 <span className="text-cad-text">{canvasStatus.zoomPercent}%</span></span>
+                    <span>{t("footer.zoom")} <span className="text-cad-text">{canvasStatus.zoomPercent}%</span></span>
                     <span className="min-w-[92px] text-cad-primary font-bold">
-                        {canvasStatus.snapType ? `捕捉 ${snapTypeLabel(canvasStatus.snapType)}` : ""}
+                        {canvasStatus.snapType
+                            ? t("footer.snap", { type: snapTypeLabel(canvasStatus.snapType) })
+                            : ""}
                     </span>
                 </div>
                 
                 <div className="flex items-center gap-1 shrink-0">
-                    <button className="px-2 py-0.5 rounded hover:bg-cad-text/10 text-cad-text font-bold transition-colors">模型空间</button>
+                    <button className="px-2 py-0.5 rounded hover:bg-cad-text/10 text-cad-text font-bold transition-colors">{t("footer.modelSpace")}</button>
                     <div className="w-px h-3 bg-cad-border mx-1"></div>
                     {hiddenCount > 0 && (
                         <button
                             data-action="show-all-objects"
                             onClick={onShowAllObjects}
-                            title="显示被隔离或隐藏的图元"
+                            title={t("footer.showAll")}
                             className="px-2 py-0.5 rounded text-[10px] font-bold border transition-colors
                             bg-amber-500/15 text-amber-600 border-amber-500/30 hover:bg-amber-500/25 dark:text-amber-400"
                         >
-                            已隐藏 {hiddenCount}
+                            {t("footer.hidden", { count: hiddenCount })}
                         </button>
                     )}
-                    <ToggleButton label="栅格" active={gridMode} onClick={() => dispatch({ type: "SET_GRID_MODE", value: !gridMode })} />
-                    <ToggleButton label="捕捉" active={snapMode} onClick={() => dispatch({ type: "SET_SNAP_MODE", value: !snapMode })} />
-                    <ToggleButton label="正交" active={orthoMode} onClick={() => dispatch({ type: "SET_ORTHO_MODE", value: !orthoMode })} />
-                    <ToggleButton label="极轴" active={polarMode} onClick={() => dispatch({ type: "SET_POLAR_MODE", value: !polarMode })} />
+                    <ToggleButton label={t("footer.grid")} active={gridMode} onClick={() => dispatch({ type: "SET_GRID_MODE", value: !gridMode })} />
+                    <ToggleButton label={t("footer.snapToggle")} active={snapMode} onClick={() => dispatch({ type: "SET_SNAP_MODE", value: !snapMode })} />
+                    <ToggleButton label={t("footer.ortho")} active={orthoMode} onClick={() => dispatch({ type: "SET_ORTHO_MODE", value: !orthoMode })} />
+                    <ToggleButton label={t("footer.polar")} active={polarMode} onClick={() => dispatch({ type: "SET_POLAR_MODE", value: !polarMode })} />
                     <div className="w-px h-3 bg-cad-border mx-1"></div>
                     <CollaborationToggle />
                 </div>

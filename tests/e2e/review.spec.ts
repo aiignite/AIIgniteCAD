@@ -7,10 +7,10 @@ test("检查面板列出问题、定位选中并带着摘要切到 AI 修复", a
         window.localStorage.setItem("auth_token", "e2e-token");
     });
     await page.goto("/");
-    await expect(page.getByText("Welcome to AI Ignite CAD")).toBeVisible();
-    await page.getByText("New Drawing", { exact: true }).click();
-    await page.getByPlaceholder("My Drawing").fill("Review Drawing");
-    await page.getByRole("button", { name: "Create", exact: true }).click();
+    await expect(page.getByText("欢迎使用 AI Ignite CAD")).toBeVisible();
+    await page.getByText("新建图纸", { exact: true }).click();
+    await page.getByPlaceholder("图纸名称，例如：装配图").fill("Review Drawing");
+    await page.getByRole("button", { name: "创建", exact: true }).click();
 
     const svg = page.locator("#drawing-surface svg");
     await expect(svg).toBeVisible();
