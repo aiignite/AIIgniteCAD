@@ -269,13 +269,17 @@ export const LLMModelsPanel: React.FC<LLMModelsPanelProps> = ({ registry }) => {
                         />
                     </label>
                     <label className="block">
-                        <span className={labelClass}>API URL（自建网关 / Ollama 兼容地址）</span>
+                        <span className={labelClass}>API URL（自建网关 / 内网服务 / Ollama）</span>
                         <input
                             value={form.apiUrl}
                             onChange={(e) => setForm({ ...form, apiUrl: e.target.value })}
                             className={fieldClass}
-                            placeholder="https://…/v1"
+                            placeholder="https://…/v1 或 http://192.168.1.20:3000/v1"
                         />
+                        <span className="mt-1 block text-[10px] leading-snug text-cad-muted">
+                            内网 HTTP 端点需服务端开启 AI_ALLOW_PRIVATE_ENDPOINTS；使用内网域名时还需加入
+                            AI_ALLOWED_ENDPOINTS。
+                        </span>
                     </label>
                     <div className="grid grid-cols-2 gap-2">
                         <label className="block">

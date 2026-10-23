@@ -6,11 +6,14 @@ const openai = { provider: "OpenAI", requireHttps: false };
 
 describe("assertSafeLLMEndpoint", () => {
   const original = process.env.AI_ALLOWED_ENDPOINTS;
+  const originalPrivate = process.env.AI_ALLOW_PRIVATE_ENDPOINTS;
   const originalNodeEnv = process.env.NODE_ENV;
 
   afterEach(() => {
     if (original === undefined) delete process.env.AI_ALLOWED_ENDPOINTS;
     else process.env.AI_ALLOWED_ENDPOINTS = original;
+    if (originalPrivate === undefined) delete process.env.AI_ALLOW_PRIVATE_ENDPOINTS;
+    else process.env.AI_ALLOW_PRIVATE_ENDPOINTS = originalPrivate;
     process.env.NODE_ENV = originalNodeEnv;
   });
 
@@ -64,6 +67,56 @@ describe("assertSafeLLMEndpoint", () => {
     expect(assertSafeLLMEndpoint("http://10.0.0.7:11434", ollama)).toBe("http://10.0.0.7:11434");
   });
 
+  it("开启 AI_ALLOW_PRIVATE_ENDPOINTS 后允许 OpenAI 兼容 provider 使用内网 HTTP", () => {
+    process.env.AI_ALLOW_PRIVATE_ENDPOINTS = "true";
+    process.env.NODE_ENV = "production";
+
+    expect(assertSafeLLMEndpoint("http://192.168.1.20:3000/v1", openai)).toBe(
+      "http://192.168.1.20:3000/v1",
+    );
+    expect(assertSafeLLMEndpoint("http://10.0.0.5:8080/v1", openai)).toBe(
+      "http://10.0.0.5:8080/v1",
+    );
+    expect(assertSafeLLMEndpoint("http://[fd00::10]:8000/v1", openai)).toBe(
+      "http://[fd00::10]:8000/v1",
+    );
+  });
+
+  it("开关关闭或为假值时仍拒绝内网 HTTP", () => {
+    process.env.NODE_ENV = "production";
+    process.env.AI_ALLOW_PRIVATE_ENDPOINTS = "false";
+    expect(() => assertSafeLLMEndpoint("http://192.168.1.20:3000/v1", openai)).toThrow(/内网/);
+
+    delete process.env.AI_ALLOW_PRIVATE_ENDPOINTS;
+    expect(() => assertSafeLLMEndpoint("http://192.168.1.20:3000/v1", openai)).toThrow(/内网/);
+  });
+
+  it("开关不会放行公网 HTTP、元数据与链路本地地址", () => {
+    process.env.AI_ALLOW_PRIVATE_ENDPOINTS = "true";
+    process.env.NODE_ENV = "production";
+
+    expect(() => assertSafeLLMEndpoint("http://api.example.com/v1", openai)).toThrow(/https/);
+    expect(() => assertSafeLLMEndpoint("http://169.254.169.254/latest/meta-data", openai)).toThrow(
+      /链路本地|元数据/,
+    );
+    expect(() => assertSafeLLMEndpoint("http://[fe80::1]:8080/v1", openai)).toThrow(/链路本地/);
+    expect(() => assertSafeLLMEndpoint("http://metadata.google.internal/x", openai)).toThrow(
+      /元数据/,
+    );
+  });
+
+  it("内网域名形式仍需白名单", () => {
+    process.env.AI_ALLOW_PRIVATE_ENDPOINTS = "true";
+    process.env.NODE_ENV = "production";
+
+    expect(() => assertSafeLLMEndpoint("http://ccswitch.lan:3000/v1", openai)).toThrow(/https/);
+
+    process.env.AI_ALLOWED_ENDPOINTS = "ccswitch.lan";
+    expect(assertSafeLLMEndpoint("http://ccswitch.lan:3000/v1", openai)).toBe(
+      "http://ccswitch.lan:3000/v1",
+    );
+  });
+
   it("生产环境下非本地 http 端点必须升级 https", () => {
     process.env.NODE_ENV = "production";
     expect(() => assertSafeLLMEndpoint("http://api.example.com/v1", openai)).toThrow(/https/);
@@ -77,12 +130,17 @@ describe("assertSafeLLMEndpoint", () => {
   it("IPv6 唯一本地地址按私网处理", () => {
     expect(() => assertSafeLLMEndpoint("http://[fd00::10]:8000/v1", openai)).toThrow(/内网/);
     expect(assertSafeLLMEndpoint("http://[::1]:11434", ollama)).toBe("http://[::1]:11434");
+
+    // 去掉方括号后仍能识别回环，生产环境允许 http
+    process.env.NODE_ENV = "production";
+    expect(assertSafeLLMEndpoint("http://[::1]:11434", openai)).toBe("http://[::1]:11434");
   });
 });
 
 describe("env defaults", () => {
   beforeEach(() => {
     delete process.env.AI_ALLOWED_ENDPOINTS;
+    delete process.env.AI_ALLOW_PRIVATE_ENDPOINTS;
   });
 
   it("白名单为空时不放行私网", () => {

@@ -45,6 +45,9 @@ export const SUPPORTED_AI_TOOL_NAMES = [
     "delete_elements",
     "list_blocks",
     "insert_block",
+    "insert_block_by_name",
+    "save_selection_as_block",
+    "save_version",
 ] as const;
 
 export type AIToolName = (typeof SUPPORTED_AI_TOOL_NAMES)[number];
@@ -62,6 +65,7 @@ export const TARGET_TOOL_NAMES = [
     "distribute_elements",
     "assign_layer",
     "delete_elements",
+    "save_selection_as_block",
 ] as const;
 
 /** 只读工具不产生画布动作，由 Agent 循环直接计算结果 */
@@ -204,6 +208,41 @@ const MAX_POINTS = 200;
 const MAX_TEXT_CHARS = 500;
 const MAX_LAYER_CHARS = 64;
 const MAX_BLOCK_ID_CHARS = 128;
+const MAX_BLOCK_NAME_CHARS = 80;
+const MAX_BLOCK_DESCRIPTION_CHARS = 300;
+const MAX_VERSION_MESSAGE_CHARS = 200;
+
+const normalizeBlockName = (value: string): string =>
+    value.trim().toLowerCase().replace(/\s+/g, " ");
+
+/** 先精确匹配，再接受唯一子串；同名/多命中都回给模型候选，避免插错块 */
+function findBlockByName(
+    catalog: readonly BlockCatalogEntry[],
+    rawName: string,
+): { entry: BlockCatalogEntry; error: null } | { entry: null; error: string } {
+    const target = normalizeBlockName(rawName);
+    const exact = catalog.find((entry) => normalizeBlockName(entry.name) === target);
+    if (exact) return { entry: exact, error: null };
+
+    const matches = catalog.filter((entry) =>
+        normalizeBlockName(entry.name).includes(target),
+    );
+    if (matches.length === 1) return { entry: matches[0], error: null };
+    if (matches.length > 1) {
+        const names = matches.slice(0, 5).map((entry) => entry.name).join("、");
+        return {
+            entry: null,
+            error: `insert_block_by_name.name "${rawName}" 匹配到多个块（${names}）；请用更精确的名称，或先调用 list_blocks`,
+        };
+    }
+    const available = catalog.slice(0, 8).map((entry) => entry.name).join("、");
+    return {
+        entry: null,
+        error: available
+            ? `insert_block_by_name.name "${rawName}" 不在块库中；可用块：${available}`
+            : `insert_block_by_name.name "${rawName}" 不在块库中，请先调用 list_blocks 查询`,
+    };
+}
 
 type NumberRead = { values: Record<string, number>; error: null } | { values: null; error: string };
 
@@ -496,6 +535,101 @@ export function toolCallToAction(
                 message: `Inserted block "${entry.name}".`,
                 operation: "ADD",
                 elements,
+            });
+        }
+
+        case "insert_block_by_name": {
+            const rawName = typeof args.name === "string" ? args.name.trim() : "";
+            if (!rawName || rawName.length > MAX_BLOCK_NAME_CHARS) {
+                return failed(
+                    `insert_block_by_name.name 长度需在 1–${MAX_BLOCK_NAME_CHARS} 之间`,
+                );
+            }
+            const parsed = readNumbers("insert_block_by_name", args, {
+                x: COORD,
+                y: COORD,
+            });
+            if (parsed.error) return failed(parsed.error);
+            const { x, y } = parsed.values;
+            if (options.blocksUnavailable) {
+                return failed(
+                    "insert_block_by_name 块库当前不可用（读取失败），不是空库；请先用绘图工具完成，或稍后重试",
+                );
+            }
+            const lookup = findBlockByName(options.blockCatalog ?? [], rawName);
+            if (!lookup.entry) return failed(lookup.error);
+            const scale = readOptionalNumber("insert_block_by_name", args, "scale", 1, SCALE_FACTOR);
+            if (scale.error) return failed(scale.error);
+            const rotation = readOptionalNumber("insert_block_by_name", args, "rotation", 0, ANGLE);
+            if (rotation.error) return failed(rotation.error);
+            const elements = expandBlockAt(lookup.entry, {
+                x,
+                y,
+                scale: scale.value,
+                rotation: rotation.value,
+            });
+            if (elements.length === 0) {
+                return failed(`insert_block_by_name 块 "${lookup.entry.name}" 没有可插入的图元`);
+            }
+            return succeeded({
+                message: `Inserted block "${lookup.entry.name}".`,
+                operation: "ADD",
+                elements,
+            });
+        }
+
+        case "save_selection_as_block": {
+            const blockName = typeof args.name === "string" ? args.name.trim() : "";
+            if (!blockName || blockName.length > MAX_BLOCK_NAME_CHARS) {
+                return failed(
+                    `save_selection_as_block.name 长度需在 1–${MAX_BLOCK_NAME_CHARS} 之间`,
+                );
+            }
+            const rawDescription =
+                typeof args.description === "string" ? args.description.trim() : "";
+            if (rawDescription.length > MAX_BLOCK_DESCRIPTION_CHARS) {
+                return failed(
+                    `save_selection_as_block.description 最多 ${MAX_BLOCK_DESCRIPTION_CHARS} 个字符`,
+                );
+            }
+            const targets = resolveTargets(args.ids, currentElements, selectedIds);
+            if (!targets || targets.length === 0) {
+                return noTargets("save_selection_as_block");
+            }
+            let basePoint: Point | undefined;
+            if (args.basePoint !== undefined && args.basePoint !== null) {
+                const parsedPoint = pointArg(args.basePoint);
+                if (!parsedPoint) {
+                    return failed("save_selection_as_block.basePoint 不是合法坐标");
+                }
+                basePoint = parsedPoint;
+            } else {
+                const bounds = unionBounds(targets.map((element) => getElementBoundingBox(element)));
+                basePoint = bounds ? { x: bounds.minX, y: bounds.minY } : { x: 0, y: 0 };
+            }
+            return succeeded({
+                message: `Selection saved as block "${blockName}".`,
+                operation: "SAVE_BLOCK",
+                elements: targets,
+                params: {
+                    blockName,
+                    ...(rawDescription ? { blockDescription: rawDescription } : {}),
+                    basePoint,
+                },
+            });
+        }
+
+        case "save_version": {
+            const rawMessage = typeof args.message === "string" ? args.message.trim() : "";
+            if (rawMessage.length > MAX_VERSION_MESSAGE_CHARS) {
+                return failed(
+                    `save_version.message 最多 ${MAX_VERSION_MESSAGE_CHARS} 个字符`,
+                );
+            }
+            return succeeded({
+                message: rawMessage ? `Version saved: ${rawMessage}` : "Version saved.",
+                operation: "SAVE_VERSION",
+                params: rawMessage ? { versionMessage: rawMessage } : {},
             });
         }
 

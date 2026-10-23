@@ -421,3 +421,74 @@ describe("技能管理接口", () => {
     expect(fallback.body.skills).toEqual([]);
   });
 });
+
+describe("技能候选解析接口", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: "user-1",
+      email: "alice@example.com",
+      username: "alice",
+    });
+    ensureMock.ensureSystemSkills.mockResolvedValue(0);
+  });
+
+  it("返回正分候选及路由原因，供前端候选条展示", async () => {
+    prismaMock.aiSkill.findMany.mockResolvedValue([
+      skillRow({ code: "array_skill", name: "阵列技能", keywords: ["阵列"] }),
+      skillRow({ code: "review_skill", name: "审查技能", keywords: ["检查"] }),
+    ]);
+
+    const res = await authed("post", "/api/skills/resolve").send({
+      message: "帮我阵列一下",
+      selectionTypes: ["CIRCLE"],
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.matchedSkills).toHaveLength(1);
+    expect(res.body.matchedSkills[0]).toMatchObject({
+      code: "array_skill",
+      name: "阵列技能",
+      tools: ["array_elements", "offset_elements"],
+    });
+    expect(res.body.matchedSkills[0].reasons.join()).toContain("keywords:");
+    expect(res.body.matchedSkills[0].score).toBeGreaterThan(0);
+  });
+
+  it("推荐候选带 recommended 原因并越过激活阈值", async () => {
+    prismaMock.aiSkill.findMany.mockResolvedValue([
+      skillRow({ code: "array_skill", name: "阵列技能", keywords: [] }),
+    ]);
+
+    const res = await authed("post", "/api/skills/resolve").send({
+      message: "继续处理",
+      pinnedSkillCodes: ["array_skill"],
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.matchedSkills[0].score).toBeGreaterThanOrEqual(100);
+    expect(res.body.matchedSkills[0].reasons).toContain("pinned");
+  });
+
+  it("接受 null 的 assistantId（前端未选择助手时的默认值）", async () => {
+    prismaMock.aiSkill.findMany.mockResolvedValue([
+      skillRow({ code: "array_skill", name: "阵列技能", keywords: ["阵列"] }),
+    ]);
+
+    const res = await authed("post", "/api/skills/resolve").send({
+      message: "帮我阵列一下",
+      assistantId: null,
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.matchedSkills).toHaveLength(1);
+  });
+
+  it("拒绝未知的设计上下文信号", async () => {
+    const res = await authed("post", "/api/skills/resolve").send({
+      message: "画圆",
+      contextSignals: ["unknown"],
+    });
+    expect(res.status).toBe(400);
+  });
+});

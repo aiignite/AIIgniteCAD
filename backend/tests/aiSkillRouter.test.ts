@@ -5,6 +5,7 @@ import {
   MAX_SKILL_PROMPT_CHARS,
   activateSkills,
   resolveAllowedTools,
+  resolveCandidates,
   scoreSkill,
 } from "../src/services/aiEngine/skills/skillRouter";
 import { BUILTIN_SKILLS } from "../src/services/aiEngine/skills/builtinSkills";
@@ -314,5 +315,102 @@ describe("resolveAllowedTools", () => {
       "measure_geometry",
       "query_elements",
     ]);
+  });
+});
+
+describe("候选与跨轮规则", () => {
+  const drafting = candidate({
+    id: "s-draft",
+    code: "cad_drafting_basic",
+    keywords: ["画", "圆"],
+  });
+  const review = candidate({
+    id: "s-review",
+    code: "cad_plot_review",
+    keywords: ["检查", "标注"],
+    requiredContext: ["dimensions"],
+    priority: 60,
+  });
+
+  it("候选条保留的技能获得推荐加分，但仍需过激活线", () => {
+    const scored = scoreSkill(drafting, {
+      skills: [drafting, review],
+      message: "帮我处理一下",
+      recommendedSkillCodes: ["cad_drafting_basic"],
+    });
+    expect(scored.reasons).toContain("recommended");
+    expect(scored.score).toBeGreaterThanOrEqual(ACTIVATION_THRESHOLD);
+    expect(
+      activateSkills({
+        skills: [drafting],
+        message: "帮我处理一下",
+        recommendedSkillCodes: ["cad_drafting_basic"],
+      }).map((skill) => skill.code),
+    ).toEqual(["cad_drafting_basic"]);
+  });
+
+  it("历史消息关键词按轮次衰减，当前消息命中优先", () => {
+    const historyScored = scoreSkill(review, {
+      skills: [review],
+      message: "继续",
+      // 旧→新：最近一条命中时深度为 1
+      historyTexts: ["画一个圆", "帮我检查标注"],
+    });
+    expect(historyScored.reasons.some((reason) => reason.startsWith("keywords_history:1"))).toBe(
+      true,
+    );
+    // 历史命中最多 20 分，深度 1 衰减到 10 分，低于激活线
+    expect(historyScored.score).toBeLessThan(ACTIVATION_THRESHOLD);
+    expect(
+      historyScored.reasons.some((reason) => reason.startsWith("keywords_history:2")),
+    ).toBe(false);
+
+    const currentScored = scoreSkill(review, {
+      skills: [review],
+      message: "检查标注",
+      historyTexts: ["无关话题"],
+    });
+    expect(currentScored.reasons.some((reason) => reason.startsWith("keywords:"))).toBe(true);
+  });
+
+  it("短消息无新关键词时沿用上一轮技能", () => {
+    const activated = activateSkills({
+      skills: [drafting, review],
+      message: "继续",
+      recentSkillCodes: ["cad_plot_review"],
+    });
+    expect(activated.map((skill) => skill.code)).toEqual(["cad_plot_review"]);
+    expect(activated[0].reasons).toContain("continuity_carryover");
+  });
+
+  it("短消息带新关键词时不沿用上一轮技能", () => {
+    const activated = activateSkills({
+      skills: [drafting, review],
+      message: "画圆",
+      recentSkillCodes: ["cad_plot_review"],
+    });
+    expect(activated.map((skill) => skill.code)).toEqual(["cad_drafting_basic"]);
+    expect(activated[0].reasons).not.toContain("continuity_carryover");
+  });
+
+  it("固定技能存在时不走沿用路径", () => {
+    const activated = activateSkills({
+      skills: [drafting, review],
+      message: "继续",
+      pinnedSkillCodes: ["cad_drafting_basic"],
+      recentSkillCodes: ["cad_plot_review"],
+    });
+    expect(activated[0].code).toBe("cad_drafting_basic");
+    expect(activated[0].reasons).toContain("pinned");
+  });
+
+  it("resolveCandidates 返回低于激活线的正分候选", () => {
+    const candidates = resolveCandidates(
+      { skills: [drafting], message: "画" },
+      8,
+    );
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].score).toBeLessThan(ACTIVATION_THRESHOLD);
+    expect(candidates[0].description).toBe("");
   });
 });

@@ -98,6 +98,10 @@ export function computeAIActionOutcome(
     baseElements: CADElement[],
     selected: CADElement[],
 ): AIActionOutcome | null {
+    // 副作用类动作不改画布，图元保持不变；由预览确认后由宿主执行
+    if (operation === "SAVE_BLOCK" || operation === "SAVE_VERSION") {
+        return { elements: baseElements };
+    }
     const normalizedElements = normalizeAIElements(aiElements);
 
     if (operation === "CLEAR") {

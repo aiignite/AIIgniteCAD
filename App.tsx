@@ -19,6 +19,7 @@ import { AIPreviewModal } from "./components/AIPreviewModal";
 import { PlotModal } from "./components/PlotModal";
 import { QuickSelectModal } from "./components/QuickSelectModal";
 import ImageTraceModal from "./components/ImageTraceModal";
+import AIAssistantWindow from "./components/ai/AIAssistantWindow";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import {
     ToolType,
@@ -37,9 +38,10 @@ import { apiService } from "./services/apiService";
 import { indexedDBService } from "./services/indexedDBService";
 import { syncService } from "./services/syncService";
 import { telemetryService } from "./services/telemetryService";
-import { getBlock, insertBlockReference } from "./services/blockService";
+import { createBlock, getBlock, insertBlockReference } from "./services/blockService";
 import { getExampleDrawing } from "./services/examples";
 import { parseDXF } from "./services/dxfService";
+import { isDwgFile, parseDrawingFile } from "./services/drawingImport";
 import { createHatch } from "./services/hatchService";
 import { isEditableTarget } from "./lib/keyboard";
 import { executeCommand } from "./lib/commands/registry";
@@ -47,6 +49,7 @@ import { buildVersionSnapshot } from "./lib/versionSnapshot";
 import { summarizeElementTypes } from "./lib/versionDiff";
 import { computeAIActionOutcome } from "./lib/aiActions";
 import { planAIGhostPreview } from "./lib/aiGhost";
+import { useI18n } from "./lib/i18n";
 import { countHiddenObjects, displayableElements } from "./lib/isolation";
 import { getViewBox, setViewBox, zoomViewportToBounds } from "./store/viewport";
 import { loadNamedViews, saveNamedView as persistNamedView } from "./services/namedViews";
@@ -92,6 +95,7 @@ const stripLegacySelection = (elements: CADElement[]): CADElement[] =>
     });
 
 function App() {
+    const { t } = useI18n();
     const startupRef = useRef(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const propertyCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -101,6 +105,7 @@ function App() {
     const aiFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [authMode, setAuthMode] = useState<"login" | "register">("login");
     const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+    const [isImporting, setIsImporting] = useState(false);
 
     // Canvas state from store
     const {
@@ -191,6 +196,7 @@ function App() {
     const [showPlot, setShowPlot] = useState(false);
     const [showQuickSelect, setShowQuickSelect] = useState(false);
     const [showImageTrace, setShowImageTrace] = useState(false);
+    const [aiOpen, setAiOpen] = useState(false);
     const [aiPreview, setAiPreview] = useState<AIPreviewState | null>(null);
     const [flashIds, setFlashIds] = useState<Set<string> | null>(null);
     /** 「问 AI」写入对话草稿；nonce 递增表示一次新的请求 */
@@ -235,13 +241,13 @@ function App() {
         return syncService.onEvent((event) => {
             if (event.type === "conflict") {
                 showNotification(
-                    `Cloud changes to "${event.projectName}" were overwritten by this save (last write wins).`,
+                    t("notify.syncConflict", { name: event.projectName }),
                 );
                 return;
             }
 
             if (event.type === "sync-error") {
-                showNotification(`Cloud sync failed: ${event.message}`);
+                showNotification(t("notify.syncFailed", { message: event.message }));
                 telemetryService.reportSyncError(event.message, {
                     projectId: event.projectId,
                 });
@@ -269,7 +275,7 @@ function App() {
                 };
             }
         });
-    }, [files, activeFile, showNotification, setFiles, setActiveFile]);
+    }, [files, activeFile, showNotification, setFiles, setActiveFile, t]);
 
     // 前端遥测：全局错误由 service 监听，这里同步上报积压状态
     useEffect(() => {
@@ -317,7 +323,7 @@ function App() {
                 setLoading(true);
                 const blockDef = await getBlock(blockId);
                 if (!blockDef) {
-                    showNotification("Block not found.");
+                    showNotification(t("notify.blockNotFound", { name: blockId }));
                     setLoading(false);
                     return;
                 }
@@ -349,15 +355,15 @@ function App() {
                 });
                 commitAction([...elements, ...clones]);
                 setSelection(clones.map((el: CADElement) => el.id));
-                showNotification(`Inserted block '${blockDef.name}'`);
+                showNotification(t("notify.blockInserted", { name: blockDef.name }));
             } catch (e: any) {
                 console.error(e);
-                showNotification("Failed to insert block");
+                showNotification(t("notify.blockInsertFailed"));
             } finally {
                 setLoading(false);
             }
         },
-        [elements, commitAction, setSelection, setLoading, showNotification],
+        [elements, commitAction, setSelection, setLoading, showNotification, t],
     );
 
     // Load user and projects on mount（放在 loadUserAndProjects 定义之后，避免 TDZ 访问）
@@ -414,7 +420,7 @@ function App() {
             await loadUserAndProjects();
             setShowWelcomeModal(true);
         } catch (error: any) {
-            showNotification(error.message || "Login failed");
+            showNotification(error.message || t("auth.loginFailed"));
             throw error;
         } finally {
             setLoading(false);
@@ -429,7 +435,7 @@ function App() {
             await loadUserAndProjects();
             setShowWelcomeModal(true);
         } catch (error: any) {
-            showNotification(error.message || "Registration failed");
+            showNotification(error.message || t("auth.registerFailed"));
             throw error;
         } finally {
             setLoading(false);
@@ -444,7 +450,7 @@ function App() {
             setActiveFile(null);
             resetCanvas();
             setLoggedIn(false);
-            showNotification("Logged out successfully");
+            showNotification(t("notify.loggedOut"));
         } catch (error: any) {
             console.error("Logout error:", error);
         }
@@ -461,28 +467,28 @@ function App() {
                 case "F3": {
                     const on = !snapMode;
                     canvasDispatch({ type: "SET_SNAP_MODE", value: on });
-                    return { label: "捕捉", on };
+                    return { label: t("footer.snapToggle"), on };
                 }
                 case "F7": {
                     const on = !gridMode;
                     canvasDispatch({ type: "SET_GRID_MODE", value: on });
-                    return { label: "栅格", on };
+                    return { label: t("footer.grid"), on };
                 }
                 case "F8": {
                     const on = !orthoMode;
                     canvasDispatch({ type: "SET_ORTHO_MODE", value: on });
-                    return { label: "正交", on };
+                    return { label: t("footer.ortho"), on };
                 }
                 case "F10": {
                     const on = !polarMode;
                     canvasDispatch({ type: "SET_POLAR_MODE", value: on });
-                    return { label: "极轴", on };
+                    return { label: t("footer.polar"), on };
                 }
                 default:
                     return null;
             }
         },
-        [snapMode, gridMode, orthoMode, polarMode, canvasDispatch],
+        [snapMode, gridMode, orthoMode, polarMode, canvasDispatch, t],
     );
 
     /** 删除当前选择集：达到阈值时要求显式确认，避免误删整片图形 */
@@ -495,31 +501,34 @@ function App() {
         const ids = new Set(selectedIds);
         commitAction(getElements().filter((el) => !ids.has(el.id)));
         clearSelection();
-        showNotification(`已删除 ${ids.size} 个图元 · Ctrl+Z 可撤销`);
-    }, [activeTool, selectedIds, commitAction, getElements, clearSelection, showNotification]);
+        showNotification(t("notify.deleted", { count: ids.size }));
+    }, [activeTool, selectedIds, commitAction, getElements, clearSelection, showNotification, t]);
 
     /** 显示全部：清除隔离 / 隐藏对象产生的临时隐藏集 */
     const showAllObjects = useCallback(() => {
         if (hiddenObjectIds.size === 0) return;
         setHiddenIds([]);
-        if (hiddenCount > 0) showNotification(`已显示 ${hiddenCount} 个隐藏图元`);
-    }, [hiddenObjectIds, hiddenCount, showNotification]);
+        if (hiddenCount > 0) showNotification(t("notify.shownHidden", { count: hiddenCount }));
+    }, [hiddenObjectIds, hiddenCount, showNotification, t]);
 
-    /** 「问 AI」：切到对话面板，把针对选择集的问题写成草稿供用户改后发送 */
+    /** 「问 AI」：打开 AI 浮窗，把针对选择集的问题写成草稿供用户改后发送 */
     const handleAskAboutSelection = useCallback(() => {
         const selected = getElements().filter((el) => selectedIds.has(el.id));
         if (selected.length === 0) return;
-        setSideMode(SidePanelMode.CHAT);
+        setAiOpen(true);
         setChatDraft((prev) => ({
-            text: `检查选中的 ${selected.length} 个图元（${summarizeElementTypes(selected)}）是否符合制图规范`,
+            text: t("notify.askSelection", {
+                count: selected.length,
+                types: summarizeElementTypes(selected),
+            }),
             nonce: (prev?.nonce ?? 0) + 1,
         }));
-    }, [getElements, selectedIds, setSideMode]);
+    }, [getElements, selectedIds, t]);
 
     /** 设计约定面板保存：本地立即生效并随项目同步队列写回服务端 */
     const handleSaveDesignConventions = useCallback(
         async (conventions: DesignConventions | null) => {
-            if (!activeFile) throw new Error("请先打开一张图纸");
+            if (!activeFile) throw new Error(t("notify.openDrawingFirst"));
             // 必须用画布当前快照而不是 IDB 里的旧副本：同步队列的项目负载含图元，
             // 用旧副本会把自动保存窗口内（3s）的编辑回滚到服务端
             const snapshot = getElements();
@@ -536,20 +545,20 @@ function App() {
             await indexedDBService.saveElements(snapshot, updated.id);
             syncService.requestFlush();
         },
-        [activeFile, files, getElements],
+        [activeFile, files, getElements, t],
     );
 
     /** 图纸检查面板的「让 AI 修复」：预选相关图元并把问题摘要写进对话草稿 */
     const handleAskAIFix = useCallback(
         (prompt: string, ids: string[]) => {
             if (ids.length > 0) setSelection(ids);
-            setSideMode(SidePanelMode.CHAT);
+            setAiOpen(true);
             setChatDraft((prev) => ({
                 text: prompt,
                 nonce: (prev?.nonce ?? 0) + 1,
             }));
         },
-        [setSelection, setSideMode],
+        [setSelection],
     );
 
     // Keyboard shortcuts handle undo/redo via store
@@ -560,7 +569,11 @@ function App() {
             const toggled = toggleCanvasMode(e.key);
             if (toggled) {
                 e.preventDefault();
-                showNotification(`${toggled.label} ${toggled.on ? "已开启" : "已关闭"}`);
+                showNotification(
+                    toggled.on
+                        ? t("notify.modeOn", { name: toggled.label })
+                        : t("notify.modeOff", { name: toggled.label }),
+                );
                 return;
             }
             if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
@@ -580,7 +593,7 @@ function App() {
             if (e.key === "Escape") {
                 if (activeTool !== ToolType.SELECT) {
                     setActiveTool(ToolType.SELECT);
-                    showNotification("已取消当前命令");
+                    showNotification(t("notify.commandCancelled"));
                 }
             }
         };
@@ -594,6 +607,7 @@ function App() {
         toggleCanvasMode,
         setActiveTool,
         showNotification,
+        t,
     ]);
 
     // Command Line Handler：解析、别名、参数与执行全部委托给命令注册表
@@ -701,7 +715,12 @@ function App() {
                 }
             }
 
-            if (currentElements === baseElements) return;
+            // 建块/存版本不改画布，但同样需要在预览里确认后再执行
+            const hasSideEffect = actions.some(
+                (action) =>
+                    action.operation === "SAVE_BLOCK" || action.operation === "SAVE_VERSION",
+            );
+            if (currentElements === baseElements && !hasSideEffect) return;
             setAiPreview({
                 actions,
                 beforeElements: baseElements,
@@ -709,9 +728,9 @@ function App() {
                 selection: finalSelection,
                 turn,
             });
-            showNotification("AI 变更已生成，请预览后应用");
+            showNotification(t("notify.aiPreviewReady"));
         },
-        [getElements, selectedIds, showNotification],
+        [getElements, selectedIds, showNotification, t],
     );
 
     /** 采纳率是评估 AI 输出的唯一真值来源，落库失败不影响本次操作 */
@@ -732,7 +751,7 @@ function App() {
         [],
     );
 
-    const applyAIPreview = useCallback(() => {
+    const applyAIPreview = useCallback(async () => {
         if (!aiPreview) return;
         telemetryService.recordAction("apply-ai-preview", {
             actions: aiPreview.actions.length,
@@ -746,27 +765,112 @@ function App() {
             ),
             ...plan.incoming,
         ];
-        commitAction(next);
-        if (aiPreview.selection) setSelection(aiPreview.selection);
-        flashElements(plan.incoming.map((el) => el.id));
+        const changed = plan.incoming.length > 0 || plan.outgoingIds.size > 0;
+        if (changed) {
+            commitAction(next);
+            if (aiPreview.selection) setSelection(aiPreview.selection);
+            flashElements(plan.incoming.map((el) => el.id));
+        }
+
+        const sideEffects = aiPreview.actions.filter(
+            (action) =>
+                action.operation === "SAVE_BLOCK" || action.operation === "SAVE_VERSION",
+        );
+        for (const action of sideEffects) {
+            if (!activeFile) {
+                showNotification(t("notify.openDrawingFirst"));
+                continue;
+            }
+            if (!isLoggedIn) {
+                showNotification(t("notify.signInForVersions"));
+                continue;
+            }
+            if (action.operation === "SAVE_BLOCK") {
+                const name = action.params?.blockName?.trim();
+                const elementsToSave = action.elements ?? [];
+                if (!name || elementsToSave.length === 0) continue;
+                try {
+                    await createBlock(
+                        name,
+                        elementsToSave,
+                        action.params?.basePoint ?? { x: 0, y: 0 },
+                        action.params?.blockDescription,
+                        activeFile.id,
+                    );
+                    showNotification(
+                        t("notify.blockSaved", { count: elementsToSave.length, name }),
+                    );
+                } catch (error) {
+                    showNotification(
+                        t("notify.blockSaveFailed", {
+                            message: error instanceof Error ? error.message : String(error),
+                        }),
+                    );
+                }
+                continue;
+            }
+
+            const snapshot = buildVersionSnapshot(
+                next,
+                {
+                    layerOrder: canvasState.layerOrder,
+                    layerColors: canvasState.layerColors,
+                    hiddenLayers: canvasState.hiddenLayers,
+                    lockedLayers: canvasState.lockedLayers,
+                },
+                canvasState.drawingSettings,
+            );
+            const message =
+                action.params?.versionMessage ||
+                `AI · ${new Date().toLocaleString()}`;
+            try {
+                const result = await apiService.createProjectVersion(
+                    activeFile.id,
+                    snapshot,
+                    message,
+                );
+                showNotification(
+                    t("notify.versionSaved", { version: result.version.versionNumber }),
+                );
+            } catch (error) {
+                showNotification(
+                    t("notify.versionSaveFailed", {
+                        message: error instanceof Error ? error.message : String(error),
+                    }),
+                );
+            }
+        }
+
         reportTurnOutcome(aiPreview.turn, "applied");
         setAiPreview(null);
-        showNotification(`已应用 AI 变更 · ${plan.incoming.length} 个图元 · Ctrl+Z 可撤销`);
+        if (changed) {
+            showNotification(
+                t("notify.aiApplied", { count: plan.incoming.length }),
+            );
+        }
     }, [
         aiPreview,
+        activeFile,
+        isLoggedIn,
+        canvasState.layerOrder,
+        canvasState.layerColors,
+        canvasState.hiddenLayers,
+        canvasState.lockedLayers,
+        canvasState.drawingSettings,
         commitAction,
         getElements,
         setSelection,
         flashElements,
         showNotification,
         reportTurnOutcome,
+        t,
     ]);
 
     const cancelAIPreview = useCallback(() => {
         if (aiPreview) reportTurnOutcome(aiPreview.turn, "discarded", "cancelled");
         setAiPreview(null);
-        showNotification("已放弃 AI 变更");
-    }, [aiPreview, showNotification, reportTurnOutcome]);
+        showNotification(t("notify.aiDiscarded"));
+    }, [aiPreview, showNotification, reportTurnOutcome, t]);
 
     const confirmPendingDelete = useCallback(() => {
         if (!pendingDeleteIds) return;
@@ -774,8 +878,8 @@ function App() {
         commitAction(getElements().filter((el) => !ids.has(el.id)));
         clearSelection();
         setPendingDeleteIds(null);
-        showNotification(`已删除 ${ids.size} 个图元 · Ctrl+Z 可撤销`);
-    }, [pendingDeleteIds, commitAction, getElements, clearSelection, showNotification]);
+        showNotification(t("notify.deleted", { count: ids.size }));
+    }, [pendingDeleteIds, commitAction, getElements, clearSelection, showNotification, t]);
 
     // Text Tool Logic
     const handleRequestTextEntry = (pos: Point) => {
@@ -805,7 +909,7 @@ function App() {
     const handleRequestHatch = () => {
         const selected = selectedElements;
         if (selected.length === 0) {
-            showNotification("Select boundary elements first (先选择边界元素)");
+            showNotification(t("notify.hatchNeedsSelection"));
             return;
         }
         setSelectedForHatch(selected);
@@ -817,10 +921,10 @@ function App() {
             try {
                 const hatchElement = createHatch(selectedForHatch, pattern, color, "HATCH");
                 addElement(hatchElement);
-                showNotification("Hatch created successfully");
+                showNotification(t("notify.hatchCreated"));
             } catch (error) {
                 console.error("Error creating hatch:", error);
-                showNotification("Failed to create hatch");
+                showNotification(t("notify.hatchCreateFailed"));
             }
         }
         setShowHatchModal(false);
@@ -906,11 +1010,11 @@ function App() {
             }
             if (newElement) {
                 addElement(newElement);
-                showNotification(`${pendingShapeTool} created successfully`);
+                showNotification(t("notify.shapeCreated", { name: pendingShapeTool }));
             }
         } catch (error) {
             console.error("Error creating advanced shape:", error);
-            showNotification("Failed to create shape");
+            showNotification(t("notify.shapeCreateFailed"));
         }
         setShowAdvancedShapeModal(false);
         setPendingShapePosition(null);
@@ -941,23 +1045,70 @@ function App() {
         try {
             const updatedFile = await persistFile(activeFile, elements);
             updateFile(updatedFile);
-            showNotification("Saved successfully");
+            showNotification(t("notify.saved"));
         } catch (error: any) {
-            showNotification("Save failed: " + error.message);
+            showNotification(t("notify.saveFailed", { message: error.message }));
         }
-    }, [activeFile, elements, flushPropertyCommit, persistFile, updateFile, showNotification]);
+    }, [activeFile, elements, flushPropertyCommit, persistFile, updateFile, showNotification, t]);
 
-    const handleOpenVersionHistory = useCallback(() => {
+    /** 手动保存一个版本；AI 的 save_version 工具复用同一快照结构 */
+    const handleSaveVersion = useCallback(async () => {
         if (!activeFile) {
-            showNotification("Open a drawing first");
+            showNotification(t("notify.openDrawingFirst"));
             return;
         }
         if (!isLoggedIn) {
-            showNotification("Sign in to use version history");
+            showNotification(t("notify.signInForVersions"));
+            return;
+        }
+        const snapshot = buildVersionSnapshot(
+            getElements(),
+            {
+                layerOrder: canvasState.layerOrder,
+                layerColors: canvasState.layerColors,
+                hiddenLayers: canvasState.hiddenLayers,
+                lockedLayers: canvasState.lockedLayers,
+            },
+            canvasState.drawingSettings,
+        );
+        try {
+            const result = await apiService.createProjectVersion(
+                activeFile.id,
+                snapshot,
+                `Manual · ${new Date().toLocaleString()}`,
+            );
+            showNotification(t("notify.versionSaved", { version: result.version.versionNumber }));
+        } catch (error) {
+            showNotification(
+                t("notify.versionSaveFailed", {
+                    message: error instanceof Error ? error.message : String(error),
+                }),
+            );
+        }
+    }, [
+        activeFile,
+        isLoggedIn,
+        canvasState.layerOrder,
+        canvasState.layerColors,
+        canvasState.hiddenLayers,
+        canvasState.lockedLayers,
+        canvasState.drawingSettings,
+        getElements,
+        showNotification,
+        t,
+    ]);
+
+    const handleOpenVersionHistory = useCallback(() => {
+        if (!activeFile) {
+            showNotification(t("notify.openDrawingFirst"));
+            return;
+        }
+        if (!isLoggedIn) {
+            showNotification(t("notify.signInForVersions"));
             return;
         }
         setShowVersionHistory(true);
-    }, [activeFile, isLoggedIn, showNotification]);
+    }, [activeFile, isLoggedIn, showNotification, t]);
 
     /**
      * 恢复版本：图元通过 commitAction 写入撤销历史，图层与设置同步替换。
@@ -986,7 +1137,7 @@ function App() {
             }
             if (snapshot.settings) setDrawingSettings(snapshot.settings);
 
-            showNotification(`Restored ${restoredElements.length} elements — Ctrl+Z to undo`);
+            showNotification(t("notify.restored", { count: restoredElements.length }));
 
             if (activeFile) {
                 void persistFile(activeFile, restoredElements)
@@ -1061,7 +1212,9 @@ function App() {
             .then((result) => {
                 if (autoVersionBaselineRef.current?.projectId !== activeFile.id) return;
                 autoVersionBaselineRef.current = { projectId: activeFile.id, revision };
-                showNotification(`Auto version v${result.version.versionNumber} saved`);
+                showNotification(
+                    t("notify.autoVersionSaved", { version: result.version.versionNumber }),
+                );
             })
             .catch(() => {
                 // 离线或服务不可用时保留基线，后续提交按退避重试
@@ -1077,6 +1230,7 @@ function App() {
         canvasState.drawingSettings,
         getElements,
         showNotification,
+        t,
     ]);
 
     const handleLoadFile = async (file: ProjectFile) => {
@@ -1107,9 +1261,9 @@ function App() {
             setHiddenIds([]);
             setActiveFile({ ...file, designConventions: loadedConventions });
             lastSavedRef.current = { fileId: file.id, elements: loadedElements };
-            showNotification(`Loaded ${file.name}`);
+            showNotification(t("notify.fileLoaded", { name: file.name }));
         } catch (error: any) {
-            showNotification(error.message || "Failed to load file");
+            showNotification(error.message || t("notify.fileLoadFailed"));
         }
     };
 
@@ -1131,9 +1285,9 @@ function App() {
             setHiddenIds([]);
             lastSavedRef.current = { fileId: newFile.id, elements: EMPTY_ELEMENTS };
             syncService.requestFlush();
-            showNotification(`Created '${name}'`);
+            showNotification(t("notify.fileCreated", { name }));
         } catch (error: any) {
-            showNotification(error.message || "Failed to create file");
+            showNotification(error.message || t("notify.fileCreateFailed"));
         } finally {
             setLoading(false);
         }
@@ -1153,9 +1307,9 @@ function App() {
             if (activeFile?.id === id) {
                 setActiveFile({ ...activeFile, name: newName });
             }
-            showNotification(`Renamed to '${newName}'`);
+            showNotification(t("notify.fileRenamed", { name: newName }));
         } catch (error: any) {
-            showNotification(error.message || "Failed to rename file");
+            showNotification(error.message || t("notify.fileRenameFailed"));
         }
     };
 
@@ -1170,9 +1324,9 @@ function App() {
                 loadHistory([[]], 0);
                 setHiddenIds([]);
             }
-            showNotification("File deleted");
+            showNotification(t("notify.fileDeleted"));
         } catch (error: any) {
-            showNotification(error.message || "Failed to delete file");
+            showNotification(error.message || t("notify.fileDeleteFailed"));
         }
     };
 
@@ -1187,9 +1341,9 @@ function App() {
             commitAction([...getElements(), ...traced]);
             setSelection(traced.map((element) => element.id));
             flashElements(traced.map((element) => element.id));
-            showNotification(`已插入 ${traced.length} 条参考图轮廓 · Ctrl+Z 可撤销`);
+            showNotification(t("notify.tracedInserted", { count: traced.length }));
         },
-        [commitAction, getElements, setSelection, flashElements, showNotification],
+        [commitAction, getElements, setSelection, flashElements, showNotification, t],
     );
 
     // Auth pages
@@ -1241,25 +1395,42 @@ function App() {
             setHiddenIds([]);
             lastSavedRef.current = { fileId: newFile.id, elements };
             syncService.requestFlush();
-            showNotification(`已打开示例：${example.name}`);
+            showNotification(t("notify.exampleOpened", { name: example.name }));
         } catch (error) {
-            showNotification(error instanceof Error ? error.message : "示例图纸打开失败");
+            showNotification(
+                error instanceof Error ? error.message : t("notify.exampleOpenFailed"),
+            );
         } finally {
             setLoading(false);
         }
     };
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const text = event.target?.result as string;
-                const imported = parseDXF(text);
-                handleImport(imported);
-                showNotification(`Imported ${file.name}`);
-            };
-            reader.readAsText(file);
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const input = e.target;
+        const file = input.files?.[0];
+        // 清空 value，保证连续选择同一个文件也能再次触发
+        input.value = "";
+        if (!file) return;
+
+        setIsImporting(true);
+        try {
+            const imported = await parseDrawingFile(file);
+            if (imported.length === 0) {
+                showNotification(
+                    isDwgFile(file.name)
+                        ? t("notify.dwgNoElements")
+                        : t("notify.dxfNoElements"),
+                );
+                return;
+            }
+            handleImport(imported);
+            showNotification(t("notify.imported", { name: file.name, count: imported.length }));
+        } catch (error) {
+            showNotification(
+                error instanceof Error ? error.message : t("notify.importFailed"),
+            );
+        } finally {
+            setIsImporting(false);
         }
     };
 
@@ -1270,7 +1441,7 @@ function App() {
                 type="file"
                 ref={fileInputRef}
                 className="hidden"
-                accept=".dxf"
+                accept=".dxf,.dwg"
                 onChange={handleFileChange}
             />
 
@@ -1371,7 +1542,7 @@ function App() {
                     onConfirm={(ids) => {
                         setShowQuickSelect(false);
                         setSelection(ids);
-                        showNotification(`已选中 ${ids.length} 个图元`);
+                        showNotification(t("notify.selected", { count: ids.length }));
                     }}
                     onCancel={() => setShowQuickSelect(false)}
                 />
@@ -1417,18 +1588,46 @@ function App() {
                 </div>
             )}
 
+            {isImporting && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/10 backdrop-blur-[1px]">
+                    <div className="flex items-center gap-3 rounded-lg border border-cad-border bg-cad-panel px-4 py-3 shadow-xl">
+                        <span className="size-4 animate-spin rounded-full border-2 border-cad-primary/30 border-t-cad-primary" />
+                        <span className="text-sm font-medium text-cad-text">{t("notify.importing")}</span>
+                    </div>
+                </div>
+            )}
+
             <Header
                 elements={elements}
-                onImport={handleImport}
+                onImportClick={handleImportClick}
                 onUndo={handleUndo}
                 onRedo={handleRedo}
                 currentUser={currentUser}
                 onLogout={handleLogout}
                 fileName={activeFile?.name}
                 onSave={handleSave}
+                onSaveVersion={() => void handleSaveVersion()}
                 onOpenVersions={handleOpenVersionHistory}
                 onOpenPlot={() => setShowPlot(true)}
                 onOpenImageTrace={() => setShowImageTrace(true)}
+                aiOpen={aiOpen}
+                onToggleAI={() => setAiOpen((open) => !open)}
+            />
+
+            <AIAssistantWindow
+                open={aiOpen}
+                onClose={() => setAiOpen(false)}
+                projectId={activeFile?.id || null}
+                projectKey={activeFile?.chatKey ?? activeFile?.id ?? null}
+                currentElements={elements}
+                selectedIds={selectedIds}
+                units={drawingSettings.units}
+                conventions={activeFile?.designConventions ?? null}
+                projectName={activeFile?.name}
+                blockCount={activeFile?.blockReferences?.length ?? 0}
+                hiddenObjectCount={hiddenIds.length}
+                onPreviewActions={handleAIPreview}
+                draft={chatDraft}
             />
 
             <div className="flex flex-1 overflow-hidden relative">
@@ -1453,15 +1652,11 @@ function App() {
                     onUpdateSettings={setDrawingSettings}
                     onUpdateElement={handlePropertyUpdate}
                     onApplyAIAction={handleAIAction}
-                    onPreviewAIActions={handleAIPreview}
-                    chatDraft={chatDraft}
                     onAskAIFix={handleAskAIFix}
                     designConventions={activeFile?.designConventions ?? null}
                     onSaveDesignConventions={handleSaveDesignConventions}
                     files={files}
                     activeFileId={activeFile?.id || null}
-                    projectChatKey={activeFile?.chatKey ?? activeFile?.id ?? null}
-                    hiddenObjectCount={hiddenIds.length}
                     onLoadFile={handleLoadFile}
                     onCreateFile={handleCreateFile}
                     onRenameFile={handleRenameFile}

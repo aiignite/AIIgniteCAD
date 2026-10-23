@@ -2,8 +2,10 @@
  * urlGuard.ts — LLM 端点 SSRF 校验
  *
  * configuration.apiUrl 由用户输入并会被服务端 fetch，因此必须限制协议、
- * 拒绝携带凭据的地址与云元数据地址；内网/回环只对本地推理（Ollama）或
- * 显式白名单放行。这里只做字面量判断，不做 DNS 解析，因此无法防住
+ * 拒绝携带凭据的地址与云元数据地址；内网/回环默认只对本地推理（Ollama）
+ * 或显式白名单放行。设置 AI_ALLOW_PRIVATE_ENDPOINTS=true 可让其他 provider
+ * 使用内网 HTTP（如局域网里的 OpenAI 兼容网关），但公网 HTTP、元数据与
+ * 链路本地地址始终拒绝。这里只做字面量判断，不做 DNS 解析，因此无法防住
  * 域名解析到内网的 rebinding；如需更强隔离应在网络层限制出站。
  */
 
@@ -39,11 +41,16 @@ const isLoopback = (host: string): boolean =>
   host === "::1" ||
   host.toLowerCase() === "0:0:0:0:0:0:0:1";
 
+const isLinkLocal = (host: string): boolean =>
+  (isPrivateIpv4(host) && host.startsWith("169.254.")) ||
+  // IPv6 链路本地 fe80::/10（fe80–febf）；只对含冒号的字面量判断，避免误伤域名
+  (host.includes(":") && /^fe[89ab]/i.test(host));
+
 const isPrivateAddress = (host: string): boolean => {
   if (isLoopback(host)) return true;
   if (host.includes(":")) {
     // IPv6 唯一本地地址 fc00::/7 与链路本地 fe80::/10
-    return /^(fc|fd|fe8)/i.test(host.replace(/\[|\]/g, ""));
+    return /^(fc|fd|fe8)/i.test(host);
   }
   return isPrivateIpv4(host);
 };
@@ -62,6 +69,10 @@ const allowedOverrides = (): Set<string> =>
       .map((entry) => entry.trim().toLowerCase())
       .filter(Boolean),
   );
+
+/** 显式允许所有 provider 使用 RFC1918 / 回环 HTTP 端点（默认关闭） */
+const privateEndpointsAllowed = (): boolean =>
+  /^(1|true|yes|on)$/i.test((process.env.AI_ALLOW_PRIVATE_ENDPOINTS ?? "").trim());
 
 const requireHttps = (options: EndpointGuardOptions): boolean =>
   options.requireHttps || process.env.NODE_ENV === "production";
@@ -89,22 +100,28 @@ export function assertSafeLLMEndpoint(rawUrl: string, options: EndpointGuardOpti
     throw new UnsafeEndpointError("端点不能在 URL 中携带凭据");
   }
 
-  const host = parsed.hostname.toLowerCase();
+  // URL.hostname 对 IPv6 保留方括号，统一去掉后再做回环 / 网段判断
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (!host) throw new UnsafeEndpointError("端点缺少主机名");
   if (BLOCKED_HOSTS.has(host)) throw new UnsafeEndpointError("端点指向被禁止的元数据地址");
-  if (isPrivateIpv4(host) && host.startsWith("169.254.")) {
+  if (isLinkLocal(host)) {
     throw new UnsafeEndpointError("端点指向被禁止的链路本地地址");
   }
 
   const overrides = allowedOverrides();
   const isLocal = isLoopback(host);
   const whitelisted = overrides.has(host) || overrides.has(parsed.origin.toLowerCase());
+  const privateOptIn = privateEndpointsAllowed();
+  const allowPrivate = options.provider === "Ollama" || privateOptIn;
 
-  if (isPrivateAddress(host) && !isLocal && !whitelisted && options.provider !== "Ollama") {
+  if (isPrivateAddress(host) && !isLocal && !whitelisted && !allowPrivate) {
     throw new UnsafeEndpointError("端点指向内网地址，未在白名单中");
   }
-  if (requireHttps(options) && protocol === "http:" && !isLocal && !whitelisted) {
-    throw new UnsafeEndpointError("生产环境端点必须使用 https");
+  const privateHttpAllowed = privateOptIn && isPrivateAddress(host);
+  if (requireHttps(options) && protocol === "http:" && !isLocal && !whitelisted && !privateHttpAllowed) {
+    throw new UnsafeEndpointError(
+      "生产环境端点必须使用 https；内网 HTTP 需开启 AI_ALLOW_PRIVATE_ENDPOINTS 或加入白名单",
+    );
   }
 
   return trimmed.replace(/\/+$/, "");

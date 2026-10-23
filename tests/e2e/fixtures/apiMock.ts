@@ -77,6 +77,13 @@ export const TEST_BLOCK = {
     updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
+/** DWG 导入接口返回的最小 DXF：一条世界坐标 (0,0)-(100,0) 的直线 */
+export const DWG_IMPORT_DXF = [
+    "0", "SECTION", "2", "ENTITIES",
+    "0", "LINE", "8", "0", "10", "0", "20", "0", "11", "100", "21", "0",
+    "0", "ENDSEC", "0", "EOF",
+].join("\n");
+
 const CORS_HEADERS: Record<string, string> = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -165,6 +172,11 @@ export async function installApiMock(page: Page): Promise<ApiMock> {
 
         if (path === "/blocks/tree" && method === "GET") {
             await json(route, 200, { rootBlocks: [TEST_BLOCK], categories: [] });
+            return;
+        }
+
+        if (path === "/import/dwg" && method === "POST") {
+            await json(route, 200, { dxf: DWG_IMPORT_DXF, bytes: 16 });
             return;
         }
 

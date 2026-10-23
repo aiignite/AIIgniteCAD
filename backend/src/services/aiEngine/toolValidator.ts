@@ -101,6 +101,12 @@ const NUMBER_RULES: Record<string, Record<string, NumberRule>> = {
     scale: { min: 0.01, max: 100 },
     rotation: ANGLE,
   },
+  insert_block_by_name: {
+    x: COORD,
+    y: COORD,
+    scale: { min: 0.01, max: 100 },
+    rotation: ANGLE,
+  },
 };
 
 const MEASURE_KINDS = new Set(["distance", "length", "area", "bbox"]);
@@ -120,6 +126,7 @@ const TARGET_TOOLS = new Set([
   "distribute_elements",
   "assign_layer",
   "delete_elements",
+  "save_selection_as_block",
   // 视图类工具同样需要目标：没有对象可缩放时直接拒绝
   "zoom_to_selection",
 ]);
@@ -532,6 +539,60 @@ export function validateToolCall(
         };
       }
       clean[key] = blockId;
+      continue;
+    }
+    if (key === "name") {
+      if (typeof value !== "string") {
+        return { ok: false, reason: "BAD_TEXT", message: "name 必须是字符串", toolName: name };
+      }
+      const blockName = value.trim();
+      if (!blockName || blockName.length > 80) {
+        return {
+          ok: false,
+          reason: "BAD_TEXT",
+          message: "name 长度需在 1–80 之间",
+          toolName: name,
+        };
+      }
+      clean[key] = blockName;
+      continue;
+    }
+    if (key === "description") {
+      if (typeof value !== "string" || value.length > 300) {
+        return {
+          ok: false,
+          reason: "BAD_TEXT",
+          message: "description 最多 300 个字符",
+          toolName: name,
+        };
+      }
+      const description = value.trim();
+      if (description) clean[key] = description;
+      continue;
+    }
+    if (key === "message") {
+      if (typeof value !== "string" || value.length > 200) {
+        return {
+          ok: false,
+          reason: "BAD_TEXT",
+          message: "message 最多 200 个字符",
+          toolName: name,
+        };
+      }
+      const versionMessage = value.trim();
+      if (versionMessage) clean[key] = versionMessage;
+      continue;
+    }
+    if (key === "basePoint") {
+      if (!checkPoint(value)) {
+        return {
+          ok: false,
+          reason: "BAD_POINT",
+          message: "basePoint 不是合法坐标",
+          toolName: name,
+        };
+      }
+      clean[key] = normalizePoint(value);
       continue;
     }
     if (key === "keyword") {

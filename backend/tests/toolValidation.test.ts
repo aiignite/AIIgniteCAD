@@ -338,6 +338,77 @@ describe("validateToolCall 只读设计工具", () => {
     expect(validateToolCall({ name: "list_blocks", arguments: { limit: 100 } }).ok).toBe(false);
     expect(validateToolCall({ name: "list_blocks", arguments: { keyword: 3 } }).ok).toBe(false);
   });
+
+  it("insert_block_by_name 校验名称、坐标与缩放旋转", () => {
+    const call = ok({
+      name: "insert_block_by_name",
+      arguments: { name: " 标准门洞 ", x: 500, y: 400, scale: 2, rotation: 90 },
+    });
+    expect(call.arguments).toEqual({
+      name: "标准门洞",
+      x: 500,
+      y: 400,
+      scale: 2,
+      rotation: 90,
+    });
+
+    expect(
+      validateToolCall({ name: "insert_block_by_name", arguments: { x: 1, y: 2 } }).ok,
+    ).toBe(false);
+    expect(
+      validateToolCall({ name: "insert_block_by_name", arguments: { name: "  ", x: 1, y: 2 } })
+        .ok,
+    ).toBe(false);
+    expect(
+      validateToolCall({
+        name: "insert_block_by_name",
+        arguments: { name: "门", x: 1, y: 2, scale: 0 },
+      }).ok,
+    ).toBe(false);
+  });
+
+  it("save_selection_as_block 需要选择集并校验名称与基点", () => {
+    const call = ok(
+      {
+        name: "save_selection_as_block",
+        arguments: { name: " 样品块 ", description: " 常用件 ", basePoint: { x: 1, y: 2 } },
+      },
+      { selectedIds: ["line-1"] },
+    );
+    expect(call.arguments).toEqual({
+      name: "样品块",
+      description: "常用件",
+      basePoint: { x: 1, y: 2 },
+      ids: ["line-1"],
+    });
+
+    expect(
+      validateToolCall({ name: "save_selection_as_block", arguments: { name: "样品" } }).ok,
+    ).toBe(false);
+    expect(
+      validateToolCall({
+        name: "save_selection_as_block",
+        arguments: { name: "样品", basePoint: { x: "a", y: 2 } },
+      }, { selectedIds: ["line-1"] }).ok,
+    ).toBe(false);
+    expect(
+      validateToolCall({ name: "save_selection_as_block", arguments: { name: "x".repeat(81) } }, {
+        selectedIds: ["line-1"],
+      }).ok,
+    ).toBe(false);
+  });
+
+  it("save_version 只接受长度受限的版本说明", () => {
+    expect(ok({ name: "save_version", arguments: { message: " 增加标注 " } })).toEqual({
+      id: "call_save_version",
+      name: "save_version",
+      arguments: { message: "增加标注" },
+    });
+    expect(ok({ name: "save_version", arguments: {} }).arguments).toEqual({});
+    expect(
+      validateToolCall({ name: "save_version", arguments: { message: "x".repeat(201) } }).ok,
+    ).toBe(false);
+  });
 });
 
 describe("validateToolCall 设计操作工具", () => {

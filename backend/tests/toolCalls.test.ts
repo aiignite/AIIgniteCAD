@@ -12,10 +12,10 @@ import {
 } from "../src/services/aiEngine/tools";
 
 describe("CAD tool definitions", () => {
-  it("定义 28 个唯一工具，覆盖绘制、编辑、阵列、设计操作、视图、只读检查与块库", () => {
+  it("定义 31 个唯一工具，覆盖绘制、编辑、阵列、设计操作、视图、只读检查与块库", () => {
     const names = CAD_TOOL_DEFINITIONS.map((tool) => tool.name);
-    expect(names).toHaveLength(28);
-    expect(new Set(names).size).toBe(28);
+    expect(names).toHaveLength(31);
+    expect(new Set(names).size).toBe(31);
     expect(names).toEqual([
       "draw_line",
       "draw_polyline",
@@ -45,6 +45,9 @@ describe("CAD tool definitions", () => {
       "check_drawing",
       "list_blocks",
       "insert_block",
+      "insert_block_by_name",
+      "save_selection_as_block",
+      "save_version",
     ]);
   });
 
@@ -59,7 +62,7 @@ describe("CAD tool definitions", () => {
 
   it("生成 OpenAI / Ollama 兼容的 function tools", () => {
     for (const tools of [toOpenAITools(), toOllamaTools()]) {
-      expect(tools).toHaveLength(28);
+      expect(tools).toHaveLength(31);
       expect(tools[0]).toMatchObject({
         type: "function",
         function: { name: "draw_line", parameters: { type: "object" } },
@@ -76,7 +79,7 @@ describe("CAD tool definitions", () => {
 
     const google = toGoogleTools();
     expect(google).toHaveLength(1);
-    expect(google[0].functionDeclarations).toHaveLength(28);
+    expect(google[0].functionDeclarations).toHaveLength(31);
     expect(google[0].functionDeclarations[0].parameters).toMatchObject({
       type: "OBJECT",
       properties: {

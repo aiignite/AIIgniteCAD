@@ -100,13 +100,17 @@ async function openSkillsPanel(page: Page): Promise<void> {
         window.localStorage.setItem("auth_token", "e2e-token");
     });
     await page.goto("/");
-    await expect(page.getByText("Welcome to AI Ignite CAD")).toBeVisible();
-    await page.getByText("New Drawing", { exact: true }).click();
-    await page.getByPlaceholder("My Drawing").fill("Skill Playbook");
-    await page.getByRole("button", { name: "Create", exact: true }).click();
+    await expect(page.getByText("欢迎使用 AI Ignite CAD")).toBeVisible();
+    await page.getByText("新建图纸", { exact: true }).click();
+    await page.getByPlaceholder("图纸名称，例如：装配图").fill("Skill Playbook");
+    await page.getByRole("button", { name: "创建", exact: true }).click();
     await expect(page.locator("#drawing-surface svg")).toBeVisible();
 
-    await page.locator('nav button[title="技能"]').click();
+    await page.getByRole("button", { name: "打开 AI 助手" }).click();
+    const assistantPanel = page.getByRole("dialog", { name: "AI 助手" });
+    await expect(assistantPanel).toBeVisible();
+    await assistantPanel.getByRole("button", { name: "技能管理" }).click();
+    await expect(page.getByRole("dialog", { name: "技能抽屉" })).toBeVisible();
     await expect(page.getByRole("button", { name: "新建技能" })).toBeVisible();
 }
 

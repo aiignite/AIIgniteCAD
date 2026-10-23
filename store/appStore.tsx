@@ -23,7 +23,7 @@ const initialState: AppState = {
   currentUser: null,
   files: [],
   activeFile: null,
-  sideMode: SidePanelMode.CHAT,
+  sideMode: SidePanelMode.REVIEW,
   loading: false,
   notification: null,
 };

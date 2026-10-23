@@ -563,6 +563,71 @@ export const CAD_TOOL_DEFINITIONS: CadToolDefinition[] = [
       required: ["blockId", "x", "y"],
     },
   },
+  {
+    name: "insert_block_by_name",
+    description:
+      "Insert a reusable block by its human-readable name. Prefer this when the user names a block (for example \"法兰\" or \"door\"). Resolution is exact first, then a unique substring; ambiguous names are rejected with candidates, so call list_blocks and retry with an exact name if needed.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Block name or a distinctive part of it.",
+        },
+        x: { type: "number", description: "Insertion point X (the block base point lands here)" },
+        y: { type: "number", description: "Insertion point Y (the block base point lands here)" },
+        scale: {
+          type: "number",
+          description: "Uniform scale factor, 0.01-100, default 1",
+        },
+        rotation: {
+          type: "number",
+          description: "Rotation in degrees around the insertion point, default 0",
+        },
+      },
+      required: ["name", "x", "y"],
+    },
+  },
+  {
+    name: "save_selection_as_block",
+    description:
+      "Save the current selection (or explicit ids) as a reusable block in the project block library. The drawing itself is not changed. Requires a signed-in user and a saved project; if the user only asked to edit geometry, do not call this.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Block name, 1-80 characters. Use the name the user provided.",
+        },
+        description: {
+          type: "string",
+          description: "Optional block description, up to 300 characters.",
+        },
+        basePoint: {
+          type: "object",
+          properties: pointProperties,
+          description:
+            "Optional base point. Defaults to the lower-left corner of the selection bounds.",
+        },
+        ids: idsParameter,
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "save_version",
+    description:
+      "Save a named snapshot of the current drawing to project version history. Does not change the drawing. Requires a signed-in user and a saved project. Use it when the user asks to save/archive a version or snapshot.",
+    parameters: {
+      type: "object",
+      properties: {
+        message: {
+          type: "string",
+          description: "Version note, up to 200 characters. Example: \"Added mounting holes\".",
+        },
+      },
+    },
+  },
 ];
 
 const ALL_DEFINITIONS = [

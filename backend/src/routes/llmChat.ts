@@ -108,10 +108,11 @@ const chatRequestValidation = [
     .withMessage("message must be at most 32000 characters"),
   body("turnId").optional().isString().isLength({ max: 128 }).withMessage("turnId is too long"),
   body("round").optional().isInt({ min: 0, max: ABSOLUTE_MAX_ROUNDS }).withMessage("round is out of range"),
-  body("sessionId").optional().isString().withMessage("sessionId must be a string").isLength({ max: 128 }),
-  body("projectId").optional().isString().withMessage("projectId must be a string").isLength({ max: 128 }),
-  body("assistantId").optional().isString().withMessage("assistantId must be a string").isLength({ max: 128 }),
-  body("modelId").optional().isString().withMessage("modelId must be a string").isLength({ max: 128 }),
+  // 前端用 null 表示“未选择”，optional() 只跳过 undefined，必须显式允许 null
+  body("sessionId").optional({ nullable: true }).isString().withMessage("sessionId must be a string").isLength({ max: 128 }),
+  body("projectId").optional({ nullable: true }).isString().withMessage("projectId must be a string").isLength({ max: 128 }),
+  body("assistantId").optional({ nullable: true }).isString().withMessage("assistantId must be a string").isLength({ max: 128 }),
+  body("modelId").optional({ nullable: true }).isString().withMessage("modelId must be a string").isLength({ max: 128 }),
   body("enableTools").optional().isBoolean().withMessage("enableTools must be a boolean"),
   body("planMode").optional().isBoolean().withMessage("planMode must be a boolean"),
   body("variantMode").optional().isBoolean().withMessage("variantMode must be a boolean"),
@@ -120,6 +121,11 @@ const chatRequestValidation = [
     .isArray({ max: 5 })
     .withMessage("pinnedSkillCodes must be an array of at most 5 codes"),
   body("pinnedSkillCodes.*").optional().isString().isLength({ max: 64 }),
+  body("recommendedSkillCodes")
+    .optional()
+    .isArray({ max: 5 })
+    .withMessage("recommendedSkillCodes must be an array of at most 5 codes"),
+  body("recommendedSkillCodes.*").optional().isString().isLength({ max: 64 }),
   body("canvasContext").optional().isObject(),
   body("canvasContext.elementCount").optional().isInt({ min: 0, max: 1_000_000 }),
   body("canvasContext.selectedIds").optional().isArray({ max: 200 }),
@@ -175,6 +181,7 @@ interface TurnRequest {
   planMode: boolean;
   variantMode: boolean;
   pinnedSkillCodes: string[];
+  recommendedSkillCodes: string[];
   canvasContext: CanvasContextInput | null;
   toolResults: ToolResultInput[];
 }
@@ -217,6 +224,7 @@ function parseTurnRequest(body: any): TurnRequest {
     planMode: body.planMode === true,
     variantMode: body.variantMode === true,
     pinnedSkillCodes: asStringArray(body.pinnedSkillCodes).slice(0, 5),
+    recommendedSkillCodes: asStringArray(body.recommendedSkillCodes).slice(0, 5),
     canvasContext: canvas
       ? {
           text: clampString(canvas.text, 8000) || undefined,
@@ -621,17 +629,34 @@ export function createLlmChatRouter(rateLimiter: RequestHandler): Router {
       const skills = await loadEnabledSkills(userId).catch(() => []);
       const bindings =
         assistant?.skills.map((binding) => ({ skillId: binding.skillId, weight: binding.weight })) ?? [];
-      const recentSkillCodes = session
-        ? await prisma.aiCallLog
-            .findMany({
-              where: { sessionId: session.id },
-              orderBy: { createdAt: "desc" },
-              take: 2,
-              select: { skillCodes: true },
-            })
-            .then((rows) => rows.flatMap((row) => asStringArray(row.skillCodes)))
-            .catch(() => [] as string[])
-        : [];
+      const [recentSkillCodes, historyTexts] = session
+        ? await Promise.all([
+            prisma.aiCallLog
+              .findMany({
+                where: { sessionId: session.id },
+                orderBy: { createdAt: "desc" },
+                take: 2,
+                select: { skillCodes: true },
+              })
+              .then((rows) => rows.flatMap((row) => asStringArray(row.skillCodes)))
+              .catch(() => [] as string[]),
+            // 旧→新；排除本轮刚落库的用户消息（createdAt 从 startedAt 起排），
+            // 否则当前消息会挤掉一条真正的历史
+            prisma.chatMessage
+              .findMany({
+                where: {
+                  sessionId: session.id,
+                  senderType: "user",
+                  createdAt: { lt: new Date(startedAt) },
+                },
+                orderBy: { createdAt: "desc" },
+                take: 3,
+                select: { content: true },
+              })
+              .then((rows) => rows.map((row) => row.content).reverse())
+              .catch(() => [] as string[]),
+          ])
+        : ([[], []] as [string[], string[]]);
 
       const activated = activateSkills({
         skills,
@@ -639,8 +664,10 @@ export function createLlmChatRouter(rateLimiter: RequestHandler): Router {
         selectionTypes: turn.canvasContext?.selectionTypes ?? [],
         contextSignals: deriveContextSignals(turn.canvasContext),
         pinnedSkillCodes: turn.pinnedSkillCodes,
+        recommendedSkillCodes: turn.recommendedSkillCodes,
         bindings,
         recentSkillCodes,
+        historyTexts,
       });
 
       const assistantWhitelist = assistantWhitelistOf(assistant?.toolNames);

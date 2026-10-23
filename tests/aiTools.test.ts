@@ -10,6 +10,7 @@ import {
     type ToolCallConversionOptions,
 } from "../lib/aiTools";
 import {
+    FIXTURE_BLOCK_CATALOG,
     FIXTURE_ELEMENTS,
     FIXTURE_SELECTION,
     TOOL_FIXTURES,
@@ -67,9 +68,9 @@ const matchesExpectation = (
 };
 
 describe("AI tool call fixtures", () => {
-    it("评测集包含 53 条确定性指令，覆盖全部 28 个工具", () => {
-        expect(TOOL_FIXTURES).toHaveLength(53);
-        expect(SUPPORTED_AI_TOOL_NAMES).toHaveLength(28);
+    it("评测集包含 56 条确定性指令，覆盖全部 31 个工具", () => {
+        expect(TOOL_FIXTURES).toHaveLength(56);
+        expect(SUPPORTED_AI_TOOL_NAMES).toHaveLength(31);
         const covered = new Set(TOOL_FIXTURES.map((fixture) => fixture.call.name));
         expect(covered).toEqual(new Set(SUPPORTED_AI_TOOL_NAMES));
     });
@@ -472,6 +473,73 @@ describe("text JSON fallback", () => {
     it("提取 JSON 时忽略字符串中的花括号与后续说明", () => {
         const text = 'Result: {"operation":"ADD","message":"use {curly} braces"} thanks';
         expect(extractJsonObject(text)).toBe('{"operation":"ADD","message":"use {curly} braces"}');
+    });
+});
+
+describe("块与版本工具转换", () => {
+    it("按名称插入块：支持精确名称与唯一子串", () => {
+        const exact = actionOf(
+            { id: "1", name: "insert_block_by_name", arguments: { name: "标准门洞", x: 0, y: 0 } },
+            { elements: FIXTURE_ELEMENTS, selectedIds: [], blockCatalog: FIXTURE_BLOCK_CATALOG },
+        );
+        expect(exact?.operation).toBe("ADD");
+        expect(exact?.elements?.map((el) => el.type)).toEqual(["RECTANGLE", "LINE"]);
+
+        const partial = actionOf(
+            { id: "2", name: "insert_block_by_name", arguments: { name: "门洞", x: 0, y: 0 } },
+            { elements: FIXTURE_ELEMENTS, selectedIds: [], blockCatalog: FIXTURE_BLOCK_CATALOG },
+        );
+        expect(partial?.operation).toBe("ADD");
+    });
+
+    it("名称匹配到多个块时拒绝并列出候选", () => {
+        const catalog = [
+            ...FIXTURE_BLOCK_CATALOG,
+            { ...FIXTURE_BLOCK_CATALOG[0], id: "block-double", name: "双开门" },
+        ];
+        const error = errorOf(
+            { id: "1", name: "insert_block_by_name", arguments: { name: "门", x: 0, y: 0 } },
+            { elements: FIXTURE_ELEMENTS, selectedIds: [], blockCatalog: catalog },
+        );
+        expect(error).toContain("匹配到多个块");
+        expect(error).toContain("标准门洞");
+        expect(error).toContain("双开门");
+    });
+
+    it("名称不存在时回传可用块名称", () => {
+        const error = errorOf(
+            { id: "1", name: "insert_block_by_name", arguments: { name: "法兰", x: 0, y: 0 } },
+            { elements: FIXTURE_ELEMENTS, selectedIds: [], blockCatalog: FIXTURE_BLOCK_CATALOG },
+        );
+        expect(error).toContain("不在块库中");
+        expect(error).toContain("标准门洞");
+    });
+
+    it("把选中图形保存为块，默认基点取选择集左下角", () => {
+        const action = actionOf(
+            { id: "1", name: "save_selection_as_block", arguments: { name: "样品" } },
+            {
+                elements: FIXTURE_ELEMENTS,
+                selectedIds: FIXTURE_SELECTION,
+                blockCatalog: FIXTURE_BLOCK_CATALOG,
+            },
+        );
+        expect(action?.operation).toBe("SAVE_BLOCK");
+        expect(action?.elements?.map((el) => el.id)).toEqual(FIXTURE_SELECTION);
+        expect(action?.params).toMatchObject({
+            blockName: "样品",
+            basePoint: { x: 50, y: 38 },
+        });
+    });
+
+    it("保存版本只产出附加操作，不改画布", () => {
+        const action = actionOf(
+            { id: "1", name: "save_version", arguments: { message: "增加标注" } },
+            { elements: FIXTURE_ELEMENTS, selectedIds: FIXTURE_SELECTION },
+        );
+        expect(action?.operation).toBe("SAVE_VERSION");
+        expect(action?.elements).toBeUndefined();
+        expect(action?.params?.versionMessage).toBe("增加标注");
     });
 });
 

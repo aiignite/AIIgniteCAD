@@ -233,6 +233,65 @@ export const BUILTIN_SKILLS: BuiltinSkillSeed[] = [
     examples: ["画一个 8×6 米的两室户型并标注", "把这个车间分成 4 个工位，留 1.2 米走道"],
   },
   {
+    code: "cad_block_library",
+    name: "块库与复用",
+    description: "把选中图形保存为块，并按名称把块插入图纸。",
+    promptTemplate: `你正在处理可复用图块。
+- 用户说“把选中的图形保存为块 / 加入块库”时，调用 save_selection_as_block，name 必须使用用户给出的名称；用户没给名称时先询问，不要自行编造。
+- 用户说“插入 / 放置 / 放一个 <名称> 块”时，优先调用 insert_block_by_name；名称有歧义时先用 list_blocks 查询，再用精确名称或 insert_block。
+- 插入点未指定时，选择靠近相关图形或图纸空白处的合理位置，并在回复中说明插入点。
+- 保存块不改变画布；插入块会进入预览并只占一步撤销。`,
+    category: "Blocks",
+    priority: 35,
+    toolNames: [
+      "list_blocks",
+      "insert_block",
+      "insert_block_by_name",
+      "save_selection_as_block",
+      "query_elements",
+      "get_canvas_info",
+    ],
+    keywords: [
+      "块", "图块", "块库", "符号", "标准件", "复用", "插入块", "放置块", "保存为块",
+      "做成块", "block", "symbol", "library",
+    ],
+    negativeKeywords: ["块参照", "外部参照"],
+    selectionTypes: [],
+    requiredContext: [],
+    steps: [
+      { title: "确认块名称与对象", detail: "保存块必须有名称；插入块按用户给出的名称检索。", tool: "list_blocks" },
+      { title: "插入或保存", detail: "插入用 insert_block_by_name，保存用 save_selection_as_block。", tool: "insert_block_by_name" },
+      { title: "复核结果", detail: "插入后确认图元数量与位置；保存后提示块已进入块库。", tool: "get_canvas_info" },
+    ],
+    checks: ["块名称与用户要求一致", "插入点合理且图元完整", "保存块没有改动画布"],
+    examples: ["把选中的图形保存为块，名字叫法兰", "在右下角插入一个门块"],
+  },
+  {
+    code: "cad_versioning",
+    name: "版本存档",
+    description: "把当前图纸保存为一个命名版本或快照。",
+    promptTemplate: `你正在处理版本存档。
+- 用户要求“保存版本 / 存一个版本 / 存档 / 记快照”时，调用 save_version，message 使用用户描述；没有描述时写一句简洁的变更摘要。
+- 保存版本不改变画布，也不占撤销步骤。
+- 用户只是说“保存文件”时，提示使用顶部保存按钮，不要调用 save_version。
+- 保存前不要为了“让版本更完整”而擅自修改图形。`,
+    category: "Versioning",
+    priority: 45,
+    toolNames: ["save_version", "get_canvas_info"],
+    keywords: [
+      "保存版本", "存版本", "版本", "快照", "存档", "记一个版本", "version", "snapshot", "archive",
+    ],
+    negativeKeywords: ["恢复版本", "回滚", "对比版本"],
+    selectionTypes: [],
+    requiredContext: [],
+    steps: [
+      { title: "确认版本说明", detail: "从用户指令提取简短说明；没有则使用当前变更摘要。" },
+      { title: "保存版本", detail: "调用 save_version，等待服务端返回版本号。", tool: "save_version" },
+    ],
+    checks: ["版本说明与用户要求一致", "没有改动图形", "回复中报告版本号"],
+    examples: ["给当前图纸存一个版本，说明写“增加安装孔”", "保存当前版本"],
+  },
+  {
     code: "cad_plot_review",
     name: "图纸审查",
     description: "只读检查图纸，输出问题清单而不修改图形。",

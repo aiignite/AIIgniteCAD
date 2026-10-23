@@ -27,10 +27,6 @@ export enum ToolType {
 }
 
 export enum SidePanelMode {
-    LLM_MODELS = "LLM_MODELS",
-    ASSISTANTS = "ASSISTANTS",
-    SKILLS = "SKILLS",
-    CHAT = "CHAT",
     REVIEW = "REVIEW",
     CONVENTIONS = "CONVENTIONS",
     FILES = "FILES",
@@ -424,6 +420,28 @@ export interface SkillStep {
 
 export type SkillContextSignal = "selection" | "layers" | "blocks" | "revision" | "dimensions";
 
+/** 候选条展示的技能：与后端路由同一套打分，前端只做筛选与保留 */
+export interface AiSkillCandidate {
+    code: string;
+    name: string;
+    description: string;
+    category: string;
+    score: number;
+    reasons: string[];
+    tools: string[];
+    version: number;
+}
+
+export interface SkillResolveInput {
+    message: string;
+    assistantId?: string | null;
+    selectionTypes?: string[];
+    contextSignals?: SkillContextSignal[];
+    pinnedSkillCodes?: string[];
+    recentSkillCodes?: string[];
+    historyTexts?: string[];
+}
+
 export interface ChatSessionInfo {
     id: string;
     projectId: string;
@@ -512,7 +530,9 @@ export interface AIActionResponse {
         | "ARRAY"
         | "ALIGN"
         | "DISTRIBUTE"
-        | "SET_LAYER";
+        | "SET_LAYER"
+        | "SAVE_BLOCK"
+        | "SAVE_VERSION";
     elements?: CADElement[];
     params?: {
         angle?: number;
@@ -521,6 +541,12 @@ export interface AIActionResponse {
         p2?: Point;
         dx?: number;
         dy?: number;
+        /** SAVE_BLOCK：块名、说明与基点；elements 为要入库的选中图元 */
+        blockName?: string;
+        blockDescription?: string;
+        basePoint?: Point;
+        /** SAVE_VERSION：版本说明 */
+        versionMessage?: string;
         [key: string]: any;
     };
 }
@@ -568,6 +594,8 @@ export interface AgentChatRequest {
     /** 多方案模式：只允许只读工具与 propose_variants */
     variantMode?: boolean;
     pinnedSkillCodes?: string[];
+    /** 前端候选条保留的技能：加分参与路由，但不像固定技能那样绕过规则 */
+    recommendedSkillCodes?: string[];
     canvasContext?: CanvasContextPayload;
     toolResults?: AgentToolResultPayload[];
 }

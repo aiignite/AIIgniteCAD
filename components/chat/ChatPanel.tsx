@@ -1,24 +1,32 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
     AIActionResponse,
-    AiSkill,
     Assistant,
     CADElement,
     DesignConventions,
-    LLMModel,
+    SkillContextSignal,
 } from "../../types";
+import type { UseAIRegistryResult } from "../../hooks/useAIRegistry";
+import AssistantsPanel from "../AssistantsPanel";
+import AISkillsPanel from "../AISkillsPanel";
+import LLMModelsPanel from "../LLMModelsPanel";
 import { apiService } from "../../services/apiService";
 import { getBlockCatalog } from "../../services/blockService";
 import type { BlockCatalogEntry } from "../../lib/blockCatalog";
 import { useAIChat, type TurnMeta } from "../../hooks/useAIChat";
+import { useSkillCandidates } from "../../hooks/useSkillCandidates";
 import type { DesignContextMeta } from "../../lib/aiContext";
 import { applyToolCalls, createDraft } from "../../lib/aiAgentLoop";
 import { planToToolCalls, type PlanProposal } from "../../lib/aiPlan";
 import { variantToToolCalls, type DesignVariant, type VariantProposal } from "../../lib/aiVariants";
 import { formatCostUsd, formatTokens } from "../../lib/aiUi";
 import ChatMessageItem from "./ChatMessageItem";
-import SessionMenu from "./SessionMenu";
+import SessionPanel from "./SessionPanel";
+import SkillCandidateBar from "./SkillCandidateBar";
 import SkillPinMenu from "./SkillPinMenu";
+import { useI18n, type TranslationKey } from "../../lib/i18n";
+
+export type AIDrawerPanel = "assistants" | "skills" | "models" | "sessions";
 
 interface ChatPanelProps {
     projectId: string | null;
@@ -30,13 +38,13 @@ interface ChatPanelProps {
     contextMeta?: DesignContextMeta;
     /** 项目设计约定；会随草稿进入确定性检查 */
     conventions?: DesignConventions | null;
-    assistants: Assistant[];
+    /** 助手 / 技能 / 模型共用同一份注册表，内部抽屉直接读写 */
+    registry: UseAIRegistryResult;
     assistant: Assistant | null;
     onAssistantChange: (assistant: Assistant | null) => void;
-    models: LLMModel[];
     onPreviewActions: (actions: AIActionResponse[], meta: TurnMeta) => void;
-    onOpenAssistants: () => void;
-    onOpenSkills: () => void;
+    /** 浮窗关闭时暂停候选技能解析，避免隐藏面板持续请求 */
+    active?: boolean;
     /** 画布「问 AI」送来的草稿：nonce 递增表示一次新请求 */
     draft?: { text: string; nonce: number } | null;
 }
@@ -49,19 +57,19 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     units,
     contextMeta,
     conventions,
-    assistants,
+    registry,
     assistant,
     onAssistantChange,
-    models,
     onPreviewActions,
-    onOpenAssistants,
-    onOpenSkills,
+    active = true,
     draft,
 }) => {
+    const { t } = useI18n();
+    const { assistants, models, skills } = registry;
     const [input, setInput] = useState("");
     // undefined = 跟随会话绑定的模型；null = 用户显式选择自动；string = 用户显式覆盖
     const [modelChoice, setModelChoice] = useState<string | null | undefined>(undefined);
-    const [skills, setSkills] = useState<AiSkill[]>([]);
+    const [activeDrawer, setActiveDrawer] = useState<AIDrawerPanel | null>(null);
     const [blockCatalog, setBlockCatalog] = useState<BlockCatalogEntry[]>([]);
     const scrollRef = useRef<HTMLDivElement>(null);
     const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -99,6 +107,79 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         resolvePlan,
         resolveVariants,
     } = chat;
+
+    /** 上轮技能用于会话惯性与短消息沿用；只取最近一条助手消息 */
+    const recentSkillCodes = useMemo(() => {
+        const lastAi = [...messages].reverse().find((message) => message.sender === "ai");
+        if (!lastAi) return [];
+        return [
+            ...new Set(lastAi.rounds.flatMap((round) => round.skills.map((skill) => skill.code))),
+        ].slice(0, 8);
+    }, [messages]);
+
+    /** 旧→新，最多 3 条用户消息；后端按轮次衰减关键词权重 */
+    const historyTexts = useMemo(
+        () =>
+            messages
+                .filter((message) => message.sender === "user")
+                .slice(-3)
+                .map((message) => message.text),
+        [messages],
+    );
+
+    const selectionTypes = useMemo(
+        () => [
+            ...new Set(
+                currentElements
+                    .filter((element) => selectedIds.has(element.id))
+                    .map((element) => element.type),
+            ),
+        ],
+        [currentElements, selectedIds],
+    );
+
+    const contextSignals = useMemo<SkillContextSignal[]>(() => {
+        const signals: SkillContextSignal[] = [];
+        if (selectedIds.size > 0) signals.push("selection");
+        if (contextMeta?.layers?.some((layer) => layer.name !== "0")) signals.push("layers");
+        if ((contextMeta?.blockCount ?? 0) > 0) signals.push("blocks");
+        if ((contextMeta?.revision ?? 0) > 0) signals.push("revision");
+        if (currentElements.some((element) => element.type === "DIMENSION")) {
+            signals.push("dimensions");
+        }
+        return signals;
+    }, [selectedIds, contextMeta, currentElements]);
+
+    const skillCandidates = useSkillCandidates({
+        enabled: active,
+        message: input,
+        assistant,
+        skills,
+        pinnedSkillCodes,
+        recentSkillCodes,
+        historyTexts,
+        selectionTypes,
+        contextSignals,
+        conversationId: sessionId,
+    });
+
+    const availableSkills = useMemo(
+        () =>
+            skills
+                .filter((skill) => skill.isEnabled)
+                .slice()
+                .sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name)),
+        [skills],
+    );
+
+    const quickPrompts = useMemo(() => {
+        const examples = availableSkills.flatMap((skill) => skill.examples ?? []).slice(0, 3);
+        return [
+            t("chat.quickPromptRectangle"),
+            t("chat.quickPromptReview"),
+            ...examples,
+        ].slice(0, 4);
+    }, [availableSkills, t]);
 
     /** 计划/方案是模型回合的延续，采纳率要归到同一批激活技能上 */
     const skillCodesOf = useCallback(
@@ -214,13 +295,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     );
 
     useEffect(() => {
-        apiService
-            .getSkills()
-            .then(({ skills: rows }) => setSkills(rows))
-            .catch(() => setSkills([]));
-    }, []);
-
-    useEffect(() => {
         const node = scrollRef.current;
         if (node) node.scrollTop = node.scrollHeight;
     }, [messages]);
@@ -280,12 +354,22 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         [sessionId],
     );
 
+    const fillComposer = useCallback((text: string) => {
+        setInput(text);
+        requestAnimationFrame(() => {
+            composerRef.current?.focus();
+            composerRef.current?.setSelectionRange(text.length, text.length);
+        });
+    }, []);
+
     const handleOpenSession = useCallback(
         (id: string) => {
             setModelChoice(undefined);
+            skillCandidates.reset();
+            setActiveDrawer(null);
             void chat.openSession(id);
         },
-        [chat],
+        [chat, skillCandidates],
     );
 
     const handleSend = useCallback(() => {
@@ -295,12 +379,14 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         }
         const text = input.trim();
         if (!text) return;
+        const recommended = skillCandidates.recommendedSkillCodes;
         setInput("");
-        void chat.send(text);
-    }, [busy, chat, input]);
+        skillCandidates.reset();
+        void chat.send(text, recommended);
+    }, [busy, chat, input, skillCandidates]);
 
     return (
-        <div className="flex flex-col h-full bg-cad-bg">
+        <div className="relative flex flex-col h-full bg-cad-bg">
             <div className="flex items-center gap-2 px-3 py-2 border-b border-cad-border bg-cad-panel">
                 <div className="p-1.5 bg-black/10 dark:bg-black/30 rounded-md shrink-0">
                     <span
@@ -314,7 +400,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                         value={assistant?.id || ""}
                         onChange={(e) => handleAssistantChange(e.target.value)}
                         className="w-full text-xs font-bold text-cad-text bg-transparent border-0 p-0 focus:ring-0 cursor-pointer"
-                        title="选择助手"
+                        title={t("chat.assistantSelect")}
                     >
                         <option value="">AI CAD Designer</option>
                         {assistants.map((item) => (
@@ -327,10 +413,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                         value={modelId || ""}
                         onChange={(e) => handleModelChange(e.target.value)}
                         className="w-full text-[10px] text-cad-muted bg-transparent border-0 p-0 focus:ring-0 cursor-pointer"
-                        title="会话级模型覆盖，留空则由服务端解析链选择"
+                        title={t("chat.modelOverride")}
                     >
                         <option value="">
-                            {activeModel ? `自动 · ${activeModel.name}` : "自动模型（未配置）"}
+                            {activeModel
+                                ? t("chat.autoModel", { name: activeModel.name })
+                                : t("chat.autoModelUnset")}
                         </option>
                         {models
                             .filter((model) => model.isActive)
@@ -346,52 +434,138 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     pinned={pinnedSkillCodes}
                     onChange={chat.setPinnedSkillCodes}
                 />
-                <SessionMenu
-                    sessions={sessions}
-                    activeSessionId={sessionId}
-                    busy={busy}
-                    onOpen={handleOpenSession}
-                    onNew={() => void chat.startSession()}
-                    onRename={(id, title) => {
-                        void apiService
-                            .patchChatSession(id, { title })
-                            .then(() => chat.loadSessions());
-                    }}
-                    onDelete={(id) => {
-                        if (confirm("删除该会话及其历史？")) void chat.removeSession(id);
-                    }}
-                    onCompact={() => void chat.compact()}
-                />
+                <button
+                    onClick={() => setActiveDrawer("assistants")}
+                    className="p-1.5 rounded-md text-cad-muted hover:text-cad-text hover:bg-cad-text/10 transition-colors"
+                    title={t("chat.assistantManage")}
+                    aria-label={t("chat.assistantManage")}
+                >
+                    <span className="material-symbols-outlined text-[18px]">group</span>
+                </button>
+                <button
+                    onClick={() => setActiveDrawer("skills")}
+                    className="p-1.5 rounded-md text-cad-muted hover:text-cad-text hover:bg-cad-text/10 transition-colors"
+                    title={t("chat.skillManage")}
+                    aria-label={t("chat.skillManage")}
+                >
+                    <span className="material-symbols-outlined text-[18px]">extension</span>
+                </button>
+                <button
+                    onClick={() => setActiveDrawer("models")}
+                    className="p-1.5 rounded-md text-cad-muted hover:text-cad-text hover:bg-cad-text/10 transition-colors"
+                    title={t("chat.modelSettings")}
+                    aria-label={t("chat.modelSettings")}
+                >
+                    <span className="material-symbols-outlined text-[18px]">deployed_code</span>
+                </button>
+                <button
+                    onClick={() => setActiveDrawer("sessions")}
+                    className="p-1.5 rounded-md text-cad-muted hover:text-cad-text hover:bg-cad-text/10 transition-colors"
+                    title={t("chat.sessions")}
+                    aria-label={t("chat.sessions")}
+                >
+                    <span className="material-symbols-outlined text-[18px]">history</span>
+                </button>
             </div>
 
             {!projectId && (
                 <p className="px-3 py-1.5 text-[10px] text-amber-500 bg-amber-500/10 border-b border-cad-border">
-                    未打开图纸，本轮对话不会写入服务端历史。
+                    {t("chat.noProjectWarning")}
                 </p>
             )}
 
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-cad-bg">
                 {messages.length === 0 && (
-                    <div className="space-y-2 text-[11px] text-cad-muted">
-                        <p>
-                            用自然语言描述要画的图形或要做的编辑，例如"在原点画一个 100×60
-                            的矩形，再向右阵列 3 个"。
-                        </p>
-                        <p>
-                            工具先在草稿上求值，结果需在预览对话框确认后才会写入图纸，整批只占一步撤销。
-                        </p>
-                        <div className="flex gap-2 pt-1">
+                    <div className="space-y-5 text-[11px] text-cad-muted">
+                        <div className="space-y-2">
+                            <p className="text-sm font-bold text-cad-text">
+                                {assistant?.name || "AI CAD Designer"}
+                            </p>
+                            <p>{t("chat.intro")}</p>
+                            <p>{t("chat.introTools")}</p>
+                        </div>
+
+                        <div>
+                            <p className="mb-1.5 font-bold text-cad-text">
+                                {t("chat.suggested")}
+                            </p>
+                            <div className="flex flex-wrap gap-1">
+                                {quickPrompts.map((prompt) => (
+                                    <button
+                                        key={prompt}
+                                        onClick={() => fillComposer(prompt)}
+                                        title={prompt}
+                                        className="max-w-full truncate rounded-md border border-cad-border bg-cad-panel px-2 py-1 text-[10px] text-cad-muted transition-colors hover:border-cad-primary/50 hover:bg-cad-primary/10 hover:text-cad-text"
+                                    >
+                                        {prompt}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div>
+                            <div className="mb-1.5 flex items-center gap-1.5">
+                                <span className="material-symbols-outlined text-[13px] text-emerald-500">
+                                    auto_awesome
+                                </span>
+                                <span className="font-bold text-cad-text">
+                                    {t("chat.skillsAvailable")}
+                                </span>
+                                <span className="ml-auto text-[10px] text-cad-muted">
+                                    {t("chat.skillsCount", { count: availableSkills.length })}
+                                </span>
+                            </div>
+                            <div className="grid gap-1">
+                                {availableSkills.slice(0, 6).map((skill) => (
+                                    <button
+                                        key={skill.code}
+                                        onClick={() =>
+                                            fillComposer(
+                                                t("chat.skillInvoke", { name: skill.name }),
+                                            )
+                                        }
+                                        className="flex items-center gap-2 rounded-lg border border-cad-border bg-cad-panel px-2.5 py-1.5 text-left text-[11px] text-cad-text transition-colors hover:border-emerald-500/50 hover:bg-emerald-500/5"
+                                        title={`${skill.description}\n${t("chat.skillKeywords", {
+                                            keywords:
+                                                skill.keywords.join(", ") ||
+                                                t("chat.skillNoKeywords"),
+                                        })}`}
+                                    >
+                                        <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
+                                        <span className="min-w-0 flex-1 truncate">
+                                            {skill.name}
+                                        </span>
+                                        <span className="shrink-0 text-[9px] text-cad-muted">
+                                            {skill.category}
+                                        </span>
+                                    </button>
+                                ))}
+                                {availableSkills.length === 0 && (
+                                    <p className="text-[10px] text-cad-muted">
+                                        {t("chat.noSkills")}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 pt-1">
                             <button
-                                onClick={onOpenAssistants}
+                                onClick={() => setActiveDrawer("assistants")}
                                 className="px-2 py-1 rounded border border-cad-border hover:bg-cad-text/5"
                             >
-                                配置助手
+                                {t("chat.configureAssistant")}
                             </button>
                             <button
-                                onClick={onOpenSkills}
+                                onClick={() => setActiveDrawer("skills")}
                                 className="px-2 py-1 rounded border border-cad-border hover:bg-cad-text/5"
                             >
-                                管理技能
+                                {t("chat.manageSkills")}
+                            </button>
+                            <button
+                                onClick={() => setActiveDrawer("models")}
+                                className="px-2 py-1 rounded border border-cad-border hover:bg-cad-text/5"
+                            >
+                                {t("chat.modelSettings")}
                             </button>
                         </div>
                     </div>
@@ -417,10 +591,20 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             </div>
 
             <div className="px-3 py-2 bg-cad-panel border-t border-cad-border">
+                <SkillCandidateBar
+                    candidates={skillCandidates.candidates}
+                    isResolving={skillCandidates.isResolving}
+                    error={skillCandidates.error}
+                    removedCount={skillCandidates.removedCount}
+                    onRemove={skillCandidates.removeCandidate}
+                    onRestore={skillCandidates.restoreCandidates}
+                />
                 <div className="flex items-center justify-between text-[10px] text-cad-muted pb-1">
                     <span>
-                        工具轮次上限 {chat.maxRounds}
-                        {assistant?.toolNames ? ` · 白名单 ${assistant.toolNames.length} 个` : ""}
+                        {t("chat.maxRounds", { count: chat.maxRounds })}
+                        {assistant?.toolNames
+                            ? t("chat.toolWhitelist", { count: assistant.toolNames.length })
+                            : ""}
                     </span>
                     <span className="font-mono">
                         {formatTokens(totals.promptTokens + totals.completionTokens)} tok ·{" "}
@@ -431,7 +615,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     <textarea
                         ref={composerRef}
                         className="w-full bg-transparent border-0 rounded-lg pl-3 pr-20 py-3 text-sm text-cad-text placeholder-gray-500 focus:ring-0 resize-none min-h-[44px]"
-                        placeholder={assistant ? `向 ${assistant.name} 提问…` : "让 AI 画图…"}
+                        placeholder={
+                            assistant
+                                ? t("chat.askAssistant", { name: assistant.name })
+                                : t("chat.askAI")
+                        }
                         rows={2}
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
@@ -444,10 +632,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     />
                     <div className="absolute right-2 bottom-2 flex items-center gap-1">
                         <button
-                            onClick={chat.clearLocal}
+                            onClick={() => {
+                                chat.clearLocal();
+                                skillCandidates.reset();
+                            }}
                             disabled={busy || messages.length === 0}
                             className="p-1.5 text-cad-muted hover:text-cad-text rounded-md disabled:opacity-40"
-                            title="清空当前视图（服务端历史保留，可从会话历史重新打开）"
+                            title={t("chat.clearView")}
                         >
                             <span className="material-symbols-outlined text-[18px]">
                                 delete_sweep
@@ -461,7 +652,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                                     ? "text-red-500 hover:bg-red-500/10"
                                     : "text-cad-primary hover:bg-cad-primary/10"
                             }`}
-                            title={busy ? "停止生成" : "发送"}
+                            title={busy ? t("chat.stop") : t("chat.send")}
                         >
                             <span className="material-symbols-outlined text-[20px]">
                                 {busy ? "stop_circle" : "send"}
@@ -470,8 +661,87 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     </div>
                 </div>
             </div>
+
+            {activeDrawer && (
+                <div
+                    className="absolute inset-0 z-30 flex justify-end bg-black/20"
+                    onMouseDown={(event) => {
+                        if (event.target === event.currentTarget) setActiveDrawer(null);
+                    }}
+                >
+                    <div
+                        role="dialog"
+                        aria-label={t("chat.drawerAria", {
+                            title: t(DRAWER_TITLE_KEYS[activeDrawer]),
+                        })}
+                        className="flex h-full w-[min(380px,92%)] flex-col border-l border-cad-border bg-cad-panel shadow-2xl"
+                    >
+                        <div className="flex items-center justify-between border-b border-cad-border px-3 py-2">
+                            <span className="flex items-center gap-1.5 text-xs font-bold text-cad-text">
+                                <span className="material-symbols-outlined text-[18px] text-cad-primary">
+                                    {DRAWER_ICONS[activeDrawer]}
+                                </span>
+                                {t(DRAWER_TITLE_KEYS[activeDrawer])}
+                            </span>
+                            <button
+                                onClick={() => setActiveDrawer(null)}
+                                className="rounded p-1 text-cad-muted hover:bg-cad-text/10 hover:text-cad-text"
+                                title={t("chat.closeDrawer")}
+                                aria-label={t("chat.closeDrawer")}
+                            >
+                                <span className="material-symbols-outlined text-[18px]">close</span>
+                            </button>
+                        </div>
+                        <div className="min-h-0 flex-1 overflow-hidden">
+                            {activeDrawer === "assistants" && (
+                                <AssistantsPanel registry={registry} />
+                            )}
+                            {activeDrawer === "skills" && <AISkillsPanel registry={registry} />}
+                            {activeDrawer === "models" && <LLMModelsPanel registry={registry} />}
+                            {activeDrawer === "sessions" && (
+                                <SessionPanel
+                                    sessions={sessions}
+                                    activeSessionId={sessionId}
+                                    busy={busy}
+                                    onOpen={handleOpenSession}
+                                    onNew={() => {
+                                        skillCandidates.reset();
+                                        setActiveDrawer(null);
+                                        void chat.startSession();
+                                    }}
+                                    onRename={(id, title) => {
+                                        void apiService
+                                            .patchChatSession(id, { title })
+                                            .then(() => chat.loadSessions());
+                                    }}
+                                    onDelete={(id) => {
+                                        if (confirm(t("chat.deleteSessionConfirm"))) {
+                                            void chat.removeSession(id);
+                                        }
+                                    }}
+                                    onCompact={() => void chat.compact()}
+                                />
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
+};
+
+const DRAWER_TITLE_KEYS: Record<AIDrawerPanel, TranslationKey> = {
+    assistants: "chat.drawer.assistants",
+    skills: "chat.drawer.skills",
+    models: "chat.drawer.models",
+    sessions: "chat.drawer.sessions",
+};
+
+const DRAWER_ICONS: Record<AIDrawerPanel, string> = {
+    assistants: "group",
+    skills: "extension",
+    models: "deployed_code",
+    sessions: "history",
 };
 
 export default ChatPanel;

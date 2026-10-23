@@ -137,6 +137,7 @@ export function useAIChat(options: UseAIChatOptions) {
     const runningRef = useRef(false);
     const abortRef = useRef<AbortController | null>(null);
     const lastTextRef = useRef("");
+    const lastRecommendedRef = useRef<string[]>([]);
     const projectIdRef = useRef(projectId);
     const projectScopeRef = useRef(projectKey ?? projectId);
     const pendingReloadRef = useRef<string | null>(null);
@@ -307,13 +308,14 @@ export function useAIChat(options: UseAIChatOptions) {
     );
 
     const send = useCallback(
-        async (rawText: string) => {
+        async (rawText: string, recommendedSkillCodes: string[] = []) => {
             const text = rawText.trim();
             if (!text || runningRef.current) return false;
             // 先占位再 await：否则连点两次会同时通过守卫并发发起多个回合
             runningRef.current = true;
 
             lastTextRef.current = text;
+            lastRecommendedRef.current = recommendedSkillCodes;
             localTurnScopeRef.current = scopeKey;
             const turnId = createTurnId();
             const aiMessageId = `${turnId}-ai`;
@@ -423,6 +425,7 @@ export function useAIChat(options: UseAIChatOptions) {
                         planMode,
                         variantMode,
                         pinnedSkillCodes: pinnedRef.current,
+                        recommendedSkillCodes,
                         canvasContext: {
                             text: summary.text,
                             elementCount: stats.elementCount,
@@ -649,7 +652,10 @@ export function useAIChat(options: UseAIChatOptions) {
         abortRef.current?.abort();
     }, []);
 
-    const retry = useCallback(() => send(lastTextRef.current), [send]);
+    const retry = useCallback(
+        () => send(lastTextRef.current, lastRecommendedRef.current),
+        [send],
+    );
 
     const resolvePlan = useCallback(
         (messageId: string, roundIndex: number, status: PlanStatus, proposal?: PlanProposal) => {

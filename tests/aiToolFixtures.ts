@@ -571,4 +571,27 @@ export const TOOL_FIXTURES: ToolFixture[] = [
         expectation: { operation: "NONE", nullAction: true },
         blockCatalog: FIXTURE_BLOCK_CATALOG,
     },
+    {
+        id: "insert-block-by-name",
+        instruction: "在 (500, 400) 插入一个标准门洞",
+        call: call("insert_block_by_name", { name: "门洞", x: 500, y: 400 }),
+        expectation: { operation: "ADD", elementTypes: ["RECTANGLE", "LINE"] },
+        blockCatalog: FIXTURE_BLOCK_CATALOG,
+    },
+    {
+        id: "save-selection-as-block",
+        instruction: "把选中的图形保存为块，名字叫样品",
+        call: call("save_selection_as_block", { name: "样品" }),
+        expectation: {
+            operation: "SAVE_BLOCK",
+            targetIds: FIXTURE_SELECTION,
+            params: { blockName: "样品" },
+        },
+    },
+    {
+        id: "save-version",
+        instruction: "给当前图纸保存一个版本，说明写“增加标注”",
+        call: call("save_version", { message: "增加标注" }),
+        expectation: { operation: "SAVE_VERSION", params: { versionMessage: "增加标注" } },
+    },
 ];

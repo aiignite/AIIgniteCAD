@@ -26,8 +26,10 @@ import {
   parseSkillSteps,
   parseSkillStrings,
   toSkillJson,
+  type SkillContextSignal,
 } from "../services/aiEngine/skills/skillPlaybook";
-import { ensureSystemSkills } from "../services/aiEngine/skills/skillService";
+import { ensureSystemSkills, loadEnabledSkills } from "../services/aiEngine/skills/skillService";
+import { resolveCandidates } from "../services/aiEngine/skills/skillRouter";
 
 const router = Router();
 
@@ -216,6 +218,27 @@ const skillBody = [
 
 const idParam = param("id").isString().notEmpty();
 
+/**
+ * 候选解析与 actual 激活共用同一套打分，前端只负责展示与选择；
+ * 这样「推荐看到的技能」和「本轮真正注入的技能」不会出现两套规则。
+ */
+const resolveValidation = [
+  body("message").optional().isString().isLength({ max: 32000 }),
+  body("assistantId").optional({ nullable: true }).isString().isLength({ max: 128 }),
+  body("pinnedSkillCodes").optional().isArray({ max: 5 }),
+  body("pinnedSkillCodes.*").optional().isString().isLength({ max: 64 }),
+  body("recentSkillCodes").optional().isArray({ max: 8 }),
+  body("recentSkillCodes.*").optional().isString().isLength({ max: 64 }),
+  body("historyTexts").optional().isArray({ max: 3 }),
+  body("historyTexts.*").optional().isString().isLength({ max: 4000 }),
+  body("selectionTypes").optional().isArray({ max: 32 }),
+  body("selectionTypes.*").optional().isString().isLength({ max: 32 }),
+  body("contextSignals").optional().isArray({ max: MAX_SKILL_CONTEXT_SIGNALS }),
+  body("contextSignals.*")
+    .optional()
+    .custom((value: unknown) => (SKILL_CONTEXT_SIGNALS as readonly unknown[]).includes(value)),
+];
+
 const jsonList = (values: unknown): Prisma.InputJsonValue =>
   (Array.isArray(values) ? values : []) as unknown as Prisma.InputJsonValue;
 
@@ -234,6 +257,69 @@ async function findEditable(id: string, userId: string, res: Response) {
   }
   return row;
 }
+
+router.post("/resolve", resolveValidation, async (req: AuthRequest, res: Response) => {
+  if (hasValidationError(req, res)) return;
+  try {
+    const userId = req.user!.id;
+    await ensureSystemSkills().catch((error) => logger.warn("Seed system skills failed", { error }));
+    const [skills, assistant] = await Promise.all([
+      loadEnabledSkills(userId),
+      req.body.assistantId
+        ? prisma.assistant.findFirst({
+            where: { id: String(req.body.assistantId), userId },
+            include: { skills: true },
+          })
+        : Promise.resolve(null),
+    ]);
+    const bindings =
+      assistant?.skills.map((binding) => ({
+        skillId: binding.skillId,
+        weight: binding.weight,
+      })) ?? [];
+    const strings = (value: unknown, max: number): string[] =>
+      (Array.isArray(value) ? value : [])
+        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        .slice(0, max);
+    const contextSignals = strings(req.body.contextSignals, MAX_SKILL_CONTEXT_SIGNALS).filter(
+      (value): value is SkillContextSignal =>
+        (SKILL_CONTEXT_SIGNALS as readonly string[]).includes(value),
+    );
+
+    const candidates = resolveCandidates(
+      {
+        skills,
+        message: String(req.body.message ?? ""),
+        selectionTypes: strings(req.body.selectionTypes, 32),
+        pinnedSkillCodes: strings(req.body.pinnedSkillCodes, 5),
+        recentSkillCodes: strings(req.body.recentSkillCodes, 8),
+        historyTexts: strings(req.body.historyTexts, 3),
+        contextSignals,
+        bindings,
+      },
+      8,
+    );
+
+    return res.json({
+      matchedSkills: candidates.map((skill) => ({
+        code: skill.code,
+        name: skill.name,
+        description: skill.description,
+        category: skill.category,
+        score: skill.score,
+        reasons: skill.reasons,
+        tools: skill.toolNames ?? [],
+        version: skill.version,
+      })),
+    });
+  } catch (error) {
+    logger.error("Resolve skills failed", { userId: req.user!.id, error });
+    return res.status(500).json({
+      error: "Internal Server Error",
+      message: "Failed to resolve skills",
+    });
+  }
+});
 
 router.get("/", async (req: AuthRequest, res: Response) => {
   try {

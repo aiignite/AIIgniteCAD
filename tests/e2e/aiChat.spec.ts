@@ -302,11 +302,13 @@ async function openChat(page: Page): Promise<ChatMock> {
         window.localStorage.setItem("auth_token", "e2e-token");
     });
     await page.goto("/");
-    await expect(page.getByText("Welcome to AI Ignite CAD")).toBeVisible();
-    await page.getByText("New Drawing", { exact: true }).click();
-    await page.getByPlaceholder("My Drawing").fill("AI Chat Drawing");
-    await page.getByRole("button", { name: "Create", exact: true }).click();
+    await expect(page.getByText("欢迎使用 AI Ignite CAD")).toBeVisible();
+    await page.getByText("新建图纸", { exact: true }).click();
+    await page.getByPlaceholder("图纸名称，例如：装配图").fill("AI Chat Drawing");
+    await page.getByRole("button", { name: "创建", exact: true }).click();
     await expect(page.locator("#drawing-surface svg")).toBeVisible();
+    await page.getByRole("button", { name: "打开 AI 助手" }).click();
+    await expect(page.getByRole("dialog", { name: "AI 助手" })).toBeVisible();
     return chat;
 }
 
@@ -393,8 +395,10 @@ test("刷新后从服务端恢复会话历史", async ({ page }) => {
     await expect.poll(() => chat.rows.length).toBe(4);
 
     await page.reload();
-    await expect(page.getByText("Welcome to AI Ignite CAD")).toBeVisible();
+    await expect(page.getByText("欢迎使用 AI Ignite CAD")).toBeVisible();
     await page.getByText("AI Chat Drawing", { exact: true }).click();
+    await page.getByRole("button", { name: "打开 AI 助手" }).click();
+    await expect(page.getByRole("dialog", { name: "AI 助手" })).toBeVisible();
 
     await expect(page.getByText("画一个圆").first()).toBeVisible();
     await expect(page.getByText("圆已画好，请在预览中确认。").first()).toBeVisible();

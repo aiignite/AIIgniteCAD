@@ -85,7 +85,7 @@ const SPECS: Record<string, ErrorSpec> = {
     INVALID_ENDPOINT: {
         message: "模型端点不安全或被拒绝",
         retryable: false,
-        hint: "端点需为公网 https 地址，本地模型请使用 Ollama",
+        hint: "公网端点需使用 https；内网 HTTP 需服务端开启 AI_ALLOW_PRIVATE_ENDPOINTS，内网域名需加入 AI_ALLOWED_ENDPOINTS",
     },
     RATE_LIMITED: {
         message: "请求过于频繁，请稍后重试",

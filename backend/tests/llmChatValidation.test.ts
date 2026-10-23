@@ -69,4 +69,21 @@ describe("POST /api/llm/chat validation", () => {
     expect(prismaMock.lLMModel.findFirst).not.toHaveBeenCalled();
     expect(prismaMock.assistant.findFirst).not.toHaveBeenCalled();
   });
+
+  it("接受 null 形式的可选标识字段", async () => {
+    prismaMock.lLMModel.findFirst.mockResolvedValue(null);
+
+    const res = await postChat({
+      message: "hi",
+      sessionId: null,
+      projectId: null,
+      assistantId: null,
+      modelId: null,
+    });
+
+    // 校验通过后会继续解析模型；没有可用模型应返回业务错误而不是 VALIDATION
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("NO_MODEL_CONFIGURED");
+    expect(prismaMock.lLMModel.findFirst).toHaveBeenCalled();
+  });
 });

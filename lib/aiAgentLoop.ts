@@ -412,11 +412,23 @@ export function applyToolCalls(
                 ? [...current.blockInsertions, inserted]
                 : current.blockInsertions,
         };
+        const sideEffectSummary =
+            action.operation === "SAVE_BLOCK"
+                ? `已准备保存块「${action.params?.blockName ?? ""}」（${
+                      action.elements?.length ?? 0
+                  } 个图元），等待用户在预览中确认`
+                : action.operation === "SAVE_VERSION"
+                  ? `已准备保存版本${
+                        action.params?.versionMessage
+                            ? `：${action.params.versionMessage}`
+                            : ""
+                    }，等待用户在预览中确认`
+                  : null;
         results.push({
             toolCallId,
             name: call.name,
             ok: true,
-            summary: describeChange(diff, outcome.elements.length),
+            summary: sideEffectSummary ?? describeChange(diff, outcome.elements.length),
             changedIds: diff.changed.slice(0, 50),
         });
     }

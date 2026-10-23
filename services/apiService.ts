@@ -1,6 +1,7 @@
 import type {
     AgentChatRequest,
     AiSkill,
+    AiSkillCandidate,
     AIUsageSummary,
     Assistant,
     AssistantInput,
@@ -12,6 +13,7 @@ import type {
     ProjectVersion,
     ProjectVersionSummary,
     SkillInput,
+    SkillResolveInput,
 } from "../types";
 import { AIRequestError } from "../lib/aiErrors";
 import { markSkillStatsDirty } from "../store/skillStats";
@@ -168,6 +170,51 @@ class ApiService {
 
     async getProjects() {
         return this.request<{ projects: ProjectFile[]; total: number }>(`/projects`);
+    }
+
+    /** 上传 DWG 由后端 sidecar 转成 ASCII DXF，前端继续复用 parseDXF */
+    async convertDwg(file: File) {
+        const response = await fetch(`${API_BASE_URL}/import/dwg`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/octet-stream",
+                ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+            },
+            body: file,
+        });
+
+        // 网关/nginx 的 413 往往是 HTML，不能直接 response.json()
+        const isJson = (response.headers.get("content-type") ?? "").includes("application/json");
+        const data = isJson
+            ? ((await response.json()) as {
+                  dxf?: string;
+                  bytes?: number;
+                  message?: string;
+                  code?: string;
+                  requestId?: string;
+              })
+            : null;
+
+        if (!response.ok) {
+            const fallback =
+                response.status === 413
+                    ? "DWG 文件超过服务端大小限制"
+                    : `DWG 导入失败（HTTP ${response.status}）`;
+            const error = new Error(data?.message || fallback) as Error & {
+                status?: number;
+                code?: string;
+                requestId?: string;
+            };
+            error.status = response.status;
+            error.code = data?.code;
+            error.requestId = data?.requestId;
+            throw error;
+        }
+
+        if (!data || typeof data.dxf !== "string") {
+            throw new Error("DWG 转换服务返回了无法识别的结果");
+        }
+        return { dxf: data.dxf, bytes: data.bytes ?? 0 };
     }
 
     async getProject(id: string) {
@@ -365,6 +412,14 @@ class ApiService {
 
     async getSkills(): Promise<{ skills: AiSkill[] }> {
         return this.request<{ skills: AiSkill[] }>(`/skills`);
+    }
+
+    /** 输入过程中解析候选技能；与回合内的实际激活共用后端评分规则 */
+    async resolveSkills(data: SkillResolveInput): Promise<{ matchedSkills: AiSkillCandidate[] }> {
+        return this.request<{ matchedSkills: AiSkillCandidate[] }>(`/skills/resolve`, {
+            method: "POST",
+            body: JSON.stringify(data),
+        });
     }
 
     async getSkillStats(): Promise<{

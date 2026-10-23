@@ -125,7 +125,7 @@ describe("planToToolCalls", () => {
         const writeTools = SUPPORTED_AI_TOOL_NAMES.filter(
             (name) => !isReadOnlyTool(name) && !isViewTool(name),
         );
-        expect(writeTools).toHaveLength(22);
+        expect(writeTools).toHaveLength(25);
         const calls = planToToolCalls({
             goal: "逐个执行写工具",
             assumptions: [],

@@ -154,7 +154,7 @@ describe("POST /api/llm/chat tool calling", () => {
     expect(res.status).toBe(200);
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(body.tools).toHaveLength(28);
+    expect(body.tools).toHaveLength(31);
     expect(body.tool_choice).toBe("auto");
     expect(body.messages[0].role).toBe("system");
     expect(body.messages[0].content).toContain("画布世界坐标");
@@ -203,7 +203,7 @@ describe("POST /api/llm/chat tool calling", () => {
     expect(res.status).toBe(200);
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(body.tools).toHaveLength(28);
+    expect(body.tools).toHaveLength(31);
     expect(body.tools[0].input_schema.type).toBe("object");
     expect(body.system).toContain("本轮可用工具");
 
@@ -244,7 +244,7 @@ describe("POST /api/llm/chat tool calling", () => {
     expect(res.status).toBe(200);
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(body.tools[0].functionDeclarations).toHaveLength(28);
+    expect(body.tools[0].functionDeclarations).toHaveLength(31);
     expect(body.tools[0].functionDeclarations[0].parameters.type).toBe("OBJECT");
     expect(body.systemInstruction.parts[0].text).toContain("画布世界坐标");
 
@@ -266,7 +266,7 @@ describe("POST /api/llm/chat tool calling", () => {
               function: { name: "draw_text", arguments: { x: 5, y: 6, text: "Hi" } },
             }],
           },
-          prompt_eval_count: 31,
+          prompt_eval_count: 28,
           eval_count: 9,
           done: true,
         },
@@ -278,7 +278,7 @@ describe("POST /api/llm/chat tool calling", () => {
     expect(res.status).toBe(200);
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(body.tools).toHaveLength(28);
+    expect(body.tools).toHaveLength(31);
     expect(body.messages[0].role).toBe("system");
 
     const toolCall = parseEvents(res.text).find((event) => event.toolCall)?.toolCall;
@@ -288,7 +288,7 @@ describe("POST /api/llm/chat tool calling", () => {
     });
 
     const snapshot = metrics.snapshot();
-    expect(snapshot.histograms["ai.tokens.prompt"].p50).toBe(31);
+    expect(snapshot.histograms["ai.tokens.prompt"].p50).toBe(28);
     expect(snapshot.histograms["ai.tokens.completion"].p50).toBe(9);
   });
 
