@@ -16,6 +16,7 @@ import {
     selectSimilarIds,
 } from "../isolation";
 import { getElementBoundingBox, type BoundingBox } from "../geometry";
+import { groupElements, ungroupElements } from "../groups";
 import { normalizeViewName } from "../namedViews";
 import { unionBounds } from "../viewport";
 import * as Transform from "../transform";
@@ -180,6 +181,35 @@ export const BUILTIN_COMMANDS: CommandDefinition[] = [
             ctx.commitAction([...ctx.elements, ...copies]);
             ctx.setSelection(copies.map((element) => element.id));
             return { message: `Array ${rows}×${columns}` };
+        },
+    },
+    {
+        name: "GROUP",
+        aliases: ["G", "JOIN"],
+        description: "Combine the selected objects into one group",
+        run: (ctx) => {
+            const missing = requireSelection(ctx, "group");
+            if (missing) return missing;
+            if (ctx.selectedElements.length < 2) {
+                return { message: "Select at least two objects to group", error: true };
+            }
+            ctx.commitAction(groupElements(ctx.elements, ctx.selectedIds));
+            return { message: `Grouped ${ctx.selectedElements.length} objects` };
+        },
+    },
+    {
+        name: "UNGROUP",
+        aliases: ["UG", "UNJOIN"],
+        description: "Dissolve the groups of the selected objects",
+        run: (ctx) => {
+            const missing = requireSelection(ctx, "ungroup");
+            if (missing) return missing;
+            const next = ungroupElements(ctx.elements, ctx.selectedIds);
+            if (next === ctx.elements) {
+                return { message: "The selection is not grouped", error: true };
+            }
+            ctx.commitAction(next);
+            return { message: "Ungrouped the selection" };
         },
     },
     {

@@ -89,6 +89,8 @@ export interface CADElement {
     clockwise?: boolean; // Direction of the arc
     // Block reference specific
     blockReferenceId?: string; // Reference to BlockReference
+    /** 组合 id：同一 groupId 的图元视为一个对象，可整体移动与解散 */
+    groupId?: string;
     // Ellipse specific
     radiusX?: number;
     radiusY?: number;

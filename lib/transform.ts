@@ -91,6 +91,8 @@ export function moveElementFromTo(element: CADElement, from: Point, to: Point): 
 export function copyElement(element: CADElement, delta: Point): CADElement {
     const copied = moveElement(element, delta);
     copied.id = generateId();
+    // 副本是独立对象：去掉组合归属，粘贴后可逐个单独选中移动
+    delete copied.groupId;
     return copied;
 }
 
