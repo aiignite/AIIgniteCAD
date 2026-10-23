@@ -285,7 +285,7 @@ const ConventionsForm: React.FC<ConventionsFormProps> = ({
                                     title={t("conventions.deleteRule")}
                                     className="p-0.5 text-cad-muted hover:text-red-500"
                                 >
-                                    <span className="material-symbols-outlined text-[15px]">
+                                    <span className="material-symbols-outlined text-[16px]">
                                         delete
                                     </span>
                                 </button>

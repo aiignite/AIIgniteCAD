@@ -135,6 +135,7 @@ function createHarness(options: HarnessOptions = {}) {
             selection = new Set();
             ctx.selectedIds = selection;
         },
+        dynamicDistance: null,
         onNotification: message => notifications.push(message),
         onRequestTextEntry: position => textRequests.push(position),
         onRequestAdvancedShape: (tool, position) => advancedRequests.push({ tool, point: position }),
@@ -620,7 +621,7 @@ describe("选择与编辑工具", () => {
         expect(h.elements[0].start!.y).toBeCloseTo(10, 6);
         expect(h.elements[0].end!.x).toBeCloseTo(0, 6);
         expect(h.elements[0].end!.y).toBeCloseTo(20, 6);
-        expect(h.notifications).toContain("Rotated 1 objects.");
+        expect(h.notifications).toContain("Rotated 1 objects by 90.0°.");
     });
 
     it("SCALE 首次点击设基点并保留状态，第二次点击应用倍率", () => {
@@ -657,7 +658,7 @@ describe("选择与编辑工具", () => {
         expect(h.notifications).toContain("Offset by 10.00");
     });
 
-    it("TRIM 点击命中图元后删除并提交历史", () => {
+    it("TRIM 无剪切边界时不提交并提示", () => {
         const target = line(0, 0, 10, 0);
         const h = createHarness({ elements: [target], hit: target });
         h.use(ToolType.TRIM);
@@ -665,8 +666,26 @@ describe("选择与编辑工具", () => {
         h.moveTo(5, 0);
         h.down();
 
+        expect(h.commits).toHaveLength(0);
+        expect(h.notifications.join(" ")).toContain("No cutting edges");
+    });
+
+    it("TRIM 剪掉交点一侧的线段并提交历史", () => {
+        const target = line(0, 0, 100, 0);
+        const cutter = line(50, -20, 50, 20, "cutter");
+        const h = createHarness({ elements: [target, cutter], hit: target });
+        h.use(ToolType.TRIM);
+
+        // 点击右侧（x>50），保留左半
+        h.moveTo(80, 0);
+        h.down();
+
         expect(h.commits).toHaveLength(1);
-        expect(h.commits[0]).toHaveLength(0);
+        const committed = h.commits[0];
+        expect(committed).toHaveLength(2);
+        const trimmed = committed.find((element) => element.id === target.id)!;
+        expect(trimmed.start!.x).toBe(0);
+        expect(trimmed.end!.x).toBeCloseTo(50, 6);
     });
 });
 

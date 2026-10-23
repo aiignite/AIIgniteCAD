@@ -103,7 +103,7 @@ const PlanCard: React.FC<PlanCardProps> = ({ proposal, status, onApprove, onDism
                     playlist_play
                 </span>
                 <span className="text-[11px] font-bold text-cad-text">执行计划</span>
-                <span className="ml-auto text-[9px] px-1 rounded bg-cad-text/10 text-cad-muted">
+                <span className="ml-auto text-[10px] px-1 rounded bg-cad-text/10 text-cad-muted">
                     {status === "pending"
                         ? "待确认"
                         : status === "approved"
@@ -166,7 +166,7 @@ const PlanCard: React.FC<PlanCardProps> = ({ proposal, status, onApprove, onDism
                     >
                         取消
                     </button>
-                    <span className="text-[9px] text-cad-muted">
+                    <span className="text-[10px] text-cad-muted">
                         执行后仍会在预览中确认，只占一步撤销
                     </span>
                 </div>

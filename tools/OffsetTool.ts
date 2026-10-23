@@ -1,7 +1,7 @@
 /**
- * OffsetTool.ts — 按点击距离偏移选中对象
+ * OffsetTool.ts — 偏移选中对象
  *
- * 以点击位置到选中对象形心的距离作为偏移量。
+ * 优先使用动态输入键入的距离；未键入时以点击位置到选中对象形心的距离作为偏移量。
  */
 
 import { dist } from "../lib/canvasGeometry";
@@ -18,10 +18,13 @@ const OffsetTool: CanvasTool = {
             return;
         }
 
-        const centroid = Transform.getElementsCentroid(targets);
-        const distance = dist(centroid, ctx.point);
-        if (distance < 1) {
-            ctx.onNotification("Move farther from the selection to set the offset distance.");
+        // 键入的距离优先，可连续点击按同一距离多次偏移
+        const distance =
+            ctx.dynamicDistance !== null && ctx.dynamicDistance > 0
+                ? ctx.dynamicDistance
+                : dist(Transform.getElementsCentroid(targets), ctx.point);
+        if (!Number.isFinite(distance) || distance < 1) {
+            ctx.onNotification("Type a distance or click farther from the selection.");
             return;
         }
 

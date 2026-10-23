@@ -17,6 +17,8 @@ interface FooterProps {
     hiddenCount: number;
     /** 清除临时隐藏集 */
     onShowAllObjects: () => void;
+    /** 当前图纸名：显示在状态栏，无图纸时回退到模型空间占位 */
+    drawingName?: string;
 }
 
 /**
@@ -33,7 +35,7 @@ const ToggleButton: React.FC<{ label: string; active: boolean; onClick: () => vo
     </button>
 );
 
-export const Footer: React.FC<FooterProps> = ({ onCommand, hiddenCount, onShowAllObjects }) => {
+export const Footer: React.FC<FooterProps> = ({ onCommand, hiddenCount, onShowAllObjects, drawingName }) => {
     const { t } = useI18n();
     const { state, dispatch } = useCanvas();
     const { orthoMode, polarMode, snapMode, gridMode, drawingSettings } = state;
@@ -51,7 +53,7 @@ export const Footer: React.FC<FooterProps> = ({ onCommand, hiddenCount, onShowAl
     return (
         <footer className="flex flex-col shrink-0 z-20 border-t border-cad-border bg-cad-panel transition-colors duration-300">
             {/* Command Line Input */}
-            <div className="flex items-center px-4 py-2 border-b border-cad-border/50 bg-white dark:bg-[#0d1116] transition-colors duration-300">
+            <div className="flex items-center px-4 py-2 border-b border-cad-border/50 bg-cad-bg transition-colors duration-300">
                 <span className="text-cad-primary font-mono text-sm mr-2 font-bold">&gt;</span>
                 <input 
                     className="bg-transparent border-none text-cad-text text-sm w-full focus:ring-0 placeholder-gray-500 font-mono focus:outline-none transition-colors duration-300" 
@@ -96,7 +98,10 @@ export const Footer: React.FC<FooterProps> = ({ onCommand, hiddenCount, onShowAl
                 </div>
                 
                 <div className="flex items-center gap-1 shrink-0">
-                    <button className="px-2 py-0.5 rounded hover:bg-cad-text/10 text-cad-text font-bold transition-colors">{t("footer.modelSpace")}</button>
+                    {/* 当前图纸名：只读展示，无图纸时回退模型空间占位 */}
+                    <span className="max-w-[160px] truncate px-2 py-0.5 rounded text-cad-muted font-bold transition-colors" title={drawingName}>
+                        {drawingName ?? t("footer.modelSpace")}
+                    </span>
                     <div className="w-px h-3 bg-cad-border mx-1"></div>
                     {hiddenCount > 0 && (
                         <button

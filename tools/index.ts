@@ -12,6 +12,7 @@ import ArcTool from "./ArcTool";
 import CircleTool from "./CircleTool";
 import CopyTool from "./CopyTool";
 import DimensionTool from "./DimensionTool";
+import ExtendTool from "./ExtendTool";
 import HatchTool from "./HatchTool";
 import LineTool from "./LineTool";
 import MeasureTool from "./MeasureTool";
@@ -36,6 +37,7 @@ const TOOL_REGISTRY: Partial<Record<ToolType, CanvasTool>> = {
     [ToolType.HATCH]: HatchTool,
     [ToolType.COPY]: CopyTool,
     [ToolType.TRIM]: TrimTool,
+    [ToolType.EXTEND]: ExtendTool,
     [ToolType.MIRROR]: MirrorTool,
     [ToolType.ROTATE]: RotateTool,
     [ToolType.SCALE]: ScaleTool,

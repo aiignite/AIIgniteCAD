@@ -7,6 +7,7 @@
  */
 
 import { ToolType } from "../types";
+import type { TranslationKey } from "./i18n";
 
 /** 单键可切换的画布工具 */
 export interface ToolShortcut {
@@ -46,8 +47,28 @@ export function resolveActionShortcut(key: string): ShortcutAction | null {
     return ACTION_SHORTCUTS[key.toLowerCase()] ?? null;
 }
 
+/** 绘图辅助开关的功能键，沿用 AutoCAD 键位 */
+export const CANVAS_MODE_KEYS: readonly string[] = ["F3", "F7", "F8", "F10"];
+
+/** 是否由绘图辅助开关处理该功能键 */
+export function isCanvasModeKey(key: string): boolean {
+    return CANVAS_MODE_KEYS.includes(key);
+}
+
 /** 菜单里的修饰键提示：macOS 用 ⌘，其余用 Ctrl */
 export function modifierKeyLabel(): string {
     if (typeof navigator === "undefined") return "Ctrl";
     return /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘" : "Ctrl";
+}
+
+/** 编辑动作对应的菜单命令名，保证速查表与菜单文案一致 */
+export function shortcutActionLabel(action: ShortcutAction): TranslationKey {
+    switch (action) {
+        case "erase":
+            return "menu.edit.delete";
+        case "group":
+            return "menu.edit.group";
+        case "ungroup":
+            return "menu.edit.ungroup";
+    }
 }

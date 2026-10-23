@@ -3,14 +3,24 @@
  * 使用 React Context + useReducer 管理 CAD 相关全局状态
  */
 
-import React, { createContext, useContext, useReducer, useCallback, useEffect, useRef, ReactNode } from "react";
+import React, { createContext, useContext, useReducer, useCallback, useEffect, useRef, useState, ReactNode } from "react";
 import { ToolType, CADElement, DrawingSettings } from "../types";
-import { BulkUpdateCommand, CommandHistory } from "../lib/command";
+import { BulkUpdateCommand, CommandHistory, type CommandHistoryEntry } from "../lib/command";
 
 /* ─── State ─────────────────────────────────────────────────── */
 
 /** 历史记录实现方式：command 为增量命令栈，snapshot 为旧的整图快照 */
 export type HistoryMode = "command" | "snapshot";
+
+/** 撤销历史概览：供顶栏按钮禁用态与历史下拉列表消费 */
+export interface HistoryOverview {
+  canUndo: boolean;
+  canRedo: boolean;
+  /** 历史条目（旧→新）；snapshot 模式下条目无增删改统计 */
+  entries: CommandHistoryEntry[];
+  /** 当前所处位置，对应 entries 的 index；command 模式 -1 表示初始状态 */
+  currentIndex: number;
+}
 
 /**
  * 历史模式回退开关。
@@ -487,6 +497,10 @@ interface CanvasContextValue {
   }) => void;
   undo: () => void;
   redo: () => void;
+  /** 撤销历史概览（只读派生值），两种历史模式下都可用 */
+  historyOverview: HistoryOverview;
+  /** 跳转到历史栈的任意位置，批量撤销/重做合并为一次交互 */
+  jumpTo: (index: number) => void;
   loadHistory: (history: CADElement[][], index: number) => void;
   resetCanvas: () => void;
 }
@@ -504,6 +518,28 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
   const lastCommittedRef = useRef<CADElement[]>(state.elements);
   /** 增量命令栈；仅在 command 模式下使用 */
   const commandHistoryRef = useRef<CommandHistory | null>(null);
+  /** command 模式的历史概览；命令栈只在事件回调中读写，这里同步给渲染层 */
+  const [commandOverview, setCommandOverview] = useState<HistoryOverview>({
+    canUndo: false,
+    canRedo: false,
+    entries: [],
+    currentIndex: -1,
+  });
+
+  /** 把命令栈状态同步到概览（只能在事件回调中调用，渲染期不允许读 ref） */
+  const syncCommandOverview = useCallback(() => {
+    const history = commandHistoryRef.current;
+    if (!history) {
+      setCommandOverview({ canUndo: false, canRedo: false, entries: [], currentIndex: -1 });
+      return;
+    }
+    setCommandOverview({
+      canUndo: history.canUndo,
+      canRedo: history.canRedo,
+      entries: history.getEntries(),
+      currentIndex: history.currentIndex,
+    });
+  }, []);
 
   useEffect(() => {
     elementsRef.current = state.elements;
@@ -551,8 +587,9 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
       );
       // 命令栈的 applyElements 也会被撤销/重做复用，因此提交计数在这里单独记录
       dispatch({ type: "NOTE_COMMIT" });
+      syncCommandOverview();
     },
-    [state.historyMode, applyElements, getCommandHistory],
+    [state.historyMode, applyElements, getCommandHistory, syncCommandOverview],
   );
 
   const addElement = useCallback(
@@ -744,7 +781,8 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
       return;
     }
     getCommandHistory().undo();
-  }, [state.historyMode, state.history, state.historyIndex, getCommandHistory]);
+    syncCommandOverview();
+  }, [state.historyMode, state.history, state.historyIndex, getCommandHistory, syncCommandOverview]);
 
   /** 重做：与撤销对称 */
   const redo = useCallback(() => {
@@ -758,7 +796,8 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
       return;
     }
     getCommandHistory().redo();
-  }, [state.historyMode, state.history, state.historyIndex, getCommandHistory]);
+    syncCommandOverview();
+  }, [state.historyMode, state.history, state.historyIndex, getCommandHistory, syncCommandOverview]);
 
   /**
    * 载入图纸时重置历史：
@@ -773,8 +812,9 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
       lastCommittedRef.current = target;
       elementsRef.current = target;
       commandHistoryRef.current?.clear();
+      syncCommandOverview();
     },
-    []
+    [syncCommandOverview],
   );
 
   /** 重置画布：同时清空命令栈，恢复到初始示例图形 */
@@ -783,7 +823,46 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
     lastCommittedRef.current = INITIAL_ELEMENTS;
     elementsRef.current = INITIAL_ELEMENTS;
     dispatch({ type: "RESET" });
-  }, []);
+    syncCommandOverview();
+  }, [syncCommandOverview]);
+
+  /**
+   * 撤销历史概览：snapshot 模式直接从快照数组派生（渲染期只读 state），
+   * command 模式使用事件回调中同步的 commandOverview。
+   */
+  const historyOverview: HistoryOverview =
+    state.historyMode === "snapshot"
+      ? {
+          canUndo: state.historyIndex > 0,
+          canRedo: state.historyIndex < state.history.length - 1,
+          entries: state.history.map((_snapshot, index) => ({
+            index,
+            added: 0,
+            removed: 0,
+            modified: 0,
+          })),
+          currentIndex: state.historyIndex,
+        }
+      : commandOverview;
+
+  /** 跳转到历史栈任意位置：command 模式批量 undo/redo；snapshot 模式直接取帧 */
+  const jumpTo = useCallback(
+    (target: number) => {
+      if (state.historyMode === "snapshot") {
+        const clamped = Math.max(0, Math.min(Math.trunc(target), state.history.length - 1));
+        const snapshot = state.history[clamped];
+        if (!snapshot || clamped === state.historyIndex) return;
+        dispatch({ type: "LOAD_HISTORY", history: state.history, index: clamped });
+        dispatch({ type: "SET_ELEMENTS", elements: snapshot });
+        lastCommittedRef.current = snapshot;
+        elementsRef.current = snapshot;
+        return;
+      }
+      getCommandHistory().jumpTo(target);
+      syncCommandOverview();
+    },
+    [state.historyMode, state.history, state.historyIndex, getCommandHistory, syncCommandOverview],
+  );
 
   const value: CanvasContextValue = {
     state,
@@ -815,6 +894,8 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
     loadLayerState,
     undo,
     redo,
+    historyOverview,
+    jumpTo,
     loadHistory,
     resetCanvas,
   };

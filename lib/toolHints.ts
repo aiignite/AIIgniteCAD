@@ -42,6 +42,7 @@ const TOOL_LABELS: Record<HintLocale, Record<ToolType, string>> = {
         [ToolType.HATCH]: "填充",
         [ToolType.COPY]: "复制",
         [ToolType.TRIM]: "修剪",
+        [ToolType.EXTEND]: "延伸",
         [ToolType.MIRROR]: "镜像",
         [ToolType.ROTATE]: "旋转",
         [ToolType.SCALE]: "缩放",
@@ -68,6 +69,7 @@ const TOOL_LABELS: Record<HintLocale, Record<ToolType, string>> = {
         [ToolType.HATCH]: "Hatch",
         [ToolType.COPY]: "Copy",
         [ToolType.TRIM]: "Trim",
+        [ToolType.EXTEND]: "Extend",
         [ToolType.MIRROR]: "Mirror",
         [ToolType.ROTATE]: "Rotate",
         [ToolType.SCALE]: "Scale",
@@ -156,7 +158,7 @@ export function describeToolHint(
                     : next("Click the measurement start point");
             case ToolType.MIRROR:
                 return dragMode === "MIRROR_LINE"
-                    ? next("Specify the end of the mirror line")
+                    ? next("Specify the mirror line end: drag, or type an angle and press Enter")
                     : next("Specify the start of the mirror line");
             case ToolType.COPY:
                 return next(
@@ -165,14 +167,16 @@ export function describeToolHint(
                         : "Select the objects to copy first",
                 );
             case ToolType.ROTATE:
-                return next(
-                    selectedCount > 0
-                        ? "Click the base point, then drag to set the angle"
-                        : "Select the objects to rotate first",
-                );
+                return dragMode === "ROTATE_ITEMS"
+                    ? next("Set the angle: drag, or type an angle and press Enter")
+                    : next(
+                          selectedCount > 0
+                              ? "Click the base point, then drag to set the angle"
+                              : "Select the objects to rotate first",
+                      );
             case ToolType.SCALE:
                 if (dragMode === "SCALE_ITEMS") {
-                    return next("Move to set the factor, then click to apply");
+                    return next("Move to set the factor, click to apply, or type a factor and press Enter");
                 }
                 return next(
                     selectedCount > 0 ? "Click the scale base point" : "Select the objects to scale first",
@@ -180,11 +184,13 @@ export function describeToolHint(
             case ToolType.OFFSET:
                 return next(
                     selectedCount > 0
-                        ? "Click to set the offset direction and distance"
+                        ? "Click to offset, or type a distance first"
                         : "Select the objects to offset first",
                 );
             case ToolType.TRIM:
-                return next("Click the segment to trim away");
+                return next("Click the segment to trim away; other objects act as cutting edges");
+            case ToolType.EXTEND:
+                return next("Click the end to extend; it grows to the nearest boundary");
             case ToolType.ARRAY:
                 return next("Set rows, columns and spacing in the dialog");
             case ToolType.TEXT:
@@ -234,18 +240,24 @@ export function describeToolHint(
         case ToolType.MEASURE:
             return dragMode === "MEASURE" ? next("松开鼠标完成测量") : next("点击测量起点");
         case ToolType.MIRROR:
-            return dragMode === "MIRROR_LINE" ? next("指定镜像线终点") : next("指定镜像线起点");
+            return dragMode === "MIRROR_LINE"
+                ? next("指定镜像线终点：拖拽，或键入角度后回车")
+                : next("指定镜像线起点");
         case ToolType.COPY:
             return next(selectedCount > 0 ? "拖拽所选对象到目标位置" : "先选中要复制的对象");
         case ToolType.ROTATE:
-            return next(selectedCount > 0 ? "点击基点，再拖拽确定角度" : "先选中要旋转的对象");
+            return dragMode === "ROTATE_ITEMS"
+                ? next("确定角度：拖拽，或键入角度后回车")
+                : next(selectedCount > 0 ? "点击基点，再拖拽确定角度" : "先选中要旋转的对象");
         case ToolType.SCALE:
-            if (dragMode === "SCALE_ITEMS") return next("移动光标确定倍率，点击应用");
+            if (dragMode === "SCALE_ITEMS") return next("移动光标确定倍率、点击应用，或键入倍率后回车");
             return next(selectedCount > 0 ? "点击缩放基点" : "先选中要缩放的对象");
         case ToolType.OFFSET:
-            return next(selectedCount > 0 ? "点击确定偏移方向与距离" : "先选中要偏移的对象");
+            return next(selectedCount > 0 ? "点击完成偏移，或先键入距离" : "先选中要偏移的对象");
         case ToolType.TRIM:
-            return next("点击要修剪掉的线段");
+            return next("点击要剪掉的线段，其余图元即为剪切边界");
+        case ToolType.EXTEND:
+            return next("点击要延伸的端点，延伸到最近的边界");
         case ToolType.ARRAY:
             return next("在弹窗中设置行列与间距");
         case ToolType.TEXT:

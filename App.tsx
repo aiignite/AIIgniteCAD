@@ -20,6 +20,9 @@ import { PlotModal } from "./components/PlotModal";
 import { QuickSelectModal } from "./components/QuickSelectModal";
 import ImageTraceModal from "./components/ImageTraceModal";
 import FilesModal from "./components/FilesModal";
+import MenuBar from "./components/MenuBar";
+import SettingsView from "./components/SettingsView";
+import ShortcutsModal from "./components/ShortcutsModal";
 import AIAssistantWindow from "./components/ai/AIAssistantWindow";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ContextMenu, type ContextMenuItem } from "./components/ContextMenu";
@@ -36,13 +39,14 @@ import {
 import { useCanvas } from "./store/canvasStore";
 import { useApp } from "./store/appStore";
 import { useCollaboration } from "./hooks/useCollaboration";
+import { useAlignDistribute } from "./hooks/useAlignDistribute";
 import { apiService } from "./services/apiService";
 import { indexedDBService } from "./services/indexedDBService";
 import { syncService } from "./services/syncService";
 import { telemetryService } from "./services/telemetryService";
 import { createBlock, getBlock, insertBlockReference } from "./services/blockService";
 import { getExampleDrawing } from "./services/examples";
-import { parseDXF } from "./services/dxfService";
+import { parseDXF, exportToDXF } from "./services/dxfService";
 import { isDwgFile, parseDrawingFile } from "./services/drawingImport";
 import { createHatch } from "./services/hatchService";
 import { isEditableTarget } from "./lib/keyboard";
@@ -59,9 +63,27 @@ import {
     mergeHiddenIds,
 } from "./lib/isolation";
 import { groupElements, ungroupElements } from "./lib/groups";
-import { modifierKeyLabel, resolveActionShortcut, resolveToolShortcut } from "./lib/shortcuts";
+import {
+    isCanvasModeKey,
+    modifierKeyLabel,
+    resolveActionShortcut,
+    resolveToolShortcut,
+} from "./lib/shortcuts";
 import { toolLabel } from "./lib/toolHints";
-import { getViewBox, setViewBox, zoomViewportToBounds } from "./store/viewport";
+import {
+    type MenuActionId,
+    type MenuItem,
+    type MenuToggleId,
+    type SettingsSection,
+} from "./lib/menus";
+import { ZOOM_STEP } from "./lib/viewport";
+import {
+    getViewBox,
+    resetViewport,
+    setViewBox,
+    zoomViewportBy,
+    zoomViewportToBounds,
+} from "./store/viewport";
 import { elementClipboard } from "./store/clipboard";
 import * as Transform from "./lib/transform";
 import { loadNamedViews, saveNamedView as persistNamedView } from "./services/namedViews";
@@ -87,6 +109,14 @@ const BULK_DELETE_THRESHOLD = 5;
 
 /** AI 变更后脉冲高亮的时长，与 index.css 的 cad-ai-flash 动画保持一致 */
 const AI_FLASH_MS = 1200;
+
+/** 菜单里的绘图辅助命令用哪个功能键触发，和菜单栏显示的键位一致 */
+const TOGGLE_MODE_KEYS: Record<MenuToggleId, string> = {
+    snap: "F3",
+    grid: "F7",
+    ortho: "F8",
+    polar: "F10",
+};
 
 interface AIPreviewState {
     actions: AIActionResponse[];
@@ -219,6 +249,10 @@ function App() {
     const [showImageTrace, setShowImageTrace] = useState(false);
     const [showFiles, setShowFiles] = useState(false);
     const [aiOpen, setAiOpen] = useState(false);
+    /** 快捷键速查表 */
+    const [showShortcuts, setShowShortcuts] = useState(false);
+    /** 设置页打开时所在的分区；null 表示未打开 */
+    const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
     const [aiPreview, setAiPreview] = useState<AIPreviewState | null>(null);
     const [flashIds, setFlashIds] = useState<Set<string> | null>(null);
     /** 「问 AI」写入对话草稿；nonce 递增表示一次新的请求 */
@@ -249,6 +283,8 @@ function App() {
         showImageTrace ||
         showFiles ||
         showWelcomeModal ||
+        showShortcuts ||
+        settingsSection !== null ||
         aiPreview !== null ||
         pendingDeleteIds !== null ||
         activeTool === ToolType.ARRAY;
@@ -283,9 +319,7 @@ function App() {
     useEffect(() => {
         return syncService.onEvent((event) => {
             if (event.type === "conflict") {
-                showNotification(
-                    t("notify.syncConflict", { name: event.projectName }),
-                );
+                showNotification(t("notify.syncConflict", { name: event.projectName }));
                 return;
             }
 
@@ -499,10 +533,21 @@ function App() {
         }
     };
 
-    const handleShowUserProfile = () => {
-        setSideMode(SidePanelMode.USER_INFO);
-        setSidePanelOpen(true);
-    };
+    /** 打开设置页的指定分区（工具面板与菜单都指向同一个界面） */
+    const openSettings = useCallback((section: SettingsSection) => {
+        setSettingsSection(section);
+    }, []);
+
+    /** 把当前图纸导出为 DXF 文件 */
+    const handleExportDXF = useCallback(() => {
+        const blob = new Blob([exportToDXF(getElements())], { type: "application/dxf" });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `drawing-${Date.now()}.dxf`;
+        anchor.click();
+        URL.revokeObjectURL(url);
+    }, [getElements]);
 
     /** F3 / F7 / F8 / F10 分别切换捕捉、栅格、正交与极轴（沿用 AutoCAD 键位） */
     const toggleCanvasMode = useCallback(
@@ -533,6 +578,20 @@ function App() {
             }
         },
         [snapMode, gridMode, orthoMode, polarMode, canvasDispatch, t],
+    );
+
+    /** 功能键与菜单勾选共用一条切换路径，保证两处都给出同样的状态提示 */
+    const toggleView = useCallback(
+        (key: string) => {
+            const toggled = toggleCanvasMode(key);
+            if (!toggled) return;
+            showNotification(
+                toggled.on
+                    ? t("notify.modeOn", { name: toggled.label })
+                    : t("notify.modeOff", { name: toggled.label }),
+            );
+        },
+        [toggleCanvasMode, showNotification, t],
     );
 
     /** 复制选中的图元到剪贴板 */
@@ -642,7 +701,11 @@ function App() {
 
     /** 缩放到全部可见图元 */
     const handleZoomExtents = useCallback(() => {
-        const visible = displayableElements(getElements(), canvasState.hiddenLayers, hiddenObjectIds);
+        const visible = displayableElements(
+            getElements(),
+            canvasState.hiddenLayers,
+            hiddenObjectIds,
+        );
         if (visible.length === 0) return;
         zoomViewportToBounds(Transform.getCombinedBoundingBox(visible));
     }, [canvasState.hiddenLayers, getElements, hiddenObjectIds]);
@@ -669,6 +732,9 @@ function App() {
     }, [getElements, selectedIds, t]);
 
     const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
+    // 对齐 / 分布：右键菜单、迷你工具栏与属性面板共用的执行入口
+    const { applyAlign, applyDistribute } = useAlignDistribute();
 
     /** 右键菜单：按当前选择集组装菜单项 */
     const openContextMenu = useCallback(
@@ -735,6 +801,63 @@ function App() {
                         icon: "grid_view",
                         onSelect: () => setActiveTool(ToolType.ARRAY),
                     },
+                    ...(selectedIds.size >= 2
+                        ? ([
+                              {
+                                  id: "alignLeft",
+                                  label: t("context.alignLeft"),
+                                  icon: "align_horizontal_left",
+                                  separator: true,
+                                  onSelect: () => applyAlign("left"),
+                              },
+                              {
+                                  id: "alignRight",
+                                  label: t("context.alignRight"),
+                                  icon: "align_horizontal_right",
+                                  onSelect: () => applyAlign("right"),
+                              },
+                              {
+                                  id: "alignCenterX",
+                                  label: t("context.alignCenterX"),
+                                  icon: "align_horizontal_center",
+                                  onSelect: () => applyAlign("centerX"),
+                              },
+                              {
+                                  id: "alignTop",
+                                  label: t("context.alignTop"),
+                                  icon: "align_vertical_top",
+                                  onSelect: () => applyAlign("top"),
+                              },
+                              {
+                                  id: "alignBottom",
+                                  label: t("context.alignBottom"),
+                                  icon: "align_vertical_bottom",
+                                  onSelect: () => applyAlign("bottom"),
+                              },
+                              {
+                                  id: "alignCenterY",
+                                  label: t("context.alignCenterY"),
+                                  icon: "align_vertical_center",
+                                  onSelect: () => applyAlign("centerY"),
+                              },
+                          ] as ContextMenuItem[])
+                        : []),
+                    ...(selectedIds.size >= 3
+                        ? ([
+                              {
+                                  id: "distributeH",
+                                  label: t("context.distributeH"),
+                                  icon: "align_justify_space_between",
+                                  onSelect: () => applyDistribute("horizontal"),
+                              },
+                              {
+                                  id: "distributeV",
+                                  label: t("context.distributeV"),
+                                  icon: "align_justify_space_between",
+                                  onSelect: () => applyDistribute("vertical"),
+                              },
+                          ] as ContextMenuItem[])
+                        : []),
                     {
                         id: "group",
                         label: t("context.group"),
@@ -813,6 +936,8 @@ function App() {
             setContextMenu({ x: position.client.x, y: position.client.y, items });
         },
         [
+            applyAlign,
+            applyDistribute,
             handleAskAboutSelection,
             handleCopySelection,
             handleGroupSelection,
@@ -1030,8 +1155,7 @@ function App() {
         }
 
         const sideEffects = aiPreview.actions.filter(
-            (action) =>
-                action.operation === "SAVE_BLOCK" || action.operation === "SAVE_VERSION",
+            (action) => action.operation === "SAVE_BLOCK" || action.operation === "SAVE_VERSION",
         );
         for (const action of sideEffects) {
             if (!activeFile) {
@@ -1077,9 +1201,7 @@ function App() {
                 },
                 canvasState.drawingSettings,
             );
-            const message =
-                action.params?.versionMessage ||
-                `AI · ${new Date().toLocaleString()}`;
+            const message = action.params?.versionMessage || `AI · ${new Date().toLocaleString()}`;
             try {
                 const result = await apiService.createProjectVersion(
                     activeFile.id,
@@ -1101,9 +1223,7 @@ function App() {
         reportTurnOutcome(aiPreview.turn, "applied");
         setAiPreview(null);
         if (changed) {
-            showNotification(
-                t("notify.aiApplied", { count: plan.incoming.length }),
-            );
+            showNotification(t("notify.aiApplied", { count: plan.incoming.length }));
         }
     }, [
         aiPreview,
@@ -1314,14 +1434,16 @@ function App() {
             // 输入控件内保留原生编辑行为（命令栏、聊天框、属性编辑）
             if (isEditableTarget(e.target)) return;
 
-            const toggled = toggleCanvasMode(e.key);
-            if (toggled) {
+            // F1 打开速查表：与浏览器默认的帮助行为无关，必须尽早拦下
+            if (e.key === "F1") {
                 e.preventDefault();
-                showNotification(
-                    toggled.on
-                        ? t("notify.modeOn", { name: toggled.label })
-                        : t("notify.modeOff", { name: toggled.label }),
-                );
+                setShowShortcuts(true);
+                return;
+            }
+
+            if (isCanvasModeKey(e.key)) {
+                e.preventDefault();
+                toggleView(e.key);
                 return;
             }
 
@@ -1379,9 +1501,7 @@ function App() {
                 if (tool) {
                     e.preventDefault();
                     setActiveTool(tool);
-                    showNotification(
-                        t("notify.toolSwitched", { tool: toolLabel(tool, locale) }),
-                    );
+                    showNotification(t("notify.toolSwitched", { tool: toolLabel(tool, locale) }));
                     return;
                 }
                 const action = resolveActionShortcut(e.key);
@@ -1435,7 +1555,7 @@ function App() {
         locale,
         modalOpen,
         requestDeleteSelection,
-        toggleCanvasMode,
+        toggleView,
         setActiveTool,
         setShowFiles,
         setShowPlot,
@@ -1738,7 +1858,156 @@ function App() {
         [commitAction, getElements, setSelection, flashElements, showNotification, t],
     );
 
-    // Auth pages
+    const handleImportClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    /**
+     * 菜单栏命令落地：工具类直接切工具，带 section 的命令打开设置页对应分区，
+     * 其余命令映射到已经在键盘 / 工具面板 / 顶栏里使用的同一批处理函数，
+     * 避免菜单成为第二套实现。
+     */
+    const handleMenuAction = useCallback(
+        (action: MenuActionId, item: MenuItem) => {
+            if (action.startsWith("activate:")) {
+                setActiveTool(action.slice("activate:".length) as ToolType);
+                return;
+            }
+            if (item.kind === "command" && item.section) {
+                setSettingsSection(item.section);
+                return;
+            }
+
+            switch (action) {
+                case "file.new":
+                case "file.open":
+                    setShowFiles(true);
+                    return;
+                case "file.save":
+                    void handleSave();
+                    return;
+                case "file.saveVersion":
+                    void handleSaveVersion();
+                    return;
+                case "file.versions":
+                    handleOpenVersionHistory();
+                    return;
+                case "file.import":
+                    handleImportClick();
+                    return;
+                case "file.imageTrace":
+                    setShowImageTrace(true);
+                    return;
+                case "file.export":
+                    handleExportDXF();
+                    return;
+                case "file.plot":
+                    setShowPlot(true);
+                    return;
+                case "file.logout":
+                    void handleLogout();
+                    return;
+                case "edit.undo":
+                    handleUndo();
+                    return;
+                case "edit.redo":
+                    handleRedo();
+                    return;
+                case "edit.copy":
+                    handleCopySelection();
+                    return;
+                case "edit.paste":
+                    handlePasteClipboard();
+                    return;
+                case "edit.delete":
+                    requestDeleteSelection();
+                    return;
+                case "edit.selectAll":
+                    handleSelectAll();
+                    return;
+                case "edit.group":
+                    handleGroupSelection();
+                    return;
+                case "edit.ungroup":
+                    handleUngroupSelection();
+                    return;
+                case "edit.hide":
+                    handleHideSelection();
+                    return;
+                case "edit.isolate":
+                    handleIsolateSelection();
+                    return;
+                case "edit.showAll":
+                    showAllObjects();
+                    return;
+                case "view.zoomIn":
+                    zoomViewportBy(1 / ZOOM_STEP);
+                    return;
+                case "view.zoomOut":
+                    zoomViewportBy(ZOOM_STEP);
+                    return;
+                case "view.zoomExtents":
+                    handleZoomExtents();
+                    return;
+                case "view.reset":
+                    resetViewport();
+                    return;
+                case "view.grid":
+                case "view.snap":
+                case "view.ortho":
+                case "view.polar":
+                    toggleView(TOGGLE_MODE_KEYS[action.slice("view.".length) as MenuToggleId]);
+                    return;
+                case "view.review":
+                    setSideMode(SidePanelMode.REVIEW);
+                    setSidePanelOpen(true);
+                    return;
+                case "view.conventions":
+                    setSideMode(SidePanelMode.CONVENTIONS);
+                    setSidePanelOpen(true);
+                    return;
+                case "tool.aiWindow":
+                    setAiOpen(true);
+                    return;
+                case "help.shortcuts":
+                    setShowShortcuts(true);
+                    return;
+                case "help.support":
+                    window.open(
+                        "https://github.com/AIIgnite/AIIgniteCAD/issues",
+                        "_blank",
+                        "noopener,noreferrer",
+                    );
+                    return;
+                default:
+                    break;
+            }
+        },
+        [
+            handleCopySelection,
+            handleExportDXF,
+            handleGroupSelection,
+            handleHideSelection,
+            handleImportClick,
+            handleIsolateSelection,
+            handlePasteClipboard,
+            handleRedo,
+            handleSave,
+            handleSaveVersion,
+            handleSelectAll,
+            handleUngroupSelection,
+            handleUndo,
+            handleZoomExtents,
+            requestDeleteSelection,
+            setActiveTool,
+            setSideMode,
+            setSidePanelOpen,
+            showAllObjects,
+            toggleView,
+        ],
+    );
+
+    // 登录页分支必须放在最后一个 Hook 之后：菜单栏命令也是 Hook，提前 return 会让它变成条件调用
     if (!isLoggedIn) {
         if (authMode === "register") {
             return (
@@ -1757,10 +2026,6 @@ function App() {
             />
         );
     }
-
-    const handleImportClick = () => {
-        fileInputRef.current?.click();
-    };
 
     /**
      * 打开内置示例：解析 DXF 后作为新文件落库并激活，
@@ -1809,25 +2074,21 @@ function App() {
             const imported = await parseDrawingFile(file);
             if (imported.length === 0) {
                 showNotification(
-                    isDwgFile(file.name)
-                        ? t("notify.dwgNoElements")
-                        : t("notify.dxfNoElements"),
+                    isDwgFile(file.name) ? t("notify.dwgNoElements") : t("notify.dxfNoElements"),
                 );
                 return;
             }
             handleImport(imported);
             showNotification(t("notify.imported", { name: file.name, count: imported.length }));
         } catch (error) {
-            showNotification(
-                error instanceof Error ? error.message : t("notify.importFailed"),
-            );
+            showNotification(error instanceof Error ? error.message : t("notify.importFailed"));
         } finally {
             setIsImporting(false);
         }
     };
 
     return (
-        <div className="flex flex-col h-screen w-screen overflow-hidden bg-cad-bg text-cad-text font-display relative">
+        <div className="flex flex-col h-screen w-screen overflow-hidden bg-cad-bg text-cad-text font-sans relative">
             {/* HIDDEN FILE INPUT FOR IMPORT */}
             <input
                 type="file"
@@ -1864,31 +2125,33 @@ function App() {
                 onDeleteFile={(id) => void handleDeleteFile(id)}
             />
 
+            {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
+
             {/* TEXT INPUT MODAL */}
             {showTextModal && (
                 <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[2px]">
                     <div className="bg-cad-panel border border-cad-border p-4 rounded-lg shadow-xl w-80 animate-in zoom-in-95 duration-200">
-                        <h3 className="text-sm font-bold mb-3">Enter Text</h3>
+                        <h3 className="text-sm font-bold mb-3">{t("textModal.title")}</h3>
                         <input
                             autoFocus
-                            className="w-full bg-white dark:bg-black/20 border border-cad-border rounded px-2 py-1.5 text-sm mb-4 outline-none focus:border-cad-primary"
+                            className="w-full bg-cad-bg border border-cad-border rounded px-2 py-1.5 text-sm mb-4 outline-none focus:border-cad-primary"
                             value={textInputValue}
                             onChange={(e) => setTextInputValue(e.target.value)}
                             onKeyDown={(e) => e.key === "Enter" && confirmTextEntry()}
-                            placeholder="Type here..."
+                            placeholder={t("textModal.placeholder")}
                         />
                         <div className="flex justify-end gap-2">
                             <button
                                 onClick={() => setShowTextModal(false)}
                                 className="px-3 py-1.5 text-xs text-cad-muted hover:bg-cad-border/50 rounded"
                             >
-                                Cancel
+                                {t("common.cancel")}
                             </button>
                             <button
                                 onClick={confirmTextEntry}
                                 className="px-3 py-1.5 text-xs bg-cad-primary text-white rounded hover:bg-cad-primaryHover"
                             >
-                                Add Text
+                                {t("textModal.confirm")}
                             </button>
                         </div>
                     </div>
@@ -1975,9 +2238,9 @@ function App() {
 
             {pendingDeleteIds && (
                 <ConfirmDialog
-                    title="Delete selected elements?"
-                    message={`This will remove ${pendingDeleteIds.length} elements from the drawing. You can undo the deletion with Ctrl/Cmd+Z.`}
-                    confirmLabel="Delete"
+                    title={t("deleteConfirm.title")}
+                    message={t("deleteConfirm.message", { count: pendingDeleteIds.length })}
+                    confirmLabel={t("deleteConfirm.confirm")}
                     danger
                     onConfirm={confirmPendingDelete}
                     onCancel={() => setPendingDeleteIds(null)}
@@ -1999,33 +2262,33 @@ function App() {
                 <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/10 backdrop-blur-[1px]">
                     <div className="flex items-center gap-3 rounded-lg border border-cad-border bg-cad-panel px-4 py-3 shadow-xl">
                         <span className="size-4 animate-spin rounded-full border-2 border-cad-primary/30 border-t-cad-primary" />
-                        <span className="text-sm font-medium text-cad-text">{t("notify.importing")}</span>
+                        <span className="text-sm font-medium text-cad-text">
+                            {t("notify.importing")}
+                        </span>
                     </div>
                 </div>
             )}
 
             <Header
-                elements={elements}
-                onImportClick={handleImportClick}
                 onUndo={handleUndo}
                 onRedo={handleRedo}
-                currentUser={currentUser}
-                onLogout={handleLogout}
                 fileName={activeFile?.name}
                 onSave={handleSave}
-                onSaveVersion={() => void handleSaveVersion()}
-                onOpenVersions={handleOpenVersionHistory}
-                onOpenPlot={() => setShowPlot(true)}
-                onOpenImageTrace={() => setShowImageTrace(true)}
+                onExport={handleExportDXF}
                 aiOpen={aiOpen}
                 onToggleAI={() => setAiOpen((open) => !open)}
+            />
+
+            <MenuBar
+                onAction={handleMenuAction}
+                toggles={{ grid: gridMode, snap: snapMode, ortho: orthoMode, polar: polarMode }}
             />
 
             <div className="flex flex-1 overflow-hidden relative">
                 <Toolbar
                     onOpenFiles={() => setShowFiles(true)}
+                    onOpenSettings={openSettings}
                     currentUser={currentUser}
-                    onShowUserProfile={handleShowUserProfile}
                 />
                 <Canvas
                     onRequestTextEntry={handleRequestTextEntry}
@@ -2042,11 +2305,8 @@ function App() {
                 <RightPanel
                     key={currentUser?.id || "no-user"}
                     mode={sideMode}
-                    onChangeMode={setSideMode}
                     collapsed={!sidePanelOpen}
                     currentElements={elements}
-                    drawingSettings={drawingSettings}
-                    onUpdateSettings={setDrawingSettings}
                     onUpdateElement={handlePropertyUpdate}
                     onApplyAIAction={handleAIAction}
                     onAskAIFix={handleAskAIFix}
@@ -2054,8 +2314,6 @@ function App() {
                     onSaveDesignConventions={handleSaveDesignConventions}
                     files={files}
                     activeFileId={activeFile?.id || null}
-                    currentUser={currentUser}
-                    onLogout={handleLogout}
                 />
                 <AIAssistantWindow
                     open={aiOpen}
@@ -2072,6 +2330,14 @@ function App() {
                     onPreviewActions={handleAIPreview}
                     draft={chatDraft}
                 />
+                {settingsSection && (
+                    <SettingsView
+                        section={settingsSection}
+                        onSectionChange={setSettingsSection}
+                        onClose={() => setSettingsSection(null)}
+                        onLogout={handleLogout}
+                    />
+                )}
             </div>
             {contextMenu && (
                 <ContextMenu
@@ -2085,6 +2351,7 @@ function App() {
                 onCommand={handleCommand}
                 hiddenCount={hiddenCount}
                 onShowAllObjects={showAllObjects}
+                drawingName={activeFile?.name}
             />
         </div>
     );

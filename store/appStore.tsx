@@ -5,6 +5,7 @@
 
 import React, { createContext, useContext, useReducer, useCallback, ReactNode } from "react";
 import { SidePanelMode, ProjectFile } from "../types";
+import { readUIPreferences, writeUIPreferences } from "../lib/uiPreferences";
 
 /* ─── State ─────────────────────────────────────────────────── */
 
@@ -26,7 +27,8 @@ const initialState: AppState = {
   files: [],
   activeFile: null,
   sideMode: SidePanelMode.REVIEW,
-  sidePanelOpen: false,
+  // 面板展开状态持久化，刷新后保持上次的布局
+  sidePanelOpen: readUIPreferences().sidePanelOpen,
   loading: false,
   notification: null,
 };
@@ -152,7 +154,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const setSidePanelOpen = useCallback(
-    (value: boolean) => dispatch({ type: "SET_SIDE_PANEL_OPEN", value }),
+    (value: boolean) => {
+      dispatch({ type: "SET_SIDE_PANEL_OPEN", value });
+      writeUIPreferences({ sidePanelOpen: value });
+    },
     []
   );
 

@@ -102,7 +102,7 @@ export const MiniMap: React.FC<MiniMapProps> = ({ elements, viewBox, onCenter })
                                 y1={from.y}
                                 x2={to.x}
                                 y2={to.y}
-                                stroke="var(--cad-muted)"
+                                stroke="rgb(var(--cad-muted))"
                                 strokeWidth={1}
                             />
                         );
@@ -116,7 +116,7 @@ export const MiniMap: React.FC<MiniMapProps> = ({ elements, viewBox, onCenter })
                                 cy={center.y}
                                 r={shape.radius * transform.scale}
                                 fill="none"
-                                stroke="var(--cad-muted)"
+                                stroke="rgb(var(--cad-muted))"
                                 strokeWidth={1}
                             />
                         );
@@ -133,7 +133,7 @@ export const MiniMap: React.FC<MiniMapProps> = ({ elements, viewBox, onCenter })
                                 key={entry.id}
                                 points={points}
                                 fill="none"
-                                stroke="var(--cad-muted)"
+                                stroke="rgb(var(--cad-muted))"
                                 strokeWidth={1}
                             />
                         );
@@ -154,7 +154,7 @@ export const MiniMap: React.FC<MiniMapProps> = ({ elements, viewBox, onCenter })
                             width={Math.max(bottomRight.x - topLeft.x, 0.5)}
                             height={Math.max(bottomRight.y - topLeft.y, 0.5)}
                             fill="none"
-                            stroke="var(--cad-muted)"
+                            stroke="rgb(var(--cad-muted))"
                             strokeWidth={1}
                         />
                     );

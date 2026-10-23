@@ -10,6 +10,7 @@ export enum ToolType {
     HATCH = "HATCH",
     COPY = "COPY",
     TRIM = "TRIM",
+    EXTEND = "EXTEND",
     MIRROR = "MIRROR",
     ROTATE = "ROTATE",
     SCALE = "SCALE",
@@ -26,11 +27,10 @@ export enum ToolType {
     ELLIPSE = "ELLIPSE",
 }
 
+/** 右侧助手面板只显示这两类内容；设置与账户信息已收进整页设置界面 */
 export enum SidePanelMode {
     REVIEW = "REVIEW",
     CONVENTIONS = "CONVENTIONS",
-    SETTINGS = "SETTINGS",
-    USER_INFO = "USER_INFO",
 }
 
 export type UnitType = "mm" | "cm" | "m" | "in" | "ft";

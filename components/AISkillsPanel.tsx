@@ -637,7 +637,7 @@ export const AISkillsPanel: React.FC<AISkillsPanelProps> = ({ registry }) => {
                                 <p className="text-xs font-bold text-cad-text truncate">
                                     {skill.name}
                                     {skill.isSystem && (
-                                        <span className="ml-1 text-[9px] px-1 rounded bg-cad-primary/20 text-cad-primary align-middle">
+                                        <span className="ml-1 text-[10px] px-1 rounded bg-cad-primary/20 text-cad-primary align-middle">
                                             系统
                                         </span>
                                     )}
@@ -681,7 +681,7 @@ export const AISkillsPanel: React.FC<AISkillsPanelProps> = ({ registry }) => {
                                 {skill.keywords.slice(0, 8).map((keyword) => (
                                     <span
                                         key={keyword}
-                                        className="px-1 rounded bg-cad-text/10 text-[9px] text-cad-muted"
+                                        className="px-1 rounded bg-cad-text/10 text-[10px] text-cad-muted"
                                     >
                                         {keyword}
                                     </span>
@@ -726,12 +726,12 @@ export const AISkillsPanel: React.FC<AISkillsPanelProps> = ({ registry }) => {
                                 </button>
                             )}
                             {(skill.steps?.length ?? 0) > 0 && (
-                                <span className="text-[9px] text-cad-muted">
+                                <span className="text-[10px] text-cad-muted">
                                     {skill.steps.length} 步
                                 </span>
                             )}
                             {skill.toolNames.length > 0 && (
-                                <span className="ml-auto text-[9px] text-cad-muted truncate">
+                                <span className="ml-auto text-[10px] text-cad-muted truncate">
                                     {skill.toolNames.length} 个工具
                                 </span>
                             )}

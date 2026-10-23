@@ -1,77 +1,50 @@
-import React, { useState, useEffect, useRef } from "react";
-import { exportToDXF } from "../services/dxfService";
-import { CADElement } from "../types";
-import { useI18n } from "../lib/i18n";
+import React, { useState } from "react";
+import { useI18n, type Translate } from "../lib/i18n";
+import { useTheme, setThemePreference } from "../store/theme";
+import { useCanvas } from "../store/canvasStore";
+import type { CommandHistoryEntry } from "../lib/command";
 
 interface HeaderProps {
-    elements: CADElement[];
-    onImportClick: () => void;
     onUndo?: () => void;
     onRedo?: () => void;
-    currentUser?: any;
-    onLogout?: () => Promise<void>;
     fileName?: string;
     onSave?: () => void;
-    onSaveVersion?: () => void;
-    onOpenVersions?: () => void;
-    onOpenPlot?: () => void;
-    onOpenImageTrace?: () => void;
+    /** 导出 DXF：与菜单栏「文件 → 导出 DXF」走同一个入口 */
+    onExport?: () => void;
     /** 顶部 AI 助手入口：打开非模态浮窗 */
     aiOpen?: boolean;
     onToggleAI?: () => void;
 }
 
+/** 历史条目 → 展示文案：单一增/删/改给出精确数量，混合变更给总数，无统计给步数 */
+function historyEntryLabel(entry: CommandHistoryEntry, t: Translate): string {
+    const { added, removed, modified } = entry;
+    if (added > 0 && removed === 0 && modified === 0) return t("history.added", { count: added });
+    if (removed > 0 && added === 0 && modified === 0) return t("history.removed", { count: removed });
+    if (modified > 0 && added === 0 && removed === 0) return t("history.modified", { count: modified });
+    if (added === 0 && removed === 0 && modified === 0) return t("history.step", { n: entry.index + 1 });
+    return t("history.changed", { count: added + removed + modified });
+}
+
 export const Header: React.FC<HeaderProps> = ({
-    elements,
-    onImportClick,
     onUndo,
     onRedo,
-    currentUser,
-    onLogout,
     fileName,
     onSave,
-    onSaveVersion,
-    onOpenVersions,
-    onOpenPlot,
-    onOpenImageTrace,
+    onExport,
     aiOpen = false,
     onToggleAI,
 }) => {
     const { t } = useI18n();
-    // 初始值直接从 DOM 读取，避免挂载后再 setState 触发级联渲染
-    const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains("dark"));
-    const [fileMenuOpen, setFileMenuOpen] = useState(false);
-    const fileMenuRef = useRef<HTMLDivElement>(null);
+    // 主题走外部 store：持久化、跟随系统；顶栏按钮在明暗间切换（写入显式偏好）
+    const { effective } = useTheme();
+    const isDark = effective === "dark";
+    const { historyOverview, jumpTo } = useCanvas();
+    const [historyOpen, setHistoryOpen] = useState(false);
     const displayName = fileName ?? `${t("common.untitled")}.dxf`;
 
-    useEffect(() => {
-        if (!fileMenuOpen) return;
-        const handleClickOutside = (event: MouseEvent) => {
-            if (!fileMenuRef.current?.contains(event.target as Node)) setFileMenuOpen(false);
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [fileMenuOpen]);
-
     const toggleTheme = () => {
-        if (document.documentElement.classList.contains("dark")) {
-            document.documentElement.classList.remove("dark");
-            setIsDark(false);
-        } else {
-            document.documentElement.classList.add("dark");
-            setIsDark(true);
-        }
-    };
-
-    const handleExport = () => {
-        const dxfContent = exportToDXF(elements);
-        const blob = new Blob([dxfContent], { type: "application/dxf" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `drawing-${Date.now()}.dxf`;
-        a.click();
-        URL.revokeObjectURL(url);
+        setThemePreference(isDark ? "light" : "dark");
     };
 
     return (
@@ -182,18 +155,72 @@ export const Header: React.FC<HeaderProps> = ({
                 <div className="flex items-center gap-1 text-cad-muted">
                     <button
                         onClick={onUndo}
-                        className="p-1.5 hover:text-cad-text hover:bg-cad-text/10 rounded transition-colors"
+                        disabled={!historyOverview.canUndo}
+                        className="p-1.5 rounded transition-colors hover:text-cad-text hover:bg-cad-text/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-cad-muted"
                         title={t("header.undo")}
+                        aria-disabled={!historyOverview.canUndo}
                     >
                         <span className="material-symbols-outlined text-[20px]">undo</span>
                     </button>
                     <button
                         onClick={onRedo}
-                        className="p-1.5 hover:text-cad-text hover:bg-cad-text/10 rounded transition-colors"
+                        disabled={!historyOverview.canRedo}
+                        className="p-1.5 rounded transition-colors hover:text-cad-text hover:bg-cad-text/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-cad-muted"
                         title={t("header.redo")}
+                        aria-disabled={!historyOverview.canRedo}
                     >
                         <span className="material-symbols-outlined text-[20px]">redo</span>
                     </button>
+                    {/* 撤销历史：列表展示并可点击跳转到任意一步 */}
+                    {historyOverview.entries.length > 0 && (
+                        <div className="relative">
+                            <button
+                                onClick={() => setHistoryOpen((prev) => !prev)}
+                                aria-haspopup="menu"
+                                aria-expanded={historyOpen}
+                                title={t("header.history")}
+                                aria-label={t("header.history")}
+                                className="p-1.5 rounded transition-colors hover:text-cad-text hover:bg-cad-text/10"
+                            >
+                                <span className="material-symbols-outlined text-[20px]">history</span>
+                            </button>
+                            {historyOpen && (
+                                <>
+                                    <div
+                                        className="fixed inset-0 z-30"
+                                        onClick={() => setHistoryOpen(false)}
+                                    />
+                                    <div
+                                        role="menu"
+                                        aria-label={t("header.history")}
+                                        className="absolute right-0 top-full z-40 mt-1 max-h-72 w-56 overflow-y-auto rounded-lg border border-cad-border bg-cad-panel py-1 shadow-2xl animate-in fade-in zoom-in-95 duration-100"
+                                    >
+                                        {/* 最新在上；当前位置之前的步骤可点击回跳，之后的步骤可重做 */}
+                                        {[...historyOverview.entries].reverse().map((entry) => (
+                                            <button
+                                                key={entry.index}
+                                                role="menuitem"
+                                                onClick={() => {
+                                                    setHistoryOpen(false);
+                                                    jumpTo(entry.index);
+                                                }}
+                                                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${
+                                                    entry.index === historyOverview.currentIndex
+                                                        ? "bg-cad-primary/15 font-medium text-cad-primary"
+                                                        : "text-cad-text hover:bg-cad-text/10"
+                                                }`}
+                                            >
+                                                <span className="font-mono text-[10px] text-cad-muted">
+                                                    {entry.index + 1}
+                                                </span>
+                                                {historyEntryLabel(entry, t)}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 <div className="h-5 w-px bg-cad-border"></div>
@@ -206,85 +233,6 @@ export const Header: React.FC<HeaderProps> = ({
                     <span className="material-symbols-outlined text-[18px]">save</span>
                     <span className="hidden md:inline">{t("header.save")}</span>
                 </button>
-
-                <div className="relative" ref={fileMenuRef}>
-                    <button
-                        data-action="file-menu"
-                        onClick={() => setFileMenuOpen((open) => !open)}
-                        aria-haspopup="menu"
-                        aria-expanded={fileMenuOpen}
-                        className={`flex items-center gap-1.5 h-8 px-2.5 rounded text-xs font-medium transition-colors ${
-                            fileMenuOpen
-                                ? "bg-cad-text/10 text-cad-text"
-                                : "text-cad-muted hover:text-cad-text hover:bg-cad-text/10"
-                        }`}
-                        title={t("header.fileMenu")}
-                    >
-                        <span className="material-symbols-outlined text-[18px]">folder_open</span>
-                        <span>{t("header.fileMenu")}</span>
-                        <span className="material-symbols-outlined text-[16px]">expand_more</span>
-                    </button>
-                    {fileMenuOpen && (
-                        <div
-                            role="menu"
-                            aria-label={t("header.fileMenu")}
-                            className="absolute right-0 top-full mt-1 w-56 rounded-lg border border-cad-border bg-cad-panel shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100"
-                        >
-                            <FileMenuItem
-                                icon="upload_file"
-                                label={t("header.import")}
-                                onClick={() => {
-                                    setFileMenuOpen(false);
-                                    onImportClick?.();
-                                }}
-                            />
-                            <FileMenuItem
-                                icon="image"
-                                label={t("header.trace")}
-                                onClick={() => {
-                                    setFileMenuOpen(false);
-                                    onOpenImageTrace?.();
-                                }}
-                            />
-                            <div className="h-px bg-cad-border my-1" />
-                            <FileMenuItem
-                                icon="download"
-                                label={t("header.exportDxf")}
-                                onClick={() => {
-                                    setFileMenuOpen(false);
-                                    handleExport();
-                                }}
-                            />
-                            <FileMenuItem
-                                icon="print"
-                                label={t("header.plot")}
-                                onClick={() => {
-                                    setFileMenuOpen(false);
-                                    onOpenPlot?.();
-                                }}
-                            />
-                            <div className="h-px bg-cad-border my-1" />
-                            <FileMenuItem
-                                icon="history"
-                                label={t("header.versions")}
-                                onClick={() => {
-                                    setFileMenuOpen(false);
-                                    onOpenVersions?.();
-                                }}
-                            />
-                            <FileMenuItem
-                                icon="save_as"
-                                label={t("header.saveVersion")}
-                                onClick={() => {
-                                    setFileMenuOpen(false);
-                                    onSaveVersion?.();
-                                }}
-                            />
-                        </div>
-                    )}
-                </div>
-
-                <div className="h-5 w-px bg-cad-border"></div>
 
                 <button
                     onClick={onToggleAI}
@@ -313,7 +261,7 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
 
                 <button
-                    onClick={handleExport}
+                    onClick={onExport}
                     className="hidden sm:flex items-center gap-2 h-8 px-4 bg-cad-primary hover:bg-cad-primaryHover text-white text-sm font-bold rounded transition-colors shadow-lg shadow-blue-500/20"
                 >
                     <span className="material-symbols-outlined text-[18px]">download</span>
@@ -323,20 +271,5 @@ export const Header: React.FC<HeaderProps> = ({
         </header>
     );
 };
-
-const FileMenuItem: React.FC<{
-    icon: string;
-    label: string;
-    onClick: () => void;
-}> = ({ icon, label, onClick }) => (
-    <button
-        role="menuitem"
-        onClick={onClick}
-        className="flex w-full items-center gap-2.5 rounded px-2.5 py-2 text-xs text-cad-text hover:bg-cad-text/10 transition-colors text-left"
-    >
-        <span className="material-symbols-outlined text-[18px] text-cad-muted">{icon}</span>
-        <span>{label}</span>
-    </button>
-);
 
 export default Header;

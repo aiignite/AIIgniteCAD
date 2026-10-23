@@ -44,3 +44,7 @@ backend/.env.*
 
 # 服务器发布配置（含主机地址与口令），绝不提交
 scripts/deploy.env
+
+# 本地 Agent 工具目录
+.trae/
+.zcode/

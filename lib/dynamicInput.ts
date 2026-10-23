@@ -12,7 +12,7 @@ import { pointFromPolar } from "./polar";
 const validNumber = (value: number | undefined): number | undefined =>
     typeof value === "number" && Number.isFinite(value) ? value : undefined;
 
-export type DynamicMode = "polar" | "radius" | "box";
+export type DynamicMode = "polar" | "radius" | "box" | "scale" | "distance";
 export type DynamicFieldKey = "length" | "angle" | "width" | "height";
 
 export interface DynamicDraft {
@@ -54,6 +54,14 @@ export function resolveDynamicAnchor(input: DynamicAnchorInput): Point | null {
     if (tool === ToolType.LINE || tool === ToolType.RECTANGLE || tool === ToolType.CIRCLE) {
         return dragMode === "DRAW" ? drawStart : null;
     }
+    // 变换工具的第二阶段：基点已定，等待角度 / 倍率
+    if (
+        (tool === ToolType.ROTATE && dragMode === "ROTATE_ITEMS") ||
+        (tool === ToolType.SCALE && dragMode === "SCALE_ITEMS") ||
+        (tool === ToolType.MIRROR && dragMode === "MIRROR_LINE")
+    ) {
+        return drawStart;
+    }
     return null;
 }
 
@@ -63,7 +71,23 @@ export function buildDynamicDraft(
     anchor: Point | null,
     cursor: Point | null,
 ): DynamicDraft | null {
-    if (!anchor || !cursor) return null;
+    // OFFSET 没有锚点阶段：任何时刻都可键入距离（不依赖光标是否已在画布上移动过）
+    if (tool === ToolType.OFFSET) {
+        return {
+            anchor: cursor ?? { x: 0, y: 0 },
+            mode: "distance",
+            length: 0,
+            angle: 0,
+            width: 0,
+            height: 0,
+            signX: 1,
+            signY: 1,
+            fields: ["length"],
+        };
+    }
+
+    if (!cursor) return null;
+    if (!anchor) return null;
 
     const dx = cursor.x - anchor.x;
     const dy = cursor.y - anchor.y;
@@ -109,6 +133,35 @@ export function buildDynamicDraft(
             fields: ["length", "angle"],
         };
     }
+    // 旋转 / 镜像只需角度；角度锁定后沿当前光标方向提交
+    if (tool === ToolType.ROTATE || tool === ToolType.MIRROR) {
+        return {
+            anchor,
+            mode: "polar",
+            length,
+            angle,
+            width: Math.abs(dx),
+            height: Math.abs(dy),
+            signX: 1,
+            signY: 1,
+            fields: ["angle"],
+        };
+    }
+    // 缩放键入倍率：提交点 = 基点 + 实时方向 × (实时距离 × 倍率)，
+    // 工具按"光标距离 / 实时距离"反推倍率，结果即键入值
+    if (tool === ToolType.SCALE) {
+        return {
+            anchor,
+            mode: "scale",
+            length,
+            angle,
+            width: Math.abs(dx),
+            height: Math.abs(dy),
+            signX: 1,
+            signY: 1,
+            fields: ["length"],
+        };
+    }
     return null;
 }
 
@@ -130,6 +183,18 @@ export function resolveDynamicPoint(draft: DynamicDraft, values: DynamicValues):
         };
     }
 
+    // 缩放键入倍率：沿实时方向把光标距离放大 factor 倍，
+    // 工具端按"提交点到基点距离 / 实时距离"反推，得到的正是键入倍率
+    if (draft.mode === "scale") {
+        const factor = validNumber(values.length) ?? 1;
+        return pointFromPolar(draft.anchor, draft.length * factor, draft.angle);
+    }
+
+    // 距离模式不产生提交点：数值由交互层暂存，等待下一次真实点击
+    if (draft.mode === "distance") {
+        return draft.anchor;
+    }
+
     const length = validNumber(values.length) ?? draft.length;
     if (draft.mode === "radius") {
         return pointFromPolar(draft.anchor, length, draft.angle);
@@ -149,9 +214,11 @@ export function parseDynamicValue(raw: string): number | null {
     return Number.isFinite(value) ? value : null;
 }
 
-/** 字段标题：半径模式复用 length 字段但显示为"半径" */
+/** 字段标题：半径模式复用 length 字段但显示为"半径"；缩放显示倍率；偏移显示距离 */
 export function dynamicFieldLabel(mode: DynamicMode, key: DynamicFieldKey): string {
     if (mode === "radius" && key === "length") return "半径";
+    if (mode === "scale" && key === "length") return "倍率";
+    if (mode === "distance" && key === "length") return "距离";
     switch (key) {
         case "length":
             return "长度";

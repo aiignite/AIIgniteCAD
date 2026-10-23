@@ -573,10 +573,11 @@ test("视图类工具只移动视口，不弹预览也不改图纸", async ({ pa
     await page.getByRole("button", { name: "栅格" }).click();
     await page.getByRole("button", { name: "捕捉" }).click();
 
-    // 画一条线并选中它，作为视图工具的作用目标
+    // 画一条线并选中它，作为视图工具的作用目标；
+    // 横向不超过画布 45%，避免拖进右侧 AI 浮窗导致 mouseup 被浮窗吞掉
     await page.locator('[data-tool="LINE"]').click();
-    const start = { x: box.x + box.width * 0.3, y: box.y + box.height * 0.35 };
-    const end = { x: box.x + box.width * 0.6, y: box.y + box.height * 0.55 };
+    const start = { x: box.x + box.width * 0.25, y: box.y + box.height * 0.35 };
+    const end = { x: box.x + box.width * 0.45, y: box.y + box.height * 0.55 };
     await page.mouse.move(start.x, start.y);
     await page.mouse.down();
     await page.mouse.move(end.x, end.y, {

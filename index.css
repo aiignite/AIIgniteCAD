@@ -2,27 +2,37 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 颜色统一存为空格分隔 RGB 三元组，Tailwind 侧用 rgb(var(--x) / <alpha-value>)
+   消费以支持透明度修饰符；CSS/SVG 侧用 rgb(var(--x)) 消费。 */
 :root {
-  --cad-bg: #ffffff;
-  --cad-panel: #f6f8fa;
-  --cad-border: #d0d7de;
-  --cad-text: #24292f;
-  --cad-muted: #57606a;
-  --cad-grid: #eaeef2;
+  --cad-bg: 255 255 255;
+  --cad-panel: 246 248 250;
+  --cad-border: 208 215 222;
+  --cad-text: 36 41 47;
+  --cad-text-secondary: 110 119 129;
+  --cad-muted: 87 96 106;
+  --cad-grid: 234 238 242;
+  --cad-secondary: 238 241 245;
+  --cad-hover: 36 41 47;
+  --cad-primary: 19 127 236;
 }
 
 .dark {
-  --cad-bg: #0d1116;
-  --cad-panel: #161b22;
-  --cad-border: #283039;
-  --cad-text: #e6edf3;
-  --cad-muted: #8b949e;
-  --cad-grid: #1f2933;
+  --cad-bg: 13 17 22;
+  --cad-panel: 22 27 34;
+  --cad-border: 40 48 57;
+  --cad-text: 230 237 243;
+  --cad-text-secondary: 139 148 158;
+  --cad-muted: 139 148 158;
+  --cad-grid: 31 41 51;
+  --cad-secondary: 28 35 44;
+  --cad-hover: 230 237 243;
+  --cad-primary: 19 127 236;
 }
 
 body {
-  background-color: var(--cad-bg);
-  color: var(--cad-text);
+  background-color: rgb(var(--cad-bg));
+  color: rgb(var(--cad-text));
   overflow: hidden;
   transition:
     background-color 0.3s,
@@ -36,23 +46,23 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--cad-panel);
+  background: rgb(var(--cad-panel));
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--cad-border);
+  background: rgb(var(--cad-border));
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--cad-muted);
+  background: rgb(var(--cad-muted));
 }
 
 .bg-grid-pattern {
   background-size: 40px 40px;
   background-image:
-    linear-gradient(to right, var(--cad-grid) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--cad-grid) 1px, transparent 1px);
+    linear-gradient(to right, rgb(var(--cad-grid)) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(var(--cad-grid)) 1px, transparent 1px);
 }
 
 .material-symbols-outlined {
@@ -78,13 +88,13 @@ input[type="range"] {
 
 /* Slider Track */
 input[type="range"]::-webkit-slider-track {
-  background: var(--cad-border);
+  background: rgb(var(--cad-border));
   height: 6px;
   border-radius: 3px;
 }
 
 input[type="range"]::-moz-range-track {
-  background: var(--cad-border);
+  background: rgb(var(--cad-border));
   height: 6px;
   border-radius: 3px;
 }
@@ -97,7 +107,7 @@ input[type="range"]::-webkit-slider-thumb {
   width: 16px;
   border-radius: 50%;
   background: #137fec;
-  border: 2px solid #ffffff;
+  border: 2px solid rgb(var(--cad-bg));
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   cursor: pointer;
   transition: all 0.15s ease;
@@ -109,18 +119,10 @@ input[type="range"]::-moz-range-thumb {
   width: 16px;
   border-radius: 50%;
   background: #137fec;
-  border: 2px solid #ffffff;
+  border: 2px solid rgb(var(--cad-bg));
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   cursor: pointer;
   transition: all 0.15s ease;
-}
-
-.dark input[type="range"]::-webkit-slider-thumb {
-  border-color: #0d1116;
-}
-
-.dark input[type="range"]::-moz-range-thumb {
-  border-color: #0d1116;
 }
 
 /* Hover Effects */
@@ -168,8 +170,8 @@ input[type="range"]::-webkit-slider-track {
     to right,
     #137fec 0%,
     #137fec var(--value, 0%),
-    var(--cad-border) var(--value, 0%),
-    var(--cad-border) 100%
+    rgb(var(--cad-border)) var(--value, 0%),
+    rgb(var(--cad-border)) 100%
   );
 }
 
@@ -184,9 +186,9 @@ input[type="range"]::-webkit-slider-track {
   font-weight: 700;
   margin-top: 1.5rem;
   margin-bottom: 1rem;
-  border-bottom: 1px solid var(--cad-border);
+  border-bottom: 1px solid rgb(var(--cad-border));
   padding-bottom: 0.3rem;
-  color: var(--cad-text);
+  color: rgb(var(--cad-text));
 }
 
 .markdown-body h2 {
@@ -194,9 +196,9 @@ input[type="range"]::-webkit-slider-track {
   font-weight: 700;
   margin-top: 1.25rem;
   margin-bottom: 0.75rem;
-  border-bottom: 1px solid var(--cad-border);
+  border-bottom: 1px solid rgb(var(--cad-border));
   padding-bottom: 0.3rem;
-  color: var(--cad-text);
+  color: rgb(var(--cad-text));
 }
 
 .markdown-body h3 {
@@ -204,7 +206,7 @@ input[type="range"]::-webkit-slider-track {
   font-weight: 600;
   margin-top: 1rem;
   margin-bottom: 0.5rem;
-  color: var(--cad-text);
+  color: rgb(var(--cad-text));
 }
 
 .markdown-body p {
@@ -234,8 +236,8 @@ input[type="range"]::-webkit-slider-track {
 
 .markdown-body blockquote {
   padding: 0.5rem 1rem;
-  color: var(--cad-muted);
-  border-left: 0.25rem solid var(--cad-primary);
+  color: rgb(var(--cad-muted));
+  border-left: 0.25rem solid rgb(var(--cad-primary));
   background: rgba(19, 127, 236, 0.05);
   margin: 1rem 0;
   border-radius: 0 4px 4px 0;

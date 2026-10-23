@@ -16,8 +16,8 @@ test("参考图在本地矢量化后插入图纸并可撤销", async ({ page }) 
     const svg = page.locator("#drawing-surface svg");
     await expect(svg).toBeVisible();
 
-    await page.locator('header [data-action="file-menu"]').click();
-    await page.getByRole("menuitem", { name: "参考图转 CAD" }).click();
+    await page.locator('div[role="menubar"] [data-menu="file"]').click();
+    await page.getByRole("menu").getByRole("menuitem", { name: "参考图转 CAD" }).click();
     const dialog = page.getByRole("dialog", { name: "参考图转 CAD" });
     await expect(dialog).toBeVisible();
 

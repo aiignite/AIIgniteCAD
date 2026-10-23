@@ -78,15 +78,15 @@ test("capture demo frames", async ({ page }) => {
   await shot(page, 4);
 
   // 6. 图框打印预览
-  await page.locator('header [data-action="file-menu"]').click();
-  await page.getByRole("menuitem", { name: "打印 / 绘图" }).click();
+  await page.locator('div[role="menubar"] [data-menu="file"]').click();
+  await page.getByRole("menu").getByRole("menuitem", { name: "打印 / 绘图" }).click();
   await page.waitForTimeout(500);
   await shot(page, 5);
   await page.keyboard.press("Escape");
 
   // 7. 版本历史
-  await page.locator('header [data-action="file-menu"]').click();
-  await page.getByRole("menuitem", { name: "版本历史" }).click();
+  await page.locator('div[role="menubar"] [data-menu="file"]').click();
+  await page.getByRole("menu").getByRole("menuitem", { name: "版本历史" }).click();
   await page.waitForTimeout(500);
   await shot(page, 6);
   await page.keyboard.press("Escape");

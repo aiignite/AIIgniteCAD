@@ -84,7 +84,7 @@ const ImageTraceModal: React.FC<ImageTraceModalProps> = ({ onClose, onInsert }) 
                             </span>
                             {t("trace.title")}
                         </h3>
-                        <p className="text-[10px] text-cad-muted mt-0.5">
+                        <p className="text-[11px] text-cad-muted mt-0.5">
                             {t("trace.subtitle")}
                         </p>
                     </div>
@@ -114,7 +114,7 @@ const ImageTraceModal: React.FC<ImageTraceModalProps> = ({ onClose, onInsert }) 
                             onChange={(event) => void handleFile(event.target.files?.[0])}
                         />
                         {fileName && (
-                            <p className="text-[10px] text-cad-muted truncate" title={fileName}>
+                            <p className="text-[11px] text-cad-muted truncate" title={fileName}>
                                 {fileName}
                                 {source ? ` · ${source.width}×${source.height}px` : ""}
                             </p>
@@ -195,8 +195,8 @@ const ImageTraceModal: React.FC<ImageTraceModalProps> = ({ onClose, onInsert }) 
                                   : t("trace.trace")}
                         </button>
 
-                        {error && <p className="text-[10px] text-red-500">{error}</p>}
-                        <p className="text-[9px] text-cad-muted leading-relaxed">
+                        {error && <p className="text-[11px] text-red-500">{error}</p>}
+                        <p className="text-[11px] text-cad-muted leading-relaxed">
                             {t("trace.tip")}
                         </p>
                     </div>

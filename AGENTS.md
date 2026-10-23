@@ -74,6 +74,16 @@ import { exportToDXF } from "../services/dxfService";
 - `material-symbols-outlined` 里的名字必须是子集已有的连字名，否则界面直接渲染成英文文本；新增图标前先确认，例如：
   `python3 -c "from fontTools.ttLib import TTFont; print('send' in set(TTFont('public/fonts/material-symbols/material.woff2').getGlyphOrder()))"`。
 
+### 界面样式
+
+- 颜色只用 `cad.*` token（`tailwind.config.js`），底层是 `index.css` 的 RGB 三元组变量；不要引入裸的 `gray-*/blue-*/white` 等原色，浅色主题会立即走样。
+- 悬停反馈统一 `hover:bg-cad-text/10`（危险操作用 `red-500/10` 系），同类控件不要另造透明度。
+- 字号三档：正文 `text-xs`（12px）、辅助标签 `text-[11px]`、坐标 / 数值读数保持 `text-[10px]` mono；不再新增 9/15/17px 等非标字号。
+- 图标三档：16px 行内、18px 普通按钮、20px 工具栏主图标。
+- 圆角：模态 / 面板 `rounded-lg`，按钮 / 输入 `rounded` 或 `rounded-md`，徽标保持 `rounded-full`。
+- 主题走 `store/theme.ts`（持久化 + 跟随系统）；新增面板不要在渲染期读 `localStorage`，布局偏好统一走 `lib/uiPreferences.ts`。
+- 用户可见文案必须走 `lib/i18n.tsx` 的 `t()`，中英字典同时补齐（`tests/i18n.test.ts` 兜底）；不要在组件里硬编码中文或英文句子。
+
 ### TypeScript
 
 - 保持 strict，禁止隐式 `any`；外部数据先收窄再使用。

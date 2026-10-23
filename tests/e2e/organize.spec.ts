@@ -80,10 +80,11 @@ test("右侧面板默认收起，左侧工具栏的按钮负责打开", async ({
     await expect(page.getByText("属性", { exact: true })).toBeHidden();
 
     await page.locator('aside [data-action="panel-review"]').click();
-    await expect(page.getByText("图纸检查")).toBeVisible();
+    const reviewHeading = page.getByRole("heading", { name: "图纸检查" });
+    await expect(reviewHeading).toBeVisible();
 
     await page.locator('aside [data-action="panel-toggle"]').click();
-    await expect(page.getByText("图纸检查")).toBeHidden();
+    await expect(reviewHeading).toBeHidden();
 });
 
 test("图纸管理从独立弹窗进入", async ({ page }) => {

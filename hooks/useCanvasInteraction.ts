@@ -5,7 +5,7 @@
  * 各工具的行为位于 tools/ 下的独立状态机，本 hook 只负责构造 ToolContext 并转发事件。
  */
 
-import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ArrayParams } from '../components/ArrayModal';
 import { CADElement, DEFAULT_SNAP_TYPES, DragMode, Point, SnapType, ToolType } from '../types';
 import { useCanvas } from '../store/canvasStore';
@@ -100,16 +100,27 @@ export function useCanvasInteraction({
     hiddenObjectIds = NO_HIDDEN,
     onRequestContextMenu,
 }: CanvasInteractionOptions) {
+    /** OFFSET 动态输入键入的距离；null 表示未键入。切工具时清除 */
+    const [dynamicDistance, setDynamicDistance] = useState<number | null>(null);
     const {
         state,
         addElement,
         commitAction,
-        setActiveTool,
+        setActiveTool: dispatchActiveTool,
         selectedIds,
         setSelection,
         addToSelection,
         clearSelection,
     } = useCanvas();
+
+    /** 切换工具：同时清掉动态输入暂存的偏移距离，避免带进下一个工具 */
+    const setActiveTool = useCallback(
+        (tool: ToolType) => {
+            setDynamicDistance(null);
+            dispatchActiveTool(tool);
+        },
+        [dispatchActiveTool],
+    );
     const {
         elements,
         activeTool,
@@ -424,6 +435,7 @@ export function useCanvasInteraction({
         setSelection,
         addToSelection,
         clearSelection,
+        dynamicDistance,
         onNotification,
         onRequestTextEntry,
         onRequestAdvancedShape,
@@ -458,14 +470,29 @@ export function useCanvasInteraction({
             });
         }
 
+        // 距离模式不合成点击：暂存键入值，等待下一次真实点击（OFFSET 按该距离偏移）
+        if (draft.mode === 'distance') {
+            if (typeof values.length === 'number') {
+                setDynamicDistance(values.length);
+            }
+            setDynamicEdit(null);
+            setPolarGuide(null);
+            return;
+        }
+
         const point = resolveDynamicPoint(draft, values);
         const ctm = svgRef.current?.getScreenCTM();
         const client = ctm
             ? { x: point.x * ctm.a + ctm.e, y: point.y * ctm.d + ctm.f }
             : { x: 0, y: 0 };
-        getTool(activeTool)?.onMouseDown?.(
-            buildToolContext(point, point, { client, button: 0, shiftKey: false }),
-        );
+        const tool = getTool(activeTool);
+        const ctx = buildToolContext(point, point, { client, button: 0, shiftKey: false });
+        if (tool?.onDynamicSubmit) {
+            // 工具自治：以键入值（角度 / 倍率）完成并提交
+            tool.onDynamicSubmit(ctx, values);
+        } else {
+            tool?.onMouseDown?.(ctx);
+        }
         setDynamicEdit(null);
         setPolarGuide(null);
     };

@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from "react";
 import { CADElement, Point } from "../types";
 import { useI18n } from "../lib/i18n";
+import { useAlignDistribute, ALIGN_MENU_ITEMS } from "../hooks/useAlignDistribute";
 
 /** 属性面板可触发的批量变换操作 */
 export type TransformOperation = "SCALE" | "OFFSET" | "ARRAY";
@@ -589,6 +590,7 @@ const TransformOperations: React.FC<{
   onApplyTransform: (operation: TransformOperation, params: TransformParams) => void;
 }> = ({ onApplyTransform }) => {
   const { t } = useI18n();
+  const { applyAlign, applyDistribute, canAlign, canDistribute } = useAlignDistribute();
   const [factor, setFactor] = useState(2);
   const [distance, setDistance] = useState(20);
   const [rows, setRows] = useState(2);
@@ -598,6 +600,38 @@ const TransformOperations: React.FC<{
 
   return (
     <div className="space-y-3 text-sm">
+      {/* 对齐 / 分布 */}
+      <div className="space-y-1.5">
+        <label className="text-cad-text-secondary">{t("property.alignTitle")}:</label>
+        <div className="grid grid-cols-4 gap-1">
+          {ALIGN_MENU_ITEMS.map((item) => {
+            const disabled = item.distribute ? !canDistribute : !canAlign;
+            return (
+              <button
+                key={item.labelKey}
+                disabled={disabled}
+                title={t(item.labelKey)}
+                onClick={() => {
+                  if (item.align) applyAlign(item.align);
+                  if (item.distribute) applyDistribute(item.distribute);
+                }}
+                className={`flex items-center justify-center py-1.5 rounded border border-cad-border transition-colors ${
+                  disabled
+                    ? "cursor-not-allowed text-cad-muted/40"
+                    : "text-cad-text hover:bg-cad-text/10"
+                }`}
+              >
+                <span
+                  className={`material-symbols-outlined text-[18px] ${item.rotate ? "rotate-90" : ""}`}
+                >
+                  {item.icon}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* 缩放 */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
@@ -693,7 +727,7 @@ const TransformOperations: React.FC<{
         </button>
       </div>
 
-      <p className="text-[10px] text-cad-muted leading-relaxed">
+      <p className="text-[11px] text-cad-muted leading-relaxed">
         {t("property.transformHint")}
       </p>
     </div>

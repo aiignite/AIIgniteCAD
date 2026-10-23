@@ -17,6 +17,18 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/index.css" />
+    <!-- 首帧前恢复主题，避免深色用户刷新时闪白；键名与解析规则和 lib/themePreferences.ts 保持一致 -->
+    <script>
+      (function () {
+        try {
+          var pref = localStorage.getItem("aiignitecad.theme");
+          var dark =
+            pref === "dark" ||
+            (pref !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (dark) document.documentElement.classList.add("dark");
+        } catch (e) {}
+      })();
+    </script>
     <script type="importmap">
       {
         "imports": {

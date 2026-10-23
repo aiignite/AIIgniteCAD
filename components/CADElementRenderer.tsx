@@ -201,7 +201,7 @@ const CADElementRenderer: React.FC<CADElementRendererProps> = ({
     const monochrome = overrides?.monochrome ?? false;
     // 主题默认色（#e6edf3）在屏幕上跟随主题，在打印时固定为黑色
     const baseColor = el.color === '#e6edf3'
-        ? (isPlot ? '#000000' : 'var(--cad-text)')
+        ? (isPlot ? '#000000' : 'rgb(var(--cad-text))')
         : el.color;
     // 幽灵层用固定配色，其余状态沿用预选浅蓝、选中黄
     const color = monochrome
@@ -229,7 +229,7 @@ const CADElementRenderer: React.FC<CADElementRendererProps> = ({
               ? '#38bdf8'
               : isPlot
                 ? baseColor
-                : 'var(--cad-text)';
+                : 'rgb(var(--cad-text))';
     // 位移为零时省略 transform，减少无意义的属性
     const transform = offsetX !== 0 || offsetY !== 0 ? `translate(${offsetX}, ${offsetY})` : undefined;
     // DXF 文字旋转为世界坐标逆时针，屏幕 Y 向下时需取反

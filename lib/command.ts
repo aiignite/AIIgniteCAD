@@ -16,6 +16,40 @@ export interface Command {
   undo(): void;
   /** 重做命令 */
   redo(): void;
+  /** 该命令造成的图元增删改统计，供历史列表展示；无几何语义的命令可不实现 */
+  describe?(): ElementChangeCounts;
+}
+
+/** 一次提交的图元增删改统计 */
+export interface ElementChangeCounts {
+  added: number;
+  removed: number;
+  modified: number;
+}
+
+/** 历史栈条目：index 为栈内位置（旧→新），counts 为该次提交的增删改统计 */
+export interface CommandHistoryEntry extends ElementChangeCounts {
+  index: number;
+}
+
+/** 按 id 对比两份图形，统计增删改数量 */
+export function countElementChanges(
+  before: CADElement[],
+  after: CADElement[]
+): ElementChangeCounts {
+  const beforeById = new Map(before.map((element) => [element.id, element]));
+  const afterById = new Map(after.map((element) => [element.id, element]));
+  let added = 0;
+  let removed = 0;
+  let modified = 0;
+  afterById.forEach((element, id) => {
+    if (!beforeById.has(id)) added += 1;
+    else if (beforeById.get(id) !== element) modified += 1;
+  });
+  beforeById.forEach((_element, id) => {
+    if (!afterById.has(id)) removed += 1;
+  });
+  return { added, removed, modified };
 }
 
 /* ─── Command 历史管理器 ──────────────────────────────────── */
@@ -76,6 +110,30 @@ export class CommandHistory {
 
   get size(): number {
     return this.commands.length;
+  }
+
+  /** 当前栈顶位置；-1 表示尚未执行任何命令 */
+  get currentIndex(): number {
+    return this.index;
+  }
+
+  /** 历史条目（旧→新），供撤销历史列表展示 */
+  getEntries(): CommandHistoryEntry[] {
+    return this.commands.map((command, index) => {
+      const counts = command.describe?.() ?? { added: 0, removed: 0, modified: 0 };
+      return { index, ...counts };
+    });
+  }
+
+  /** 批量撤销/重做到目标位置；目标越界时收敛到栈边界 */
+  jumpTo(target: number): void {
+    const clamped = Math.max(-1, Math.min(Math.trunc(target), this.commands.length - 1));
+    while (this.index > clamped && this.undo()) {
+      // undo 返回 false（栈空）时自动退出
+    }
+    while (this.index < clamped && this.redo()) {
+      // 同上
+    }
   }
 
   clear(): void {
@@ -195,6 +253,10 @@ export class BulkUpdateCommand implements Command {
 
   redo(): void {
     this.setElements(this.updatedElements);
+  }
+
+  describe(): ElementChangeCounts {
+    return countElementChanges(this.originalElements, this.updatedElements);
   }
 }
 

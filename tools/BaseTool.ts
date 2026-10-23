@@ -8,6 +8,7 @@
 import { ToolType } from "../types";
 import type { CADElement, DragMode, DrawingSettings, Point } from "../types";
 import type { GripPoint } from "../lib/grip";
+import type { DynamicValues } from "../lib/dynamicInput";
 import { dist } from "../lib/canvasGeometry";
 import { expandToGroups, selectionUnit } from "../lib/groups";
 import { elementsInSelectionRect, getSelectionMode, rectFromPoints } from "../lib/selection";
@@ -66,6 +67,9 @@ export interface ToolContext {
     addToSelection: (ids: string[]) => void;
     clearSelection: () => void;
 
+    /** 动态输入键入的距离（OFFSET 用）；null 表示未键入，按交互语义取值 */
+    dynamicDistance: number | null;
+
     onNotification: (message: string) => void;
     onRequestTextEntry: (position: Point) => void;
     onRequestAdvancedShape?: (tool: ToolType, position: Point) => void;
@@ -79,6 +83,11 @@ export interface ToolResult {
 export interface CanvasTool {
     onMouseDown?: (ctx: ToolContext) => void;
     onMouseUp?: (ctx: ToolContext) => ToolResult | void;
+    /**
+     * 动态输入的 Enter 提交：工具以键入值（角度 / 倍率等）自行完成并提交一步撤销。
+     * 未实现的工具由交互层回退为"合成一次点击"。
+     */
+    onDynamicSubmit?: (ctx: ToolContext, values: DynamicValues) => void;
 }
 
 export const createElementId = (): string =>

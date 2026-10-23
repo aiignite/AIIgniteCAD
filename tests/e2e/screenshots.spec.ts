@@ -65,7 +65,6 @@ test("capture docs screenshots", async ({ page }) => {
   await page.locator('[data-tool="LINE"]').click();
   await dragOnCanvas(page, { x: 0.24, y: 0.74 }, { x: 0.84, y: 0.74 });
 
-  await page.getByTitle("更多工具").click();
   await page.locator('[data-tool="DIMENSION"]').click();
   const box = await canvasBox(page);
   await page.mouse.click(box.x + box.width * 0.22, box.y + box.height * 0.28);

@@ -395,6 +395,52 @@ describe("命令执行", () => {
         expect(outcome.message).toBe("Array 2×2");
     });
 
+    it("ALIGNLEFT 把选中图元左对齐并单步提交", () => {
+        const a = line("el-1");
+        const b = { ...line("el-2"), start: { x: 40, y: 0 }, end: { x: 60, y: 0 } };
+        const h = createContext({ elements: [a, b], selectedIds: ["el-1", "el-2"] });
+        const outcome = executeCommand("ALIGNLEFT", h.ctx);
+
+        expect(h.commits).toHaveLength(1);
+        const aligned = h.commits[0];
+        expect(outcome.message).toBe("Aligned 1 objects");
+        expect(aligned.find((element) => element.id === "el-2")!.start!.x).toBe(10);
+        // 未移动的图元保持原引用
+        expect(aligned.find((element) => element.id === "el-1")).toBe(a);
+    });
+
+    it("对齐少于两个对象时拒绝执行", () => {
+        const h = createContext({ elements: [line()], selectedIds: ["el-1"] });
+        const outcome = executeCommand("ACX", h.ctx);
+
+        expect(outcome.error).toBe(true);
+        expect(h.commits).toHaveLength(0);
+    });
+
+    it("DISTRIBUTEH 三个对象等距分布", () => {
+        const a = line("el-1");
+        const b = { ...line("el-2"), start: { x: 100, y: 0 }, end: { x: 110, y: 0 } };
+        const c = { ...line("el-3"), start: { x: 200, y: 0 }, end: { x: 210, y: 0 } };
+        const h = createContext({ elements: [a, b, c], selectedIds: ["el-1", "el-2", "el-3"] });
+        const outcome = executeCommand("DISTRIBUTEH", h.ctx);
+
+        expect(h.commits).toHaveLength(1);
+        expect(outcome.error).toBeFalsy();
+        // 跨度 10..210、占位 3×10，间隙 = (200 - 30) / 2 = 85 → el-2 移到 20+85 = 105
+        const middle = h.commits[0].find((element) => element.id === "el-2")!;
+        expect(middle.start!.x).toBe(105);
+    });
+
+    it("分布少于三个对象时拒绝执行", () => {
+        const a = line("el-1");
+        const b = { ...line("el-2"), start: { x: 40, y: 0 }, end: { x: 60, y: 0 } };
+        const h = createContext({ elements: [a, b], selectedIds: ["el-1", "el-2"] });
+        const outcome = executeCommand("DISTRIBUTEV", h.ctx);
+
+        expect(outcome.error).toBe(true);
+        expect(h.commits).toHaveLength(0);
+    });
+
     it("SELECTALL 排除隐藏与锁定图层", () => {
         const hidden = { ...line("hidden"), layer: "HIDDEN" };
         const locked = { ...line("locked"), layer: "LOCKED" };

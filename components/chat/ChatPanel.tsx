@@ -535,7 +535,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                                         <span className="min-w-0 flex-1 truncate">
                                             {skill.name}
                                         </span>
-                                        <span className="shrink-0 text-[9px] text-cad-muted">
+                                        <span className="shrink-0 text-[10px] text-cad-muted">
                                             {skill.category}
                                         </span>
                                     </button>

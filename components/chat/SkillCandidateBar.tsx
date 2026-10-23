@@ -47,7 +47,7 @@ const SkillCandidateBar: React.FC<SkillCandidateBarProps> = ({
                         <span className="material-symbols-outlined text-[11px]">push_pin</span>
                     ) : null}
                     <span className="max-w-[10rem] truncate">{candidate.name}</span>
-                    <span className="font-mono text-[9px] opacity-70">
+                    <span className="font-mono text-[10px] opacity-70">
                         {Math.round(candidate.score)}
                     </span>
                     {candidate.pinned ? null : (

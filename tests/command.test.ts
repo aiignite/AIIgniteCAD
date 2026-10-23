@@ -97,6 +97,51 @@ describe("CommandHistory", () => {
         expect(history.canRedo).toBe(false);
         expect(history.size).toBe(0);
     });
+
+    it("getEntries 按增删改统计描述每次提交", () => {
+        const history = new CommandHistory();
+        // 引用保持一致才能体现"未修改不计入"：真实提交中未变图元保持同一引用
+        const a = line("a", 0);
+        const b = line("b", 10);
+        const bMoved = line("b", 30);
+        history.execute(new BulkUpdateCommand([a], [a, b], () => undefined));
+        history.execute(new BulkUpdateCommand([a, b], [bMoved], () => undefined));
+
+        const entries = history.getEntries();
+        expect(entries).toHaveLength(2);
+        expect(entries[0]).toMatchObject({ index: 0, added: 1, removed: 0, modified: 0 });
+        expect(entries[1]).toMatchObject({ index: 1, added: 0, removed: 1, modified: 1 });
+        expect(history.currentIndex).toBe(1);
+    });
+
+    it("jumpTo 批量撤销/重做到目标位置，越界收敛到边界", () => {
+        const states: CADElement[][] = [];
+        const setter = (els: CADElement[]) => states.push(els);
+        const s0 = [line("a", 0)];
+        const s1 = [line("a", 0), line("b", 10)];
+        const s2 = [line("a", 0), line("b", 10), line("c", 20)];
+
+        const history = new CommandHistory();
+        history.execute(new BulkUpdateCommand(s0, s1, setter));
+        history.execute(new BulkUpdateCommand(s1, s2, setter));
+
+        history.jumpTo(0);
+        expect(history.currentIndex).toBe(0);
+        expect(states.at(-1)).toBe(s1);
+
+        history.jumpTo(1);
+        expect(history.currentIndex).toBe(1);
+        expect(states.at(-1)).toBe(s2);
+
+        // 越界目标收敛：-5 视为回到初始状态，99 视为栈顶
+        history.jumpTo(-5);
+        expect(history.currentIndex).toBe(-1);
+        expect(states.at(-1)).toBe(s0);
+
+        history.jumpTo(99);
+        expect(history.currentIndex).toBe(1);
+        expect(states.at(-1)).toBe(s2);
+    });
 });
 
 /** 构造用于 reducer 测试的最小状态 */

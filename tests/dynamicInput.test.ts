@@ -186,9 +186,86 @@ describe("字段标题与单位", () => {
         expect(dynamicFieldLabel("box", "height")).toBe("高");
     });
 
+    it("缩放显示倍率、偏移显示距离", () => {
+        expect(dynamicFieldLabel("scale", "length")).toBe("倍率");
+        expect(dynamicFieldLabel("distance", "length")).toBe("距离");
+    });
+
     it("只有角度带度数后缀", () => {
         expect(dynamicFieldSuffix("angle")).toBe("°");
         expect(dynamicFieldSuffix("length")).toBe("");
         expect(dynamicFieldSuffix("width")).toBe("");
+    });
+});
+
+describe("变换工具的数值输入", () => {
+    it("旋转在基点已定后只需角度", () => {
+        const drawStart = { x: 10, y: 10 };
+        expect(
+            resolveDynamicAnchor(
+                anchorInput({ tool: ToolType.ROTATE, dragMode: "ROTATE_ITEMS", drawStart }),
+            ),
+        ).toEqual(drawStart);
+        expect(
+            resolveDynamicAnchor(anchorInput({ tool: ToolType.ROTATE, dragMode: null, drawStart })),
+        ).toBeNull();
+
+        const draft = buildDynamicDraft(ToolType.ROTATE, drawStart, { x: 30, y: 10 });
+        expect(draft?.fields).toEqual(["angle"]);
+        expect(draft?.angle).toBe(0);
+    });
+
+    it("镜像在起点已定后只需角度", () => {
+        const drawStart = { x: 0, y: 0 };
+        expect(
+            resolveDynamicAnchor(
+                anchorInput({ tool: ToolType.MIRROR, dragMode: "MIRROR_LINE", drawStart }),
+            ),
+        ).toEqual(drawStart);
+
+        const draft = buildDynamicDraft(ToolType.MIRROR, drawStart, { x: 0, y: -40 });
+        expect(draft?.fields).toEqual(["angle"]);
+        expect(draft?.angle).toBe(270);
+    });
+
+    it("缩放键入倍率后沿实时方向放大提交点距离", () => {
+        const drawStart = { x: 0, y: 0 };
+        expect(
+            resolveDynamicAnchor(
+                anchorInput({ tool: ToolType.SCALE, dragMode: "SCALE_ITEMS", drawStart }),
+            ),
+        ).toEqual(drawStart);
+
+        const draft = buildDynamicDraft(ToolType.SCALE, drawStart, { x: 20, y: 0 });
+        expect(draft?.fields).toEqual(["length"]);
+        expect(draft?.length).toBe(20);
+
+        // 键入倍率 2.5：提交点距离 = 20 × 2.5，工具端反推倍率即 2.5
+        const point = resolveDynamicPoint(draft!, { length: 2.5 });
+        expect(point.x).toBeCloseTo(50);
+        expect(point.y).toBeCloseTo(0);
+    });
+
+    it("偏移随时可键入距离，草稿锚点跟随光标且不产生提交点", () => {
+        expect(resolveDynamicAnchor(anchorInput({ tool: ToolType.OFFSET, dragMode: null, drawStart: null }))).toBeNull();
+
+        const draft = buildDynamicDraft(ToolType.OFFSET, null, { x: 33, y: 44 });
+        expect(draft?.mode).toBe("distance");
+        expect(draft?.fields).toEqual(["length"]);
+
+        const point = resolveDynamicPoint(draft!, { length: 15 });
+        expect(point).toEqual({ x: 33, y: 44 });
+    });
+
+    it("偏移键入不依赖光标：光标未在画布上移动过也能生成草稿", () => {
+        const draft = buildDynamicDraft(ToolType.OFFSET, null, null);
+        expect(draft?.mode).toBe("distance");
+        expect(draft?.fields).toEqual(["length"]);
+    });
+
+    it("偏移在基点阶段不受其他工具锚点规则影响", () => {
+        // 非 OFFSET 工具在无锚点时仍然没有草稿
+        expect(buildDynamicDraft(ToolType.ROTATE, null, { x: 1, y: 1 })).toBeNull();
+        expect(buildDynamicDraft(ToolType.LINE, null, { x: 1, y: 1 })).toBeNull();
     });
 });

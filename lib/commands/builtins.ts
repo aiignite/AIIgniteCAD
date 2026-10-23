@@ -17,6 +17,12 @@ import {
 } from "../isolation";
 import { getElementBoundingBox, type BoundingBox } from "../geometry";
 import { groupElements, ungroupElements } from "../groups";
+import {
+    alignElements,
+    distributeElements,
+    type AlignMode,
+    type DistributeAxis,
+} from "../designOps";
 import { normalizeViewName } from "../namedViews";
 import { unionBounds } from "../viewport";
 import * as Transform from "../transform";
@@ -62,6 +68,30 @@ const boundsOf = (elements: CADElement[]): BoundingBox | null => {
     return unionBounds(boxes);
 };
 
+const alignRun = (ctx: CommandContext, mode: AlignMode): CommandOutcome => {
+    if (ctx.selectedElements.length < 2) {
+        return { message: "Select at least two objects to align", error: true };
+    }
+    const outcome = alignElements(ctx.elements, ctx.selectedElements, mode);
+    if (!outcome || outcome.changedIds.length === 0) {
+        return { message: "The selection is already aligned", error: true };
+    }
+    ctx.commitAction(outcome.elements);
+    return { message: `Aligned ${outcome.changedIds.length} objects` };
+};
+
+const distributeRun = (ctx: CommandContext, axis: DistributeAxis): CommandOutcome => {
+    if (ctx.selectedElements.length < 3) {
+        return { message: "Select at least three objects to distribute", error: true };
+    }
+    const outcome = distributeElements(ctx.elements, ctx.selectedElements, axis);
+    if (!outcome) {
+        return { message: "Objects overlap; cannot distribute evenly", error: true };
+    }
+    ctx.commitAction(outcome.elements);
+    return { message: `Distributed ${outcome.changedIds.length} objects` };
+};
+
 export const BUILTIN_COMMANDS: CommandDefinition[] = [
     // ── 绘图与编辑工具 ──────────────────────────────────────
     toolCommand("LINE", ["L"], ToolType.LINE, "Draw line segments"),
@@ -71,7 +101,8 @@ export const BUILTIN_COMMANDS: CommandDefinition[] = [
     toolCommand("ARC", ["A"], ToolType.ARC, "Draw a 3-point arc"),
     toolCommand("TEXT", ["T"], ToolType.TEXT, "Place a text label"),
     toolCommand("COPY", ["CO", "CP"], ToolType.COPY, "Copy selected objects by dragging"),
-    toolCommand("TRIM", ["TR"], ToolType.TRIM, "Delete the object under the cursor"),
+    toolCommand("TRIM", ["TR"], ToolType.TRIM, "Trim the clicked segment against other objects"),
+    toolCommand("EXTEND", ["EX"], ToolType.EXTEND, "Extend the clicked end to the nearest boundary"),
     toolCommand("MIRROR", ["MI"], ToolType.MIRROR, "Mirror selected objects across a line"),
     toolCommand("ROTATE", ["RO"], ToolType.ROTATE, "Rotate selected objects around a base point"),
     toolCommand("DIMENSION", ["D", "DIM"], ToolType.DIMENSION, "Add a linear dimension"),
@@ -211,6 +242,54 @@ export const BUILTIN_COMMANDS: CommandDefinition[] = [
             ctx.commitAction(next);
             return { message: "Ungrouped the selection" };
         },
+    },
+    {
+        name: "ALIGNLEFT",
+        aliases: ["AL"],
+        description: "Align the selection to its left edge",
+        run: (ctx) => alignRun(ctx, "left"),
+    },
+    {
+        name: "ALIGNRIGHT",
+        aliases: ["ARIGHT"],
+        description: "Align the selection to its right edge",
+        run: (ctx) => alignRun(ctx, "right"),
+    },
+    {
+        name: "ALIGNCENTERX",
+        aliases: ["ACX"],
+        description: "Align the selection to its horizontal center",
+        run: (ctx) => alignRun(ctx, "centerX"),
+    },
+    {
+        name: "ALIGNTOP",
+        aliases: ["AT"],
+        description: "Align the selection to its top edge",
+        run: (ctx) => alignRun(ctx, "top"),
+    },
+    {
+        name: "ALIGNBOTTOM",
+        aliases: ["AB"],
+        description: "Align the selection to its bottom edge",
+        run: (ctx) => alignRun(ctx, "bottom"),
+    },
+    {
+        name: "ALIGNCENTERY",
+        aliases: ["ACY"],
+        description: "Align the selection to its vertical center",
+        run: (ctx) => alignRun(ctx, "centerY"),
+    },
+    {
+        name: "DISTRIBUTEH",
+        aliases: ["DH"],
+        description: "Space the selection evenly between left and right",
+        run: (ctx) => distributeRun(ctx, "horizontal"),
+    },
+    {
+        name: "DISTRIBUTEV",
+        aliases: ["DV"],
+        description: "Space the selection evenly between top and bottom",
+        run: (ctx) => distributeRun(ctx, "vertical"),
     },
     {
         name: "SELECTALL",

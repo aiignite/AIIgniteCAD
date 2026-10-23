@@ -200,7 +200,7 @@ export const LLMModelsPanel: React.FC<LLMModelsPanelProps> = ({ registry }) => {
                             {usage.byProvider.map((item) => (
                                 <span
                                     key={item.provider}
-                                    className="px-1.5 py-0.5 rounded bg-cad-text/10 text-[9px] text-cad-muted"
+                                    className="px-1.5 py-0.5 rounded bg-cad-text/10 text-[10px] text-cad-muted"
                                     title={`${item.calls} 次调用 · ${item.failures} 次失败`}
                                 >
                                     {item.provider} · {item.calls}
@@ -439,13 +439,13 @@ export const LLMModelsPanel: React.FC<LLMModelsPanelProps> = ({ registry }) => {
                                             <p className="text-xs font-bold text-cad-text truncate">
                                                 {model.name}
                                                 {model.isDefault && (
-                                                    <span className="ml-1 text-[9px] px-1 rounded bg-cad-primary/20 text-cad-primary align-middle">
+                                                    <span className="ml-1 text-[10px] px-1 rounded bg-cad-primary/20 text-cad-primary align-middle">
                                                         默认
                                                     </span>
                                                 )}
                                                 {!model.supportsTools && (
                                                     <span
-                                                        className="ml-1 text-[9px] px-1 rounded bg-cad-text/10 text-cad-muted align-middle"
+                                                        className="ml-1 text-[10px] px-1 rounded bg-cad-text/10 text-cad-muted align-middle"
                                                         title="该模型不会收到工具定义，AI 只能文本回复"
                                                     >
                                                         无工具

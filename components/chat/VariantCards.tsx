@@ -102,7 +102,7 @@ const VariantCards: React.FC<VariantCardsProps> = ({
                     compare_arrows
                 </span>
                 <span className="text-[11px] font-bold text-cad-text">方案对比</span>
-                <span className="ml-auto text-[9px] px-1 rounded bg-cad-text/10 text-cad-muted">
+                <span className="ml-auto text-[10px] px-1 rounded bg-cad-text/10 text-cad-muted">
                     {statusLabel(status)}
                 </span>
             </div>
@@ -131,7 +131,7 @@ const VariantCards: React.FC<VariantCardsProps> = ({
                                         check_circle
                                     </span>
                                 )}
-                                <span className="ml-auto text-[9px] text-cad-muted shrink-0">
+                                <span className="ml-auto text-[10px] text-cad-muted shrink-0">
                                     {variant.steps.length} 步{diffLabel(preview.counts)}
                                 </span>
                             </div>
@@ -160,14 +160,14 @@ const VariantCards: React.FC<VariantCardsProps> = ({
                                         </li>
                                     ))}
                                 {variant.steps.length > MAX_VISIBLE_STEPS && (
-                                    <li className="text-[9px] text-cad-muted/80">
+                                    <li className="text-[10px] text-cad-muted/80">
                                         …其余 {variant.steps.length - MAX_VISIBLE_STEPS} 步
                                     </li>
                                 )}
                             </ol>
 
                             {preview.errors > 0 && (
-                                <p className="text-[9px] text-amber-600 dark:text-amber-400">
+                                <p className="text-[10px] text-amber-600 dark:text-amber-400">
                                     {preview.errors} 个步骤参数不合法，采用前请检查
                                 </p>
                             )}
@@ -199,7 +199,7 @@ const VariantCards: React.FC<VariantCardsProps> = ({
                     >
                         都不采用
                     </button>
-                    <span className="text-[9px] text-cad-muted">
+                    <span className="text-[10px] text-cad-muted">
                         采用后仍会在预览中确认，只占一步撤销
                     </span>
                 </div>

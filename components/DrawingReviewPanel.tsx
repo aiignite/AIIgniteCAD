@@ -102,11 +102,11 @@ const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
                             : t("review.issueCount", { count: issues.length })}
                     </span>
                 </div>
-                <p className="text-[10px] text-cad-muted">
+                <p className="text-[11px] text-cad-muted">
                     {t("review.description")}
                 </p>
                 {conventions && (
-                    <p className="text-[10px] text-cad-primary">
+                    <p className="text-[11px] text-cad-primary">
                         {t("review.conventionsApplied")}
                     </p>
                 )}
@@ -148,7 +148,7 @@ const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
                                 ? t("review.empty")
                                 : t("review.filteredEmpty")}
                         </p>
-                        <p className="text-[10px] text-cad-muted">
+                        <p className="text-[11px] text-cad-muted">
                             {issues.length === 0
                                 ? t("review.emptyDetail")
                                 : t("review.emptyFilteredDetail")}
@@ -166,7 +166,7 @@ const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
                             >
                                 <div className="flex items-center gap-1.5">
                                     <span
-                                        className={`shrink-0 px-1 py-px rounded border text-[9px] ${SEVERITY_STYLES[issue.severity]}`}
+                                        className={`shrink-0 px-1 py-px rounded border text-[10px] ${SEVERITY_STYLES[issue.severity]}`}
                                     >
                                         {reviewSeverityLabel(issue.severity, locale)}
                                     </span>
@@ -183,7 +183,7 @@ const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
                                         }
                                         className="p-0.5 rounded text-cad-muted hover:text-cad-primary disabled:opacity-30"
                                     >
-                                        <span className="material-symbols-outlined text-[15px]">
+                                        <span className="material-symbols-outlined text-[16px]">
                                             my_location
                                         </span>
                                     </button>
@@ -192,16 +192,16 @@ const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
                                         title={t("review.ignore")}
                                         className="p-0.5 rounded text-cad-muted hover:text-cad-text"
                                     >
-                                        <span className="material-symbols-outlined text-[15px]">
+                                        <span className="material-symbols-outlined text-[16px]">
                                             visibility_off
                                         </span>
                                     </button>
                                 </div>
-                                <p className="text-[10px] text-cad-muted break-words">
+                                <p className="text-[11px] text-cad-muted break-words">
                                     {issue.message}
                                 </p>
                                 {hasTargets && (
-                                    <p className="text-[9px] font-mono text-cad-muted/80 truncate">
+                                    <p className="text-[11px] font-mono text-cad-muted/80 truncate">
                                         {issue.elementIds.slice(0, 6).join(", ")}
                                         {issue.elementIds.length > 6 &&
                                             ` +${issue.elementIds.length - 6}`}
@@ -222,7 +222,7 @@ const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
                     <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
                     {t("review.askAI")}
                 </button>
-                <div className="flex items-center justify-between text-[9px] text-cad-muted">
+                <div className="flex items-center justify-between text-[10px] text-cad-muted">
                     <span>{t("review.aiPrivacy")}</span>
                     {ignoredCount > 0 && (
                         <button

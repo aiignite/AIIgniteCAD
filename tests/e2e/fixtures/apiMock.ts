@@ -4,7 +4,13 @@
  */
 
 import type { Page, Route } from "@playwright/test";
-import type { CADElement, DesignConventions } from "../../../types";
+import type {
+    AiSkill,
+    Assistant,
+    CADElement,
+    DesignConventions,
+    LLMModel,
+} from "../../../types";
 
 export interface MockProject {
     id: string;
@@ -35,6 +41,11 @@ export interface ApiMockState {
     elementSaves: number;
     loginAttempts: number;
     duplicateSaves: number;
+    models: LLMModel[];
+    assistants: Assistant[];
+    skills: AiSkill[];
+    /** 记录每次「设为默认模型」请求命中的 id，用于确认偏好真的写到了服务端 */
+    defaultModelCalls: string[];
 }
 
 export interface ApiMock {
@@ -47,6 +58,63 @@ export const TEST_USER = {
     email: "tester@example.com",
     createdAt: "2026-01-01T00:00:00.000Z",
 };
+
+/** 设置页的 AI 分区需要真实行才能验证搜索与「设为默认」链路 */
+const seedModels = (): LLMModel[] => [
+    {
+        id: "model-default",
+        name: "本地 Qwen",
+        provider: "Ollama",
+        modelId: "qwen2.5-coder",
+        isActive: true,
+        isDefault: true,
+    },
+    {
+        id: "model-cloud",
+        name: "云端 GPT",
+        provider: "OpenAI",
+        modelId: "gpt-4o-mini",
+        isActive: true,
+        isDefault: false,
+    },
+];
+
+const seedAssistants = (): Assistant[] => [
+    {
+        id: "assistant-drafter",
+        name: "绘图助手",
+        icon: "design_services",
+        description: "按命令画图并检查规范",
+        color: "#137fec",
+        category: "绘图",
+        llmModelId: "model-default",
+    },
+];
+
+const seedSkills = (): AiSkill[] => [
+    {
+        id: "skill-gear",
+        code: "GEAR_DESIGN",
+        name: "齿轮设计",
+        description: "按模数与齿数生成齿轮轮廓",
+        category: "参数化",
+        promptTemplate: "生成齿轮",
+        toolNames: ["generate_gear"],
+        selectionTypes: [],
+        keywords: ["齿轮", "gear"],
+        steps: [{ title: "确认模数", tool: "generate_gear" }],
+        checks: ["齿数大于 8"],
+        examples: ["做一个 20 齿齿轮"],
+        requiredContext: [],
+        negativeKeywords: [],
+        version: 1,
+        priority: 10,
+        isEnabled: true,
+        isSystem: false,
+        userId: TEST_USER.id,
+        updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+];
 
 /** 块库接口返回的固定符号：200×100 门洞，基准点为原点 */
 export const TEST_BLOCK = {
@@ -132,6 +200,10 @@ export async function installApiMock(page: Page): Promise<ApiMock> {
         elementSaves: 0,
         loginAttempts: 0,
         duplicateSaves: 0,
+        models: seedModels(),
+        assistants: seedAssistants(),
+        skills: seedSkills(),
+        defaultModelCalls: [],
     };
     let projectSeq = 0;
     let versionSeq = 0;
@@ -385,7 +457,52 @@ export async function installApiMock(page: Page): Promise<ApiMock> {
             return;
         }
 
-        // 冒烟测试不覆盖的辅助接口（blocks/assistants/models/skills 等）返回空集合
+        // AI 注册表：设置页的模型 / 助手 / 技能分区按真实行渲染
+        if (path === "/llm" && method === "GET") {
+            await json(route, 200, { models: state.models });
+            return;
+        }
+
+        const defaultModelMatch = path.match(/^\/llm\/([^/]+)\/default$/);
+        if (defaultModelMatch && method === "POST") {
+            state.models = state.models.map((model) => ({
+                ...model,
+                isDefault: model.id === defaultModelMatch[1],
+            }));
+            state.defaultModelCalls.push(defaultModelMatch[1]);
+            await json(route, 200, {
+                model: state.models.find((model) => model.id === defaultModelMatch[1]),
+            });
+            return;
+        }
+
+        if (path === "/assistants" && method === "GET") {
+            await json(route, 200, { assistants: state.assistants });
+            return;
+        }
+
+        if (path === "/skills" && method === "GET") {
+            await json(route, 200, { skills: state.skills });
+            return;
+        }
+
+        // 模型面板的用量条带真实结构，缺字段会让面板读到 undefined.length
+        if (path === "/llm/usage" && method === "GET") {
+            await json(route, 200, {
+                days: 30,
+                calls: 12,
+                failures: 1,
+                failureRate: 1 / 12,
+                promptTokens: 4200,
+                completionTokens: 1800,
+                costUsd: 0.03,
+                avgLatencyMs: 940,
+                byProvider: [{ provider: "Ollama", calls: 12, failures: 1 }],
+            });
+            return;
+        }
+
+        // 其余辅助接口（blocks、会话、用量等）返回空集合
         await json(route, 200, {
             blocks: [],
             categories: [],

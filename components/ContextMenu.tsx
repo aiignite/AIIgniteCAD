@@ -87,8 +87,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
                             ${item.disabled
                                 ? "cursor-not-allowed text-cad-muted/50"
                                 : item.danger
-                                  ? "text-red-400 hover:bg-red-500/15"
-                                  : "text-cad-text hover:bg-cad-primary/15"}`}
+                                  ? "text-red-500 dark:text-red-400 hover:bg-red-500/15"
+                                  : "text-cad-text hover:bg-cad-text/10"}`}
                     >
                         {item.icon && (
                             <span className="material-symbols-outlined text-[16px] leading-none">
