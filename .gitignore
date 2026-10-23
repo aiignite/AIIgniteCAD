@@ -12,6 +12,22 @@ dist
 dist-ssr
 *.local
 
+# 测试覆盖率产物
+coverage
+
+# Playwright 产物
+playwright-report
+test-results
+blob-report
+
+# 环境变量与密钥（仅保留示例文件）
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -22,3 +38,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# README 演示帧（由 npm run docs:frames 生成）
+.demo-frames/

@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+#
+# pre-push 钩子 — 阻止把环境变量/密钥文件推送到远端
+#
+# 检查策略：
+#   1. 检查待推送引用的最新树（必查）：包含 .env / .env.* 直接拦截。
+#   2. 检查本次推送范围内的新增提交：任何提交新增了密钥文件即拦截。
+#   3. 历史提交中已存在的密钥文件仅告警，不阻断（避免无法推送，历史需单独清理）。
+#
+# 启用方式（每个克隆执行一次）：
+#   git config core.hooksPath .githooks
+#
+
+set -uo pipefail
+
+EXIT_CODE=0
+ZERO="0000000000000000000000000000000000000000"
+
+# 判断给定路径是否为需要拦截的密钥文件
+# 参数：$1 文件路径
+# 返回：0 表示是密钥文件，1 表示不是
+is_secret_path() {
+    case "$1" in
+        *.env.example|*.env.sample|*.env.template) return 1 ;;
+        .env|.env.*|*/.env|*/.env.*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    # 跳过删除远端分支的推送
+    if [ "$local_sha" = "$ZERO" ]; then
+        continue
+    fi
+
+    # 策略 1：最新提交的树中不允许出现密钥文件
+    tip_files=$(git ls-tree -r --name-only "$local_sha" 2>/dev/null)
+    for file in $tip_files; do
+        if is_secret_path "$file"; then
+            echo "❌ 阻止推送：$local_ref 的当前树包含密钥文件 $file" >&2
+            EXIT_CODE=1
+        fi
+    done
+
+    # 策略 2：本次推送范围内的提交不允许新增密钥文件
+    if [ "$remote_sha" = "$ZERO" ]; then
+        # 远端无对应引用（新分支）：只检查待推送的最新提交，避免历史误伤
+        commits=$(git rev-list --max-count=1 "$local_sha" 2>/dev/null)
+    else
+        commits=$(git rev-list "$remote_sha..$local_sha" 2>/dev/null)
+    fi
+
+    for commit in $commits; do
+        files=$(git diff-tree --no-commit-id --name-status -r --diff-filter=A "$commit" 2>/dev/null)
+        while read -r status file; do
+            [ -z "${file:-}" ] && continue
+            if is_secret_path "$file"; then
+                echo "❌ 阻止推送：提交 $commit 新增了密钥文件 $file" >&2
+                EXIT_CODE=1
+            fi
+        done <<< "$files"
+    done
+
+    # 策略 3：历史中已存在的密钥文件仅告警
+    historical=$(git log --format='%h' -1 "$local_sha" -- .env '.env.*' '**/.env' '**/.env.*' 2>/dev/null)
+    if [ -n "$historical" ]; then
+        echo "⚠️  警告：当前分支历史中曾提交过 .env 文件，请尽快轮换其中所有凭据。" >&2
+        echo "    如需彻底清除，请使用 git filter-repo 后强制推送（需团队协商）。" >&2
+    fi
+done
+
+if [ "$EXIT_CODE" -ne 0 ]; then
+    cat >&2 <<'EOF'
+
+修复步骤：
+  1. git rm --cached <文件>
+  2. 确认 .gitignore 已包含 .env / .env.*
+  3. 用 git commit --amend 或交互式 rebase 从待推送提交中移除该文件
+  4. 密钥一旦进入远端历史即视为泄露，请立即轮换 JWT_SECRET / GEMINI_API_KEY / 数据库口令
+EOF
+fi
+
+exit "$EXIT_CODE"
