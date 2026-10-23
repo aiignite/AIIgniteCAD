@@ -1,5 +1,33 @@
 # AI处理流程分析
 
+> **2026-10-21 更新：以下"当前架构 / 问题分析 / 解决方案"是改造前的调研记录，其中"把 CAD 引擎复制到后端"的方案未被采用。**
+> 实际落地的是前端虚拟画布工具循环，决策依据见 [ADR 0010](../adr/0010-ai-agent-core-loop.md)，现状如下。
+
+## 已实现的 Agent 闭环
+
+```
+输入框 → components/chat/ChatPanel.tsx → hooks/useAIChat.ts
+  ├─ 组装上下文：lib/aiContext.ts（摘要，不发完整 JSON）+ lib/aiAgentLoop.ts（草稿快照）
+  ├─ POST /api/llm/chat  { phase, turnId, round, assistantId, modelId, pinnedSkillCodes, canvasContext, toolResults }
+  │     后端 backend/src/routes/llmChat.ts：
+  │       modelResolver（显式 → 助手 → 默认 → 任一启用，含可重试错误故障转移）
+  │       promptComposer（助手系统提示词、工具白名单、轮次上限）
+  │       skills/skillRouter（数据库技能 + 内置种子，规则打分 top-K，手动 pin 直通）
+  │       contextManager（历史窗口 + 摘要）、toolValidator（参数校验）、usageAccounting（台账）
+  │       providers/*（OpenAI 兼容 / Anthropic / Google / Ollama）
+  │     SSE：trace_start | context | skill_activated | content | tool_call | tool_rejected
+  │          | model_fallback | usage | done | error
+  ├─ lib/aiSseEvents.ts 解析并折叠成回合状态
+  ├─ applyToolCalls 在浏览器草稿数组上求值；失败原因回传，模型下一轮自我修正
+  ├─ done.nextPhase = "tool_results" → 续轮回传结果，直到不再提议工具或达到轮次上限
+  └─ 整批动作一次性交给 AIPreviewModal → 确认后单次 commitAction（一步撤销）
+```
+
+- **会话与历史**：`ChatSession` / `ChatMessage` 服务端落库，`clientMessageId` 为 `turnId`、`turnId:r{n}:assistant`、`turnId:r{n-1}:tool:{toolCallId}`，重放不产生重复历史；`lib/aiChatHistory.ts` 把落库行还原成"一次提问一个气泡、气泡内按轮次展示时间线"。
+- **管理面板**：`LLMModelsPanel`（模型与 30 天用量）、`AssistantsPanel`（助手与工具/技能绑定）、`AISkillsPanel`（技能 CRUD 与工具白名单），共享 `hooks/useAIRegistry.ts`。
+- **降级路径**：模型不支持 Function Calling 时，正文里的旧版 JSON 指令仍由 `parseTextAIAction` 还原成动作，两条路径都进入同一个预览确认流程。
+- **安全**：AI 参数写入画布前必须通过 `toolValidator` / `computeAIActionOutcome`；`CLEAR` 或单次删除 ≥5 个图元需要显式确认；`MarkdownMessage` 不再对模型输出使用 `dangerouslySetInnerHTML`。
+
 ## 当前架构
 
 ### 1. 整体流程

@@ -1,5 +1,21 @@
 # AIIgniteCAD Database & Architecture Design
 
+> 本文是最初引入后端时的设计稿（含 Socket.IO、PostgreSQL 14 等未采用的方案），保留作历史参考。
+> 权威来源是 `backend/prisma/schema.prisma` 与 `backend/prisma/migrations/`；当前行为以代码与 [ADR](../adr/) 为准。
+
+## 当前表结构（2026-10-21，18 张表）
+
+| 分组 | 表 |
+| --- | --- |
+| 用户与项目 | `users` · `projects` · `drawing_settings` · `layers` · `elements` · `project_versions` |
+| 同步 | `idempotency_keys`（按 key 去重，保证重放幂等） |
+| 块系统 | `block_definitions` · `block_categories` · `block_elements` · `block_references` |
+| 对话 | `chat_sessions`（`modelId`、`contextSummary` 与压缩水位线） · `chat_messages`（`@@unique([sessionId, clientMessageId])` 幂等、`role`、`toolCalls` / `toolCallId`、`promptTokens` / `completionTokens`、`metadata`） |
+| AI 注册表 | `llm_models`（provider、`apiKeyEncrypted`、`supportsTools`、默认与启用标记） · `assistants`（系统提示词、工具白名单、最大工具轮次、绑定模型） · `ai_skills` · `assistant_skills`（技能绑定与权重） |
+| AI 台账 | `ai_call_logs`（provider / 模型 / 轮次 / 状态 / token / 成本 / 耗时 / 工具调用数 / 激活技能） |
+
+AI Agent 闭环相关字段的取舍见 [ADR 0010](../adr/0010-ai-agent-core-loop.md)，上下文与 token 计量见 [ADR 0006](../adr/0006-ai-context-summary-token-metrics.md)。
+
 ## 📋 目录
 
 1. [项目概述](#项目概述)

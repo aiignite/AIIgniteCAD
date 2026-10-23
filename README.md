@@ -1,466 +1,335 @@
-<div align="center">
-<img width="1200" height="475" alt="AIIgniteCAD Banner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+# AIIgniteCAD
 
-# AIIgniteCAD - AI-Powered CAD Editor
+> 浏览器里的 AI 辅助 2D CAD：自然语言绘图、DXF 导入导出、块系统、离线优先同步。
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue)](https://www.typescriptlang.org/)
-[![React](https://img.shields.io/badge/React-19-61DAFB)](https://react.dev/)
-[![Node.js](https://img.shields.io/badge/Node.js-20%2B-brightgreen)](https://nodejs.org/)
-[![Docker](https://img.shields.io/badge/Docker-Supported-2496ED)](https://www.docker.com/)
+[![CI](https://github.com/aiignite/AIIgniteCAD/actions/workflows/ci.yml/badge.svg)](https://github.com/aiignite/AIIgniteCAD/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![React](https://img.shields.io/badge/React-19.2-61dafb.svg)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178c6.svg)](https://www.typescriptlang.org/)
+[![Node](https://img.shields.io/badge/Node.js-20%2B-339933.svg)](https://nodejs.org/)
 
-智能 CAD 编辑器，支持 AI 辅助设计、实时协作、DXF 导入导出和强大的 Blocks 块系统。
+![AIIgniteCAD 画布](docs/images/canvas.png)
 
-[快速开始](#-快速开始) • [功能特性](#-功能特性) • [文档](#-文档) • [贡献](#-贡献指南)
-
-</div>
-
----
-
-## 📑 目录
-
-- [功能特性](#-功能特性)
-- [快速开始](#-快速开始)
-- [系统架构](#-系统架构)
-- [核心功能详解](#-核心功能详解)
-- [技术栈](#-技术栈)
-- [文档资源](#-文档资源)
-- [开发指南](#-开发指南)
-- [贡献指南](#-贡献指南)
-- [故障排除](#-故障排除)
-- [路线图](#-路线图)
-- [许可证](#-许可证)
-
----
-
-## ✨ 功能特性
-
-### 🤖 AI 辅助设计
-- **自然语言交互**：通过对话创建和编辑 CAD 元素
-- **智能建议**：AI 驱动的设计建议和优化
-- **多模型支持**：集成 Google Gemini 2.0 Flash
-
-### 🧱 Blocks 块系统
-- **块定义管理**：将多个图形组装为可重用单元
-- **块引用与变换**：支持旋转、缩放、镜像等变换操作
-- **嵌套块支持**：块可以包含其他块，带循环引用检测
-- **块库管理**：全局块、项目块、公共块和私有块
-
-### 📐 CAD 核心功能
-- **DXF 导入/导出**：完整的 DXF 文件格式支持
-- **图层管理**：组织元素到不同图层
-- **几何运算库**：50+ 个核心几何函数
-- **变换操作**：移动、旋转、缩放、镜像、阵列
-
-### 👥 实时协作
-- **WebSocket 通信**：基于 Socket.IO 的实时更新
-- **多用户编辑**：支持多人同时编辑同一项目
-- **版本历史**：跟踪和回滚变更
-
-### 💾 数据存储
-- **PostgreSQL 后端**：企业级数据库支持
-- **IndexedDB 本地存储**：离线优先架构
-- **智能同步**：在线/离线自动数据同步
-
----
-
-## 🚀 快速开始
-
-### 前置要求
-
-- **Node.js** 20+
-- **Docker** 和 **Docker Compose**
-- **PostgreSQL**（或使用 Docker）
-
-### 方式一：Docker 一键启动（推荐）
+## 90 秒跑起来
 
 ```bash
-# 1. 克隆仓库
-git clone https://github.com/aiignite/AIIgniteCAD.git
-cd AIIgniteCAD
-
-# 2. 配置环境变量
-cp .env.example .env
-# 编辑 .env 文件，设置必要的环境变量
-
-# 3. 启动所有服务
-docker-compose up -d
-
-# 4. 访问应用
-# 前端: http://localhost:3400
-# 后端: http://localhost:3410
+npm install && (cd backend && npm install)
+cp .env.example .env && cp backend/.env.example backend/.env
+git config core.hooksPath .githooks   # 阻止 .env 被误提交
+docker compose up -d db
+(cd backend && npx prisma migrate deploy && npx prisma generate)
+./start.sh                    # 前端 http://localhost:3220 · 后端 http://localhost:3225
 ```
 
-### 方式二：本地开发
+打开首页 → 注册 → 在欢迎页选择「示例图纸」（齿轮 / 弹簧 / 建筑平面）→ 导出 DXF。**无需 LLM API Key**：绘图、DXF 导入导出、离线保存全部可用，配置模型后才启用 AI 对话。
+
+目录：[功能特性](#功能特性) · [快速开始](#快速开始) · [系统架构](#系统架构) · [AI](#ai模型助手技能与工具循环) · [离线同步](#离线优先与同步) · [版本历史](#版本历史) · [图框打印](#图框与打印) · [可观测性](#可观测性) · [API 安全](#api-安全) · [命令与快捷键](#命令与快捷键) · [技术栈](#技术栈) · [项目结构](#项目结构) · [测试](#测试与质量门禁) · [文档索引](#文档索引) · [已知限制](#已知限制) · [贡献](#贡献与许可证)
+
+## 功能特性
+
+| 模块       | 能力                                                                                                                                        |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 绘图       | 直线、多段线、圆、圆弧、矩形、文字、图案填充（11 种）                                                                                       |
+| 编辑       | 选择、移动、复制、修剪、镜像、旋转、缩放、偏移、矩形阵列、夹点编辑                                                                          |
+| 标注测量   | 线性尺寸标注、距离测量                                                                                                                      |
+| 参数化图形 | 齿轮、渐开线、螺旋、弹簧、正多边形、椭圆；正弦 / 余弦、对数螺旋、二次 / 三次贝塞尔曲线，生成后自动校验                                     |
+| 块系统     | 块定义 / 引用、嵌套与循环引用检测、旋转 / 缩放 / 镜像、分层块库                                                                             |
+| 文件与输出 | DXF 导入导出（LINE / CIRCLE / ARC / LWPOLYLINE / TEXT 等）；图框打印 A4–A0 / Letter、横竖版、适配或固定比例、标题栏、单色矢量输出            |
+| AI         | 模型注册表 + 解析链与故障转移、助手（系统提示 / 工具白名单 / 轮次上限）、技能路由与导入导出、Agent 工具循环、计划与多方案、服务端会话与用量台账 |
+| 参考图     | 本地参考图转 CAD：阈值提取轮廓 + 简化，生成多段线到 TRACE 图层（图片不上传）                                                               |
+| 存储同步   | IndexedDB 本地优先 + PostgreSQL 云端同步；幂等重放与冲突提示                                                                               |
+| 协作与组织 | JWT 鉴权、项目隔离、图层管理、版本历史（自动 / 手动、对比、可撤销恢复）、图纸检查面板与设计约定；实验性实时协作（房间广播图元差集与光标，默认关闭，[ADR 0012](docs/adr/0012-experimental-collaboration.md)） |
+
+### 界面一览
+
+| 登录                             | 欢迎 / 最近文件                      | 暗色主题                                 |
+| -------------------------------- | ------------------------------------ | ---------------------------------------- |
+| ![登录页](docs/images/login.png) | ![欢迎面板](docs/images/welcome.png) | ![暗色画布](docs/images/canvas-dark.png) |
+
+![30 秒演示：登录 → 示例图纸 → 绘制 → 打印 / 版本 → 暗色主题](docs/images/demo.gif)
+
+> 截图与演示 GIF 均由真实 UI 生成：`npm run docs:screenshots`（`tests/e2e/screenshots.spec.ts`）、`npm run docs:gif`（`npm run docs:frames` 录制 10 帧，每帧 3 秒）。
+
+## 快速开始
 
 ```bash
-# 1. 安装依赖
-# 前端
-npm install
-
-# 后端
-cd backend
-npm install
-
-# 2. 配置数据库
-npx prisma migrate dev
-npx prisma generate
-
-# 3. 启动服务
-# 终端 1 - 后端
-cd backend
-npm run dev
-
-# 终端 2 - 前端
-cd ..
-npm run dev
+# 两个终端
+(cd backend && npm run dev)   # http://localhost:3225
+npm run dev                   # http://localhost:3220
 ```
 
-### 环境变量配置
+- **数据库凭据要一致**：根目录 `.env` 的 `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` 必须与 `backend/.env` 的 `DATABASE_URL` 对应。
+- **生产必须换密钥**：`JWT_SECRET` 与 `ENCRYPTION_KEY`（各 `openssl rand -hex 32`）；生产环境未设置 `JWT_SECRET` 时服务拒绝启动。
+- **Docker 一键**：`cp .env.example .env` 填好密钥后 `docker compose up -d --build`，数据库连接由 Compose 注入。
+- **验证路径**：`curl http://localhost:3225/health` → 注册 → `New Drawing` → 画一条线 → `Export` 得到含 `ENTITIES` 的 `.dxf` → 保存后刷新可从服务端恢复。
 
-在 `.env` 文件中配置以下变量：
+前置条件、AI 模型配置步骤与故障排除（端口占用、Prisma Client 未生成、401 / CORS、AI 无响应错误码）见 [QUICKSTART.md](QUICKSTART.md)；提示词示例见 [examples/ai-prompts.md](examples/ai-prompts.md)。
+
+## 系统架构
+
+```
+React 19 + Vite（SVG 画布）
+  components/  Canvas · Toolbar · RightPanel · PropertyInspector · Footer · chat/
+  store/       canvasStore（命令式撤销）· appStore（用户 / 文件 / 通知）
+  hooks/       useCanvasInteraction · useAIChat（Agent 工具循环）· useAIRegistry · useCollaboration
+  lib/         geometry · transform · selection · snapping · command
+               aiTools · aiAgentLoop · aiActions · aiPlan · aiContext · aiSseEvents
+  services/    dxf · block · hatch · advancedShapes · indexedDB · sync · api · telemetry
+        │ REST / SSE · Socket.IO（实验性协作）
+Express + Prisma（JWT）
+  routes/      auth · projects · versions · blocks · llm · llmChat · chat
+               assistants · skills · metrics · telemetry
+  services/aiEngine/  modelResolver（解析链 + 故障转移）· promptComposer
+               skills（规则路由）· contextManager（摘要 / 压缩）· toolValidator
+               usageAccounting（token 台账）· providers/
+  lib/         logger（JSON 日志）· metrics（进程内指标）· crypto
+        │
+PostgreSQL 15（18 张表）
+```
+
+`lib/` 为不依赖 React 与浏览器 API 的纯函数层，副作用与 IO 在 `services/`；各绘制工具是 `tools/` 里实现 `CanvasTool` 的独立状态机。更完整的模块边界与设计取舍见 [docs/architecture](docs/architecture/) 和 [ADR](docs/adr/)。
+
+## AI：模型、助手、技能与工具循环
+
+AI 通过 OpenAI / Anthropic / Google / Ollama 四种 Provider 调用。后端把 CAD 工具定义随请求发送给模型，以 SSE 流式回传文本与工具调用；工具在**浏览器侧的虚拟画布副本**上执行，模型每轮一次 HTTP 请求，回传结果后续跑下一轮。
+
+AI 生成的变更在确认前先以**幽灵层**画在真实图纸上：紫色虚线是提议结果、红色虚线是将被移除的现状。预览弹窗可收起为底部工具条，在图纸上下文中核对落点；确认后按差分增量一次 `commitAction`，整批动作仍只占一步撤销。
+
+### CAD 工具（28 个，前后端定义一致）
+
+| 工具                                                                                        | 作用                                                                  |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `draw_line` / `draw_polyline` / `draw_rectangle` / `draw_circle` / `draw_arc` / `draw_text` | 创建图元                                                              |
+| `draw_dimension` / `dimension_chain`                                                        | 线性标注 / 连续标注                                                   |
+| `move_elements` / `rotate_elements` / `copy_elements` / `mirror_elements`                   | 变换选中对象                                                          |
+| `scale_elements` / `offset_elements` / `array_elements`                                     | 缩放 / 偏移 / 矩形阵列                                                |
+| `align_elements` / `distribute_elements`                                                    | 对齐 / 等距分布                                                       |
+| `assign_layer` / `delete_elements`                                                          | 设置图层 / 删除指定图元                                               |
+| `clear_canvas` / `delete_last`                                                              | 清空 / 删除最后一项                                                   |
+| `get_canvas_info`                                                                           | 只读：读取当前画布统计                                                |
+| `query_elements`                                                                            | 只读：按类型 / 图层 / 文本 / 范围查询图元                             |
+| `measure_geometry`                                                                          | 只读：测量距离、长度、面积与包围盒                                    |
+| `check_drawing`                                                                             | 只读：检查几何退化、重复、文字重叠、图层组织与缺失标注                |
+| `list_blocks`                                                                               | 只读：检索块库中的可复用符号（名称 / 分类 / 描述）                     |
+| `insert_block`                                                                              | 按块库 id 插入符号，支持缩放与旋转                                    |
+| `zoom_to_selection`                                                                         | 视图：缩放到指定图元或当前选择集                                      |
+| `propose_plan`                                                                              | 计划模式专用：提交带工具与参数的执行计划，等待用户确认                |
+| `propose_variants`                                                                          | 多方案模式专用：提交 2–3 个备选方案（名称、摘要、步骤），等待用户选择 |
+
+### 契约、校验与拒绝回环
+
+- 前端优先消费结构化 `tool_call`；模型不支持工具调用时自动降级解析文本 JSON，两条路径都有测试。
+- **单一事实源**：跨包契约由服务端下发或由同一份工具定义生成，前端不维护副本。轮次上限取 `assistant.maxToolRounds`（默认 4，可配 0–12），经 `context` 事件下发；前端本地硬上限 8，拿不到该事件时回落到 4——宁可少跑一轮也不打 400。
+- **参数先校验，作用域后解析**：参数在服务端 `toolValidator` 收紧，非法调用被拒绝并**定位到具体字段**（如 `array_elements.rows 不能小于 1`）；编辑类工具省略 `ids` 时作用于用户确认时的当前选择集。
+- **拒绝也要闭环**：被拒调用与其原因一起回传模型，assistant 与 tool 消息按 provider 要求一一配对，模型能自纠错而不是盲猜重试；失败调用同样占单轮额度（每轮最多 20 次）。同一 `tool + arguments` 连续重复时在结果里提示模型换个做法，但不直接拒绝。
+- 破坏性操作（`CLEAR`、一次删除 ≥5 个图元）必须在预览弹窗中显式勾选确认；视图类工具只移动视口，不进预览、不占撤销步骤（[ADR 0011](docs/adr/0011-ai-view-tools-bypass-preview.md)）。机制取舍见 [ADR 0018](docs/adr/0018-ai-tool-contract-and-rejection-loop.md)。
+
+### 计划、多方案与检查面板
+
+- **计划模式**：显式规划、跨 3 类操作或大图整理请求自动进入。该轮只下发只读工具与 `propose_plan`，模型先确认现状再提交计划；提示词单独给出「计划步骤可引用的写工具」清单（由工具定义自动生成，与本轮可调用清单区分）。用户可在卡片中改标题、调顺序、删步骤，确认后由前端在草稿上执行写步骤，仍只弹一次预览、只占一步撤销（[ADR 0014](docs/adr/0014-design-ops-plan-and-review.md)、[ADR 0017](docs/adr/0017-ai-gap-closing-and-conventions-downstream.md)）。
+- **多方案生成**：请求含「多方案 / 方案对比 / 备选」等意图时进入，该轮只下发只读工具与 `propose_variants`。模型返回 2–3 个方案，每个在草稿上独立执行并渲染缩略预览，卡片按**几何差分**显示「新增 N / 修改 M / 移除 K」而非模型自述；采用其一后只走一次预览、只占一步撤销，未采用的方案不落图。
+- **图纸检查面板**：右侧导航「检查」基于同一套确定性规则列出错误 / 警告 / 提示，支持筛选、定位（选中并缩放）、忽略与「让 AI 修复」；修复请求只携带问题摘要与相关图元 id，不发送完整图元 JSON。
+- **块与符号复用**：块库目录（`/api/blocks/tree`）在每轮请求前拉取并压成扁平目录（按项目缓存 60 秒，块或分类增删改后立即失效），模型先用 `list_blocks` 找可复用符号，再用 `insert_block` 插入。插入在草稿上把块展开为图元（平移 / 缩放 / 旋转复用既有变换函数），因此与普通绘制走同一条预览与单步撤销管线。块库读取失败与空库是两种状态：不可用时明确回报「块库当前不可用……不是空库」，模型据此改走绘图工具而不是凭空重画库里已有的符号。
+
+### 设计记忆与参考图
+
+- **设计约定**：每个项目可保存制图标准、单位、字高、标注精度、图层命名规则与备注，随项目走 IndexedDB / 同步队列持久化（`projects.design_conventions`）；右侧导航「约定」维护，AI 每轮自动注入摘要。约定同时**下沉到确定性检查**：检查面板、AI 质量门禁与 `check_drawing` 都按约定核对图层归属与文字字高是否统一。
+- **版本记忆**：创建版本时对比上一版快照，按轻量几何签名计算新增 / 删除 / 修改数量、类型分布与涉及图层，写入 `project_versions.change_summary`；最近 5 个版本连同提交信息注入 prompt，让 AI 知道「上一版改了什么」。
+- **参考图转 CAD**：页头「Trace」打开，图片仅在浏览器本地用 `createImageBitmap` + Canvas 读取，不上传。按阈值提取轮廓（marching squares）、RDP 简化后生成 `LWPOLYLINE` 到 `TRACE` 图层，可调阈值 / 反色 / 简化强度 / 目标宽度，预览确认后一次插入并占一步撤销。能力来源见 [ADR 0015](docs/adr/0015-design-conventions-and-variants.md)。
+
+### 质量门禁与反馈闭环
+
+- **结果门禁**：预览弹窗在展示变更前先跑一遍与「检查」面板同源的确定性规则，只把**本轮新增**的问题算作 AI 引入（对比改动前后的结果差集，既有历史问题不追责）。出现错误级问题时「应用」按钮默认禁用，必须显式勾选「确认接受检查错误」；警告与提示只做提示，不阻断。
+- **回答反馈**：每条 AI 回答下方有「有帮助 / 没帮助」两个按钮，「没帮助」可附带原因（不准确 / 不符合约定 / 改动多余）。反馈经 `POST /api/chat/turns/:turnId/feedback` 写回该轮助手消息的 metadata，不新增表；历史回放时状态一并还原。
+- **技能有用率与采纳率**：`GET /api/skills/stats` 同时聚合主观反馈（up / down）与客观采纳（预览弹窗里点了「应用」还是「放弃」），按技能 code 给出 `helpfulRate` 与 `adoptionRate`；回执成功后立即刷新，无轮询。未评价的消息不计入有用率分母，未做决策的轮次不计入采纳率分母，避免把「没评价」当成差评。详见 [ADR 0016](docs/adr/0016-block-reuse-quality-gate-and-feedback.md)。
+
+### 模型解析与故障转移
+
+解析链固定为 **显式选择 → 会话绑定 → 助手模型 → 用户默认 → 系统默认 → 任一启用模型**，每步都校验归属（防止助手借用其他用户的密钥）与 `supportsTools`；实际使用的 provider 与模型通过 `trace_start` 事件回传前端展示，显式与会话级选择不可用时直接报错，不静默降级。
+
+Provider 报错且**尚未吐出任何内容**时才按候选顺序换模型重试，切换时发出 `model_fallback` 事件；已经开始流式输出的响应不会静默重放。`AiCallLog` 记录 provider、模型、轮次、状态、错误码、token、成本、耗时、工具调用数与激活技能，回答「这个月花了多少、哪条链路在报错」。
+
+### 助手与技能
+
+- **助手**：系统提示词真正注入请求，并限定可用工具白名单与最大工具轮次；一个项目可切换助手而不改代码。
+- **技能 Playbook**：内置种子技能在首次使用时按 code upsert 进 `ai_skills`（`isSystem=true`），与用户自建技能同库同表，可在技能面板停用、编辑或克隆。每个技能除提示词外还包含执行步骤、完成检查、示例请求、所需设计上下文与反关键词，**全部字段都会进入提示词**——步骤、检查、示例按技能成块输出，反关键词渲染成「不适用场景」；每次更新递增 `version`。
+- **路由**：显式固定 > 助手绑定 > 关键词 > 会话连续性构成语言意图，选择集类型与设计上下文只在已有意图时加分，反关键词命中扣分；低于阈值不激活，最多 3 个，提示词字符有上限。审查技能激活时本轮只下发只读工具（[ADR 0013](docs/adr/0013-skill-playbook-design-context.md)）。
+- **只读设计工具**：`query_elements` / `measure_geometry` / `check_drawing` 在浏览器草稿上确定性执行，模型先查、再量、后回答；结果有字符预算裁剪，不会把非法 JSON 回传给模型。
+- **写入校验三径合一**：技能编辑器手写路径、导入路径与后端共用同一套字段级校验（工具名白名单、上下文信号、长度与数值范围），错误定位到具体输入框而不是笼统 400。每个技能可导出为带版本号的 JSON（`aiignite-skill` / v1），导入时先在浏览器侧完整校验，代码被占用时自动追加副本后缀，落库前给出预览。
+
+### 会话与上下文
+
+- 会话与消息保存在服务端（`ChatSession` / `ChatMessage`），切图即切会话，刷新后历史完整回放，工具条目保留参数摘要与执行状态。幂等靠确定性 `clientMessageId`：`${turnId}`（用户）、`${turnId}:r{n}:assistant`、`${turnId}:r{n-1}:tool:${toolCallId}`（工具结果归属提议它的那一轮）。
+- 发送给模型的画布上下文分 **brief / standard / deep** 三档：brief 档给出统计、选中 id 与一行事实（有无标注、块引用数、隐藏 / 锁定图层数）；standard 档增加图层可见性 / 锁定明细（截断时说明另有几个隐藏或锁定）、块引用、标注覆盖与修订号；审查、测量、布局类问题或大图扩展到最多 30 个选中图元。仍禁止倾倒全量 JSON。
+- 每轮请求的 `blockCount` 计入「持久块引用 + 本轮草稿刚插入的块」，模型不会重复插同一个块。
+- 长对话生成**确定性 digest** 写入 `contextSummary` 并记录水位线，早于水位线的消息不再逐条注入（不调用模型做摘要，保证可测试）。回合结束把 `applied` / `discarded`（带 `reason`，如 cancelled、stopped）、受影响图元 id 与本轮激活技能 code 回写到本轮用户消息的 metadata。
+- 右侧面板分 **模型 / 助手 / 技能 / 对话 / 检查 / 约定** 六个视图，共用一份注册表状态，写入后自动重拉。
+
+测试分层、用例与文件映射、指标名全清单见 [docs/guides/TESTING.md](docs/guides/TESTING.md)。日常门禁只需 `npm test` 与 `npm run test:e2e`，均无需真实 API Key 或数据库。AI 侧指标按「请求 / 失败 / 故障转移 / 重试、工具调用与拒绝、耗时与上下文规模、token 与成本、回合采纳与反馈、技能写入」分类统计；Provider 返回 usage 时直接记录，否则按 4 字符 ≈ 1 token 估算并标记 `usageEstimated`。
+
+## 离线优先与同步
+
+1. 每次编辑先写入 IndexedDB，再进入 `syncQueue`；不要绕过队列直接调用 API。
+2. 同步请求携带客户端生成的 `Idempotency-Key`，后端按 key 去重，网络重试不会重复创建项目或元素。
+3. 队列按项目合并为最新快照，避免离线期间的中间状态逐个上传。
+4. 冲突采用**最后写入胜**，响应带 `conflict` 标记，前端提示「云端修改已被本次保存覆盖」。
+5. 离线新建的项目在首次同步后由服务端 id 回填并迁移本地文件、当前文件与已保存快照。
+
+## 版本历史
+
+- 顶部 **Versions** 打开版本面板，可命名保存当前图形；每 20 次提交自动创建版本，失败后 60 秒退避重试。
+- 版本列表只返回元数据（版本号、`elementCount`、名称、时间）与 `+N / -M / ~K` 差异摘要，快照详情按需加载；分页以 `versionNumber` 为游标。
+- 支持勾选任意两个版本对比，也支持当前图形与选中版本对比，结果统计新增 / 删除 / 修改数量及图元类型。
+- 恢复版本通过 `commitAction` 写入撤销历史并立即持久化，恢复后可用 `Ctrl/Cmd + Z` 回退。
+- 接口：`GET/POST /api/projects/:id/versions`、`GET /api/projects/:id/versions/:versionId`；均校验项目归属，版本号在事务内取 max + 1，唯一冲突返回 409。
+
+## 图框与打印
+
+- 顶部 **Plot** 打开打印面板，支持 A4 / A3 / A2 / A1 / A0 / Letter 与横竖版，边距 5–30mm。
+- 比例可选 **Fit to sheet** 或固定 1:1 / 1:2 / 1:5 / … / 1:1000；固定比例超出绘图区时会提示裁切。
+- 可选图框与标题栏（图名、图号、比例、图幅、日期、作者）以及单色输出（白纸黑线）。
+- 预览与打印共用 `components/PlotSheet.tsx`，布局统一走 `lib/plot.ts`，图元打印样式通过 `CADElementRenderer` 的 `overrides` 传入；输出为 SVG 矢量，在浏览器打印对话框选「另存为 PDF」即得矢量 PDF。
+- 线宽按 0.25mm 换算到当前比例，打印时关闭 `non-scaling-stroke`，不同比例下线宽保持一致。
+
+## 可观测性
+
+| 端点 / 能力                  | 说明                                                                                                        |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `GET /health`                | 存活检查                                                                                                      |
+| `GET /api/metrics`           | 计数器、gauge、直方图（P50 / P95 / P99）与派生比率（AI 失败率、SSE 中断率）；可用 `METRICS_TOKEN` 保护        |
+| `POST /api/telemetry/events` | 前端错误、未处理 Promise、同步状态、AI 上下文统计批量上报                                                    |
+| `ai_call_logs` 表            | 每次模型调用的台账：provider、模型、轮次、状态与错误码、token、成本、耗时、工具调用数、激活技能               |
+| 全局 ErrorBoundary           | 渲染崩溃时提供重试、刷新、复制诊断信息三个出口，并上报组件栈                                                 |
+| `X-Request-Id`               | 请求链路 ID，日志、错误响应与指标共用                                                                        |
+| 结构化日志                   | 单行 JSON，敏感字段自动脱敏；`LOG_LEVEL=debug/info/warn/error`                                              |
+
+指标与限流计数保存在**进程内存**，重启清零、多实例不共享。完整指标名清单见 [docs/guides/TESTING.md](docs/guides/TESTING.md)。
 
 ```bash
-# 必需
-GEMINI_API_KEY=your_gemini_api_key
-JWT_SECRET=your_jwt_secret
-DATABASE_URL=postgresql://user:password@localhost:5435/aiignitecad
-
-# 可选
-PORT=3410
-NODE_ENV=development
+curl http://localhost:3225/api/metrics | jq
+LOG_LEVEL=debug npm run dev   # backend/
 ```
 
----
+## API 安全
 
-## 🏗️ 系统架构
+- **限流**（超限返回 `429` 与 `Retry-After`、`RateLimit-*` 头；只读的 `GET /api/auth/me` 不计数）：认证写操作每 IP 每 15 分钟 20 次，`/api/llm/*` 每用户每分钟 30 次，`/api/chat/*` 每用户每 5 分钟 120 次，`/api/skills/*` 600 次 / 5 分钟，`/api/blocks/*` 300 次 / 5 分钟；额度分别由 `AUTH` / `AI` / `CHAT` / `SKILL` / `BLOCK` 前缀的 `RATE_LIMIT_MAX` 与 `RATE_LIMIT_WINDOW_MS` 调整，`RATE_LIMIT_DISABLED=true` 仅用于紧急排障。限流桶在进程内存，多实例部署需在网关层另行限制。
+- `/api/llm/chat` 在触达数据库与 Provider 前做完整 Agent 回合校验：`phase` 只能是 `user_turn` / `tool_results`，`message` 必填且 ≤ 32000 字符，`round` 受绝对轮次上限约束，`turnId` / `sessionId` / `projectId` / `assistantId` / `modelId` ≤ 128 字符，`pinnedSkillCodes` ≤ 5 个，`canvasContext` 与 `toolResults` 各自有条数与长度上限——超限的回传内容直接 400，不会进入 prompt。
+- 模型 API Key 以 AES-256-GCM 加密落库，响应只返回 `hasApiKey` 与 `maskSecret` 预览，`apiKeyEncrypted` 由 `serializers.ts` 统一剔除。
+- 引用的模型必须归属当前用户（或系统内置 `userId=null`）且处于启用状态，否则解析链抛 `MODEL_FORBIDDEN` / `MODEL_DISABLED`。
+- 模型 `baseUrl` 由 `urlGuard` 做 SSRF 校验：拒绝非 http(s) 与私网 / 回环地址（Ollama 作为本地推理例外放行），生产强制 https；放行内网自建网关需显式配置 `AI_ALLOWED_ENDPOINTS`。
+- helmet 输出严格 CSP（`default-src 'none'`）、一年期 HSTS、`X-Frame-Options: DENY`、`Referrer-Policy: no-referrer` 并关闭 `X-Powered-By`，安全头集中在 `backend/src/app.ts`。
+- 生产环境未设置 `JWT_SECRET` 时服务拒绝启动；CI 对前后端执行 `npm audit --omit=dev --audit-level=high`，high / critical 生产依赖漏洞阻断合并。日志与错误响应不包含 API Key、密码、Authorization 头或完整请求体。
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         客户端层 (Frontend)                      │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │  React UI   │  │ CAD Canvas  │  │ AI Chat     │              │
-│  │  Components │  │ Renderer    │  │ Interface   │              │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘              │
-│         │                │                │                      │
-│  ┌──────▼────────────────▼────────────────▼──────┐              │
-│  │         Services Layer (TypeScript)           │              │
-│  │  dxfService │ blockService │ indexedDBService  │              │
-│  └──────────────────────────────────────────────┘              │
-└────────────────────────┬────────────────────────────────────────┘
-                         │ WebSocket │ REST API
-                         ▼           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                         服务层 (Backend)                         │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │  Express    │  │  Socket.IO  │  │  Prisma     │              │
-│  │  API Routes │  │  WebSocket  │  │  ORM        │              │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘              │
-│         │                │                │                      │
-│  ┌──────▼────────────────▼────────────────▼──────┐              │
-│  │         Business Logic & Middleware            │              │
-│  │  Auth │ Validation │ Sync │ AI Integration     │              │
-│  └──────────────────────────────────────────────┘              │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                         数据层 (Data)                            │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │ PostgreSQL  │  │ IndexedDB   │  │  Gemini     │              │
-│  │  Database   │  │  (Browser)  │  │  AI API     │              │
-│  └─────────────┘  └─────────────┘  └─────────────┘              │
-└─────────────────────────────────────────────────────────────────┘
-```
+## 命令与快捷键
 
----
+底部命令行支持 AutoCAD 风格缩写（大小写不敏感）。
 
-## 🔧 核心功能详解
+| 命令                                     | 作用                             | 命令                                    | 作用                              |
+| ---------------------------------------- | -------------------------------- | --------------------------------------- | --------------------------------- |
+| `L` / `LINE`                             | 直线                             | `D` / `DIM`                             | 尺寸标注                          |
+| `PL` / `POLYLINE`                        | 多段线                           | `DI` / `DIST`                           | 距离测量                          |
+| `C` / `CIRCLE`                           | 圆                               | `CO` / `COPY`                           | 复制                              |
+| `A` / `ARC`                              | 圆弧                             | `TR` / `TRIM`                           | 修剪                              |
+| `R` / `REC`                              | 矩形                             | `MI` / `MIRROR`                         | 镜像                              |
+| `T` / `TEXT`                             | 文字                             | `RO` / `ROTATE`                         | 旋转                              |
+| `M` / `MOVE`                             | 移动 / 选择                      | `E` / `DEL` / `ERASE`                   | 删除选中                          |
+| `SC` / `SCALE <倍率>`                    | 缩放选中                         | `O` / `OFFSET <距离>`                   | 偏移选中                          |
+| `AR` / `ARRAY <行> <列> [列距] [行距]`   | 矩形阵列                         | `SA` / `SELECTALL`                      | 全选（跳过隐藏 / 锁定层与临时隐藏） |
+| `LA` / `LAYER <名称>`                    | 切换或新建图层                   | `DS` / `DESELECT`                       | 清空选择                          |
+| `ISO` / `ISOLATE`                        | 只保留选中图元                   | `HI` / `HIDEOBJECTS`                    | 隐藏选中图元                      |
+| `SH` / `SHOWALL`                         | 显示被隐藏图元（含 `UNISO`）     | `SSI` / `SELECTSIMILAR`                 | 选择同类型图元                    |
+| `Z` / `ZOOM E\|S\|W <x1> <y1> <x2> <y2>` | 缩放到范围 / 选择集 / 窗口       | `V` / `VIEW SAVE\|RESTORE\|LIST [名称]` | 命名视图                          |
+| `QS` / `QSELECT`                         | 快速选择（类型 / 图层 / 颜色）   | `PLOT` / `PRINT`                        | 打开图框打印面板                  |
+| `ORTHO` / `GRID` / `SNAP`                | 切换正交 / 栅格 / 捕捉           | `HELP [命令]`                           | 列出或查看命令用法                |
+| `U` / `UNDO` · `REDO`                    | 撤销 / 重做                      |                                         |                                   |
 
-### Blocks 块系统
+交互：`Enter` 执行、留空时 `Enter` 重复上一条命令，必填参数缺失时进入分步输入；`Tab` 补全命令名；`↑` / `↓` 浏览历史（保留 50 条）；`Esc` 取消分步或清空输入。命令定义集中在 `lib/commands/builtins.ts`，新增命令无需改动 `App.tsx`。
 
-Blocks 是 CAD 软件的核心功能，类似于编程中的函数/模块：
+| 快捷键                                  | 作用                                 |
+| --------------------------------------- | ------------------------------------ |
+| `Ctrl/Cmd + Z`                          | 撤销                                 |
+| `Ctrl/Cmd + Y` / `Ctrl/Cmd + Shift + Z` | 重做                                 |
+| `Delete` / `Backspace`                  | 删除选中（≥5 个需确认）              |
+| `Esc`                                   | 取消当前工具 / 绘制                  |
+| `Enter`                                 | 结束多段线；动态输入键入中则提交数值 |
+| `F3` / `F7` / `F8` / `F10`              | 切换捕捉 / 栅格 / 正交 / 极轴        |
+| `Shift + 点击`                          | 加选 / 减选图元                      |
 
-```typescript
-// 创建块定义
-const windowBlock = createBlockDefinition(
-  '标准窗户-1200x1500',
-  [frameElements, glassElements],
-  { x: 0, y: 0 }
-);
+### 画布交互
 
-// 在墙上插入多个窗户
-insertBlockReference(projectId, windowBlock.id, { x: 1000, y: 500 });
-insertBlockReference(projectId, windowBlock.id, { x: 3000, y: 500 });
-```
+- **状态栏是唯一提示位置**：按当前工具与已取点阶段输出「工具 · 下一步」，同时显示 X/Y、缩放与捕捉类型。
+- **选择与命中**：选择 / 复制 / 修剪下光标经过图元即变浅蓝、点击转黄色选中，捕捉点以中文标签（端点 / 中点 / 圆心…）跟随光标；图元重叠时在同一位置 300ms 内重复点击可依次切换（后绘制者优先），多选下点击成员仍保留整个选择集。
+- **绘制手感**：直线 / 矩形 / 圆既可拖拽也可点击留锚点、再点提交；已有锚点时直接键入数字，`Tab` 在长度 / 角度（或宽 / 高）间切换，`Enter` 按数值合成终点，`Esc` 放弃键入；「极轴」以 45° 增量、10° 容差吸附方向并显示引导线，与「正交」互斥。
+- **选中集迷你工具栏**：选框上方浮出移动 / 复制 / 旋转 / 缩放 / 镜像 / 偏移 / 阵列 / 删除 / 问 AI，全部复用左侧工具栏的工具态；取消选择或进入工具流程即让位。「问 AI」把选择集摘要写成对话草稿并聚焦输入框。
+- **隔离与同类**：`ISOLATE` / `HIDEOBJECTS` 写入独立的临时隐藏集——被隐藏图元不渲染、不参与捕捉与框选，但不改图层可见性、不占撤销步骤；状态栏显示「已隐藏 N」，点击它或 `SHOWALL` 恢复。`SELECTSIMILAR` 在当前可显示图元中按类型扩选。隐藏集只作用于屏幕，DXF 导出与打印仍按完整图纸。
+- **视图与文档分离**：缩放 / 平移是瞬态视图状态，不进撤销历史也不标记图纸已修改；`ZOOM E/S/W` 分别取范围、追选择集、取窗口，`VIEW SAVE/RESTORE/LIST` 管理按图纸存于浏览器本地的命名视图。`QSELECT` 按类型 / 图层 / 颜色三维筛选（维度间取交集、同维度内取并集），底部实时显示收敛后的命中数。
+- **导航图与分组**：画布右下角小地图缩略显示全部可显示图元并叠蓝色视口矩形，点击或拖拽即移动视口，不产生撤销步骤；左侧工具条按 导航 / 绘图 / 修改 常驻高频工具，其余收进「更多工具」溢出菜单并按 绘图 / 修改 / 标注 / 参数化 分组。
 
-**块类型**：
-- **全局块**：所有项目可用的标准件
-- **项目块**：项目特定的设计元素
-- **公共块**：所有用户共享的符号库
-- **私有块**：个人块库
+## 技术栈
 
-### AI 辅助设计流程
+- **前端**：React 19.2、TypeScript 5.8、Vite 6、Tailwind CSS 3.4、SVG 渲染、marked
+- **后端**：Express 4、Prisma 5、PostgreSQL 15、Socket.IO（实验性实时协作，默认关闭）、JWT + bcryptjs、helmet
+- **测试**：Vitest 5（前后端）、Supertest、Playwright 1.64
+- **工程化**：ESLint 10（前端）/ 8（后端）、Prettier、Docker 多阶段构建 + Nginx、GitHub Actions
 
-```
-用户输入自然语言
-       │
-       ▼
-AI 理解意图 (Gemini 2.0)
-       │
-       ▼
-生成 CAD 操作指令
-       │
-       ▼
-执行几何运算/块操作
-       │
-       ▼
-更新画布显示
-```
-
-### 离线优先架构
-
-- **在线**：数据实时同步到 PostgreSQL
-- **离线**：数据保存到 IndexedDB
-- **恢复上线**：自动从同步队列处理待同步项
-
----
-
-## 🛠️ 技术栈
-
-### 前端
-| 技术 | 版本 | 用途 |
-|------|------|------|
-| React | 19.2 | UI 框架 |
-| TypeScript | 5.8 | 类型安全 |
-| Vite | 6.2 | 构建工具 |
-| Tailwind CSS | 3.4 | 样式框架 |
-
-### 后端
-| 技术 | 版本 | 用途 |
-|------|------|------|
-| Express | Latest | Web 框架 |
-| Prisma | Latest | ORM |
-| PostgreSQL | Latest | 数据库 |
-| Socket.IO | Latest | 实时通信 |
-
-### AI 集成
-| 技术 | 用途 |
-|------|------|
-| Google Gemini 2.0 Flash | AI 对话和设计辅助 |
-
-### 基础设施
-| 技术 | 用途 |
-|------|------|
-| Docker | 容器化 |
-| Docker Compose | 服务编排 |
-| Nginx | 反向代理 |
-
----
-
-## 📚 文档资源
-
-### 核心文档
-
-| 文档 | 描述 |
-|------|------|
-| [QUICKSTART.md](QUICKSTART.md) | 5 分钟快速启动指南 |
-| [DATABASE_DESIGN.md](DATABASE_DESIGN.md) | 完整数据库设计 |
-| [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) | 详细实施步骤 |
-| [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) | 项目功能总结 |
-
-### 专题文档
-
-| 文档 | 描述 |
-|------|------|
-| [BLOCKS_IMPLEMENTATION_PLAN.md](BLOCKS_IMPLEMENTATION_PLAN.md) | Blocks 功能实施计划 |
-| [CHAT_IMPROVEMENTS.md](CHAT_IMPROVEMENTS.md) | AI 聊天功能改进 |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | 部署指南 |
-| [DEMO_SCRIPT.md](DEMO_SCRIPT.md) | 演示脚本 |
-
-### 文件结构
+## 项目结构
 
 ```
 AIIgniteCAD/
-├── components/          # React 组件
-├── services/           # 业务逻辑服务
-├── lib/                # CAD 函数库
-│   ├── geometry.ts     # 几何运算 (797 行)
-│   ├── block.ts        # 块操作 (660 行)
-│   └── transform.ts    # 变换操作 (742 行)
-├── backend/            # Express 后端
-│   ├── prisma/        # 数据库 Schema
-│   └── src/
-│       ├── routes/    # API 端点
-│       └── middleware/# 认证中间件
-├── docs/
-│   └── images/        # 文档图片
-└── public/            # 静态资源
+├── App.tsx                 # 应用编排：鉴权、项目、命令、模态框
+├── components/             # Canvas / Toolbar / RightPanel / PropertyInspector · chat/
+├── hooks/                  # useCanvasInteraction / useCommandInput / useAIChat / useCollaboration
+├── tools/                  # 各工具状态机（Line / Polyline / Select / Trim ...）
+├── renderer/               # Renderer 接口与 SvgRenderer（坐标换算 / 命中测试）
+├── lib/                    # geometry / transform / selection / snapping / aiTools / commands
+├── services/               # DXF / 块 / 填充 / 高级图形 / IndexedDB / 同步 / API / 遥测
+├── store/                  # canvasStore（撤销历史）/ appStore（会话与文件）
+├── scripts/                # generate-examples.mjs · make-demo-gif.sh
+├── tests/                  # Vitest 单测 + e2e/（Playwright、截图与演示帧生成）
+├── backend/
+│   ├── prisma/             # schema 与 migrations
+│   ├── src/                # routes / lib / middleware / services(cadEngine, aiEngine)
+│   └── tests/              # Supertest + Prisma mock
+├── docs/                   # architecture / guides / reports / adr / images
+└── examples/               # 可导入的 DXF 与 AI 提示词示例
 ```
 
----
-
-## 💻 开发指南
-
-### 开发命令
+## 测试与质量门禁
 
 ```bash
-# 前端开发
-npm run dev          # 启动开发服务器
-npm run build        # 构建生产版本
-
-# 后端开发
-cd backend
-npm run dev          # 启动后端服务
-npx prisma studio    # 打开数据库管理界面
-
-# 数据库迁移
-npx prisma migrate dev   # 运行迁移
-npx prisma generate      # 生成 Prisma Client
+npm run lint && npm run typecheck && npm test && npm run build
+(cd backend && npm run lint && npx tsc --noEmit && npm test)
+npm run test:e2e                 # Playwright，无需数据库 / API Key
+npm run docs:screenshots         # 重新生成 docs/images
 ```
 
-### CAD 函数库使用
+- 前后端各有一套 Vitest 单测：`lib/` 纯函数在 Node 环境直测，后端用 Supertest 打 Express 实例、`vi.mock` 替换 Prisma。
+- E2E 用 `page.route` 模拟 API，覆盖绘图、保存、鉴权与 AI 对话主链路（含计划、方案对比、门禁与反馈）。
+- CI 在每次 PR 上并行运行前端、后端与 E2E 三个 job，并对生产依赖执行 `npm audit --omit=dev --audit-level=high`；E2E 失败时上传 Playwright 报告。
+- 提交前检查清单见 [AGENTS.md](AGENTS.md)，测试文件与用例的逐条映射见 [docs/guides/TESTING.md](docs/guides/TESTING.md)。
 
-```typescript
-import { distance, midpoint } from './lib/geometry';
-import { createBlockDefinition } from './lib/block';
-import { moveElement, rotateElement } from './lib/transform';
+## 文档索引
 
-// 几何运算
-const d = distance(p1, p2);
-const mid = midpoint(p1, p2);
+| 入口                                             | 内容                                  |
+| ------------------------------------------------ | ------------------------------------- |
+| [QUICKSTART.md](QUICKSTART.md)                   | 30 分钟安装、验证、导出与故障排除     |
+| [CONTRIBUTING.md](CONTRIBUTING.md)               | 开发流程、提交规范、测试要求          |
+| [AGENTS.md](AGENTS.md)                           | 面向编码 Agent 的仓库约定             |
+| [CHANGELOG.md](CHANGELOG.md)                     | 版本变更记录                          |
+| [docs/README.md](docs/README.md)                 | 架构、指南、报告与 ADR 索引           |
+| [docs/guides/TESTING.md](docs/guides/TESTING.md) | 测试用例映射、CI 与指标名清单         |
 
-// 块操作
-const block = createBlockDefinition('myBlock', elements, basePoint);
+## 已知限制
 
-// 变换操作
-const moved = moveElement(element, { x: 10, y: 10 });
-const rotated = rotateElement(element, center, Math.PI / 4);
-```
+- **实时协作仍属实验性**：默认关闭，通过状态栏「协作 实验」开启；同一图元并发修改时最后写入胜，可能覆盖他人一次修改；只支持已同步到服务端的项目。
+- **3D 与参数化约束求解**不在当前范围。
+- **AI 依赖外部模型**：未配置模型时仅 AI 对话不可用，绘图与 DXF 功能不受影响。
+- **指标与限流为进程内状态**：重启清零、多实例不共享，未接外部时序库。
+- **移动端未适配**：当前面向桌面浏览器。
+- `docs/reports/` 保留历史实现报告，部分描述反映当时状态，以代码与 ADR 为准。
 
----
+## 贡献与许可证
 
-## 🤝 贡献指南
+欢迎提交 Issue 与 PR，开始前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。安全相关问题请勿公开提交含密钥的 Issue。
 
-### 代码规范
-
-- 使用 TypeScript 严格模式
-- 遵循现有代码风格（见 [AGENTS.md](AGENTS.md)）
-- 添加 JSDoc 注释
-- 编写单元测试
-
-### 提交规范
-
-```
-feat: 添加新功能
-fix: 修复 bug
-docs: 更新文档
-refactor: 重构代码
-test: 添加测试
-chore: 构建/工具链更新
-```
-
-### Pull Request 流程
-
-1. Fork 项目
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'feat: add amazing feature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 创建 Pull Request
-
----
-
-## 🔍 故障排除
-
-### 常见问题
-
-**Q: 数据库连接失败**
-```
-A: 检查 PostgreSQL 是否运行，验证 DATABASE_URL 配置
-   docker ps | grep postgres
-```
-
-**Q: AI 对话无响应**
-```
-A: 验证 GEMINI_API_KEY 是否正确设置
-   echo $GEMINI_API_KEY
-```
-
-**Q: 前端构建失败**
-```
-A: 清除缓存并重新安装依赖
-   rm -rf node_modules package-lock.json
-   npm install
-```
-
-**Q: Docker 容器无法启动**
-```
-A: 检查端口占用，停止冲突服务
-   docker-compose down
-   lsof -i :3400 -i :3410 -i :5435
-```
-
-更多问题请查看 [QUICKSTART.md](QUICKSTART.md) 的故障排除部分。
-
----
-
-## 🗺️ 路线图
-
-### ✅ 已完成
-- [x] 基础 CAD 编辑器
-- [x] DXF 导入/导出
-- [x] AI 助手集成
-- [x] Blocks 块系统
-- [x] PostgreSQL 后端
-- [x] IndexedDB 本地存储
-- [x] WebSocket 实时通信
-
-### 🔄 进行中
-- [ ] 完整的 API 端点
-- [ ] 前端 Blocks UI 组件
-- [ ] 数据同步服务
-
-### 📋 计划中
-
-#### 短期 (1-2 个月)
-- [ ] 单元测试覆盖
-- [ ] 性能优化
-- [ ] 用户认证系统
-
-#### 中期 (3-6 个月)
-- [ ] 实时协作编辑
-- [ ] 高级标注系统
-- [ ] 图纸模板
-
-#### 长期 (6-12 个月)
-- [ ] 3D CAD 支持
-- [ ] 参数化设计
-- [ ] 移动应用
-
----
-
-## 📄 许可证
-
-本项目基于 MIT 许可证开源 - 详见 [LICENSE](LICENSE) 文件。
-
----
-
-## 🌟 Star 历史
-
-<a href="https://star-history.com/#aiignite/AIIgniteCAD&Date">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=aiignite/AIIgniteCAD&type=Date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=aiignite/AIIgniteCAD&type=Date" />
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=aiignite/AIIgniteCAD&type=Date" />
-  </picture>
-</a>
-
----
-
-<div align="center">
-
-**Happy CAD-ing!** 🚀🎨
-
-[返回顶部](#aiignitecad---ai-powered-cad-editor)
-
-</div>
+本项目采用 [MIT License](LICENSE)。Copyright © 2026 AIIgnite.
