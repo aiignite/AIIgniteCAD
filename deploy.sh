@@ -46,7 +46,7 @@ case $choice in
         echo -e "${GREEN}开始构建并启动服务...${NC}"
         docker-compose up -d --build
         echo -e "${GREEN}✓ 服务启动成功!${NC}"
-        echo "访问地址: http://localhost:3000"
+        echo "访问地址: http://localhost:3220"
         ;;
     2)
         echo -e "${YELLOW}停止服务...${NC}"

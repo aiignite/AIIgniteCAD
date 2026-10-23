@@ -4,13 +4,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        GEMINI_API_KEY: ${GEMINI_API_KEY}
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3225/api}
     container_name: aiignite-cad-frontend
     ports:
-      - "3400:80"
+      - "3220:80"
     restart: unless-stopped
     environment:
       - NODE_ENV=production
-      - VITE_API_URL=http://localhost:3410
+      - VITE_API_URL=http://localhost:3225
     networks:
       - aiignite-network
     healthcheck:
@@ -27,20 +30,26 @@ services:
       dockerfile: Dockerfile
     container_name: aiignite-cad-backend
     ports:
-      - "3410:3410"
+      - "3225:3225"
     restart: unless-stopped
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://aiignite:aiignite123@db:5432/aiignitecad
+      - DATABASE_URL=postgresql://aiignite:aiignite123@db:5432/ai_ignite_cad
+      - PORT=3225
       - JWT_SECRET=${JWT_SECRET}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - AUTH_RATE_LIMIT_MAX=${AUTH_RATE_LIMIT_MAX:-20}
+      - AUTH_RATE_LIMIT_WINDOW_MS=${AUTH_RATE_LIMIT_WINDOW_MS:-900000}
+      - AI_RATE_LIMIT_MAX=${AI_RATE_LIMIT_MAX:-30}
+      - AI_RATE_LIMIT_WINDOW_MS=${AI_RATE_LIMIT_WINDOW_MS:-60000}
     networks:
       - aiignite-network
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3410/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3225/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -54,14 +63,13 @@ services:
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-aiignite}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-aiignite123}
-      - POSTGRES_DB=${POSTGRES_DB:-aiignitecad}
+      - POSTGRES_DB=${POSTGRES_DB:-ai_ignite_cad}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - aiignite-network
     ports:
-      - "5435:5432"
-      - "5436:5432"
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
       interval: 10s

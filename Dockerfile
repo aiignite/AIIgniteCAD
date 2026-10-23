@@ -15,6 +15,12 @@ RUN npm install
 # 复制源代码
 COPY . .
 
+# 构建期注入前端环境变量（.env 已被 .dockerignore 排除，避免密钥进入镜像层）
+ARG GEMINI_API_KEY=""
+ARG VITE_API_URL="http://localhost:3225/api"
+ENV GEMINI_API_KEY=$GEMINI_API_KEY
+ENV VITE_API_URL=$VITE_API_URL
+
 # 构建生产版本
 RUN npm run build
 

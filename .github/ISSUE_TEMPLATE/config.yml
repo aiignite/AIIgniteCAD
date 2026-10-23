@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使用与安装问题
+    url: https://github.com/aiignite/AIIgniteCAD/blob/main/QUICKSTART.md
+    about: 先查看快速开始与故障排除
+  - name: 安全漏洞
+    url: https://github.com/aiignite/AIIgniteCAD/blob/main/CONTRIBUTING.md#安全
+    about: 请私下联系维护者，不要公开提交含凭据的 Issue

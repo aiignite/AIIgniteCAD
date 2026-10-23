@@ -25,7 +25,7 @@ RUN npx prisma generate
 RUN npx tsc
 
 # 暴露端口
-EXPOSE 3410
+EXPOSE 3225
 
 # 启动脚本
 CMD ["npm", "start"]

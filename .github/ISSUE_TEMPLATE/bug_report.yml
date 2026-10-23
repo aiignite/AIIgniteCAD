@@ -1,0 +1,56 @@
+---
+name: Bug report
+description: 报告可复现的缺陷
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先搜索是否已有相同 Issue。安全漏洞请勿公开提交，参见 CONTRIBUTING.md。
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 现象
+      description: 实际发生了什么？期望是什么？
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开 ...
+        2. 点击 ...
+        3. 看到 ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / 提交
+      description: 分支名、commit SHA 或 release 版本
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响范围
+      multiple: true
+      options:
+        - 画布 / 绘图
+        - DXF 导入导出
+        - AI 对话 / 工具调用
+        - 保存 / 同步
+        - 鉴权 / 账号
+        - 块 / 图层 / 属性面板
+        - 构建 / 测试 / CI
+        - 其他
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 截图
+      description: 可粘贴带 requestId 的后端日志、浏览器控制台信息或截图（请先脱敏）
+      render: shell
+    validations:
+      required: false
