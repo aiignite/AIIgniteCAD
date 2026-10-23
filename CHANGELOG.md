@@ -28,6 +28,13 @@
 
 ### Added
 
+- 中英双语界面：默认中文，页头语言按钮可切换英文并写入 `localStorage`；文案集中到 `lib/i18n.tsx` 的扁平字典，`TranslationKey` 由中文字典推导，英文必须覆盖同一组键。已覆盖登录 / 注册、欢迎页、顶栏与工具条、文件 / 编辑 / 打印 / 版本 / 语言 / 主题相关动作、形状与填充 / 阵列 / 快速选择 / 参考图转 CAD 弹窗、属性 / 检查 / 约定 / 设置 / 用户资料面板、通知与 AI 对话 / 预览主流程；图纸检查的问题描述按语言生成（[ADR 0020](docs/adr/0020-i18n-and-header-menu.md)）。
+- AI 块库与版本技能：新增 `insert_block_by_name`（按名字插入块，大小写无关精确匹配 + 唯一子串匹配，歧义时列出候选）、`save_selection_as_block`（把选中图元存回块库）与 `save_version`（保存版本）；新增内置技能 `cad_block_library` 与 `cad_versioning`。建块与存版本作为预览中的附加操作，仍先确认、再在服务端执行，不绕过预览管线。
+- 顶栏菜单重设计：保留撤销 / 重做、保存、AI、语言、主题与导出等高频动作，新增「文件」菜单收纳导入 DXF / DWG、参考图转 CAD、导出 DXF、打印 / 绘图、版本历史与保存版本；左侧工具条 + 右侧检查器 + 底部命令行的三区布局不变（[ADR 0020](docs/adr/0020-i18n-and-header-menu.md)）。
+- 补充测试：`tests/i18n.test.ts`（字典键集合、插值、默认中文）、`tests/e2e/smoke.spec.ts`（默认中文、切换英文并刷新保持、文件菜单打印 / 版本路径）、块与版本工具的前后端单测；E2E 选择器同步改为中文默认。
+
+- 支持 DWG 导入：新增 LibreDWG `dwg2dxf` 独立转换容器（`dwg-converter/`），后端 `/api/import/dwg` 把 DWG 转成 ASCII DXF 后复用现有解析、预览与一步撤销链路；DXF 解析器补齐 `INSERT` 块展开（含嵌套、缩放、旋转、阵列与图层继承）、`MTEXT` 转文字和 `DIMENSION` 匿名块展开。默认单文件 50 MB，`SPLINE` / `HATCH` 等仍暂不导入。
+- 支持局域网部署的 OpenAI 兼容模型端点（如 CCSwitch）：开启 `AI_ALLOW_PRIVATE_ENDPOINTS=true` 后，其他 provider 也可使用 RFC1918 / IPv6 ULA 的 HTTP 地址；公网 HTTP、云元数据与链路本地地址仍然拒绝，内网域名仍需加入 `AI_ALLOWED_ENDPOINTS`。生产 compose 已透传两个变量，并支持从容器内访问宿主机的 `host.docker.internal`。
 - 一键发布到共享生产服务器（与 AIDriveAll / AIDriveNote 同一套机制）：本地 `scripts/deploy-remote.sh` 先做端口占用预检，再 rsync 工作区、ssh 触发服务器侧非交互 `deploy.sh`（`docker compose -f docker-compose.prod.yml up -d --build` → 等库就绪 → 容器内迁移 → 就绪探针与页面自检），最后从外网校验 `https://aiignite.com.cn/cad/health`。新增 `docker-compose.prod.yml`、`Dockerfile.prod` 与 `deploy/nginx/cad.conf`（子路径静态资源、`/cad/api` 反代、SSE 免缓冲、`/cad/socket.io/` 升级），前后端只绑定 `127.0.0.1`、由共享网关对外暴露；`scripts/init-server-env.sh` 首次生成服务器 `.env`（随机 `POSTGRES_PASSWORD` / `JWT_SECRET` / `ENCRYPTION_KEY`，权限 600），仓库不再需要任何生产密钥。详见 [docs/guides/DEPLOYMENT.md](docs/guides/DEPLOYMENT.md)。
 - 方案对比卡片按草稿上的几何差分显示「新增 N / 修改 M / 移除 K」，全为 0 时显示「无几何变化」，不再只信模型自述的步骤数；连续的同工具同参数调用会在 toolResult 里提示模型换做法，但不直接拒绝（[ADR 0018](docs/adr/0018-ai-tool-contract-and-rejection-loop.md)）。
 - 块目录读取结果带上可用性标记（`getBlockCatalog` 返回 `{ entries, ok }`），Agent 草稿据此区分「块库不可用」与「块库为空」。

@@ -43,6 +43,20 @@ BACKEND_PORT=3245
 # /api/metrics 访问令牌；留空表示匿名可读
 METRICS_TOKEN=$(openssl rand -hex 16)
 
+# 内网模型端点：CCSwitch 等局域网 OpenAI 兼容网关使用 HTTP 时设为 true
+# 公网 HTTP、云元数据与链路本地地址始终拒绝
+AI_ALLOW_PRIVATE_ENDPOINTS=false
+# 内网域名白名单（IP 字面量用上面的开关即可）
+AI_ALLOWED_ENDPOINTS=
+
+# DWG 导入：转换器在 compose 内网运行，单个文件上限 50 MB
+DWG_MAX_FILE_MB=50
+DWG_MAX_DXF_MB=100
+DWG_CONVERT_TIMEOUT_MS=60000
+DWG_CONVERT_CONCURRENCY=2
+IMPORT_RATE_LIMIT_MAX=20
+IMPORT_RATE_LIMIT_WINDOW_MS=600000
+
 LOG_LEVEL=info
 EOF
 

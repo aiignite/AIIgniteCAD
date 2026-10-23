@@ -9,6 +9,8 @@ FRONTEND_PORT="${FRONTEND_PORT:-3220}"
 CAD_SUBPATH="${CAD_SUBPATH:-/cad}"
 BACKEND_PORT="${BACKEND_PORT:-3245}"
 COMPOSE="docker compose -f docker-compose.prod.yml"
+# 4 GB 内存的共享机：前端 vite 与 LibreDWG 编译并行会触发 OOM，串行构建
+export COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT:-1}"
 
 if ! docker compose version >/dev/null 2>&1; then
     echo "需要 Docker Compose v2（docker compose 子命令）" >&2

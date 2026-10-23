@@ -29,6 +29,7 @@ playwright-report
 .demo-frames
 .trae
 backend
+dwg-converter
 tests
 docs
 .env.example

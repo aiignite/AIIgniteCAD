@@ -85,6 +85,12 @@ WebSocket。实时协作（实验特性、默认关闭）会自动退回 HTTP �
 服务器 4 GB 内存 + 10 GB swap，`npm run build` 峰值会吃掉 1 GB 以上；先停掉旧栈再发布可以留出余量，
 构建期间页面响应会变慢属于预期。
 
+首次发布还会构建 `dwg-converter`（从源码编译 LibreDWG），在 4 GB 机器上会额外花几分钟；之后构建有缓存。
+构建阶段优先从 GNU 主站下载源码，超时后回退阿里云镜像，并用固定 SHA256 校验；`deploy.sh` 设了
+`COMPOSE_PARALLEL_LIMIT=1` 串行构建，避免 LibreDWG 编译与前端 vite 同时抢内存。
+DWG 上传体由 `deploy/nginx/cad.conf` 的 `client_max_body_size 55m` 放行，共享网关若配置了更小的上限，
+需要同步放宽到 55 MB 以上，否则大图纸会在网关层直接返回 413。
+
 ### 3. 排障
 
 ```bash

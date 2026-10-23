@@ -42,6 +42,12 @@ services:
       - AUTH_RATE_LIMIT_WINDOW_MS=${AUTH_RATE_LIMIT_WINDOW_MS:-900000}
       - AI_RATE_LIMIT_MAX=${AI_RATE_LIMIT_MAX:-30}
       - AI_RATE_LIMIT_WINDOW_MS=${AI_RATE_LIMIT_WINDOW_MS:-60000}
+      - DWG_CONVERTER_URL=http://dwg-converter:3310
+      - DWG_MAX_FILE_MB=${DWG_MAX_FILE_MB:-50}
+      - DWG_MAX_DXF_MB=${DWG_MAX_DXF_MB:-100}
+      - DWG_CONVERT_TIMEOUT_MS=${DWG_CONVERT_TIMEOUT_MS:-60000}
+      - IMPORT_RATE_LIMIT_MAX=${IMPORT_RATE_LIMIT_MAX:-20}
+      - IMPORT_RATE_LIMIT_WINDOW_MS=${IMPORT_RATE_LIMIT_WINDOW_MS:-600000}
     networks:
       - aiignite-network
     depends_on:
@@ -53,6 +59,33 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  # DWG → DXF 转换器（LibreDWG sidecar，仅内网访问）
+  dwg-converter:
+    build:
+      context: ./dwg-converter
+      dockerfile: Dockerfile
+    container_name: aiignite-cad-dwg-converter
+    restart: unless-stopped
+    environment:
+      - PORT=3310
+      - MAX_FILE_MB=${DWG_MAX_FILE_MB:-50}
+      - CONVERT_TIMEOUT_MS=${DWG_CONVERT_TIMEOUT_MS:-60000}
+      - CONVERT_CONCURRENCY=${DWG_CONVERT_CONCURRENCY:-2}
+    networks:
+      - aiignite-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3310/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   # PostgreSQL数据库
   db:

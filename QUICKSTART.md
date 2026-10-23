@@ -114,10 +114,10 @@ npm run dev
 
 ## 6. 可选：启用 AI
 
-1. 右侧面板切到**模型**，新增 OpenAI / Anthropic / Google / Ollama 模型并填写 API Key（后端以 AES-256-GCM 加密落库，接口只回传脱敏预览）。
-2. **助手**面板可配置系统提示词、允许使用的 CAD 工具白名单与最大工具轮次，并把助手绑定到某个模型。
-3. **技能**面板列出内置种子技能与自建技能；技能按关键词、选择集类型等规则自动激活，也可以在对话里手动固定。
-4. 回到**对话**面板，用自然语言绘图，例如：
+1. 点击顶部工具栏的 **AI 助手** 图标打开对话窗，可拖动、缩放，或切换为右侧抽屉。
+2. 在窗口内的**模型设置**抽屉新增 OpenAI / Anthropic / Google / Ollama 模型并填写 API Key（后端以 AES-256-GCM 加密落库，接口只回传脱敏预览）。
+3. **助手管理**可配置系统提示词、允许使用的 CAD 工具白名单与最大工具轮次，并把助手绑定到某个模型；**技能管理**列出内置与自建技能，按关键词、选择集类型等规则自动激活，也可在对话里手动固定。
+4. 回到对话输入框，用自然语言绘图，例如：
 
 ```text
 画一个 200×120 的矩形，在右侧画一个半径 40 的圆。
@@ -138,6 +138,13 @@ docker compose up -d --build
 - 健康检查：<http://localhost:3225/health>
 
 数据库连接由 Compose 注入，无需修改 `backend/.env`。
+
+## 导入 DXF / DWG
+
+- 顶部 **Import** 可选择 `.dxf` 或 `.dwg`；DXF 在浏览器内直接解析，DWG 上传到后端由 `dwg-converter` 转成 ASCII DXF 后走同一条预览 / 撤销路径。
+- `docker compose up -d --build` 会一并构建 `dwg-converter`。首次构建需要源码编译 LibreDWG，通常要几分钟。
+- 非 Docker 本地开发：`docker build -t aiignite-cad-dwg-converter dwg-converter`，`docker run --rm -p 3310:3310 aiignite-cad-dwg-converter`，再在 `backend/.env` 设置 `DWG_CONVERTER_URL=http://localhost:3310` 并重启后端。
+- 默认单文件上限 50 MB（`DWG_MAX_FILE_MB`），转换超时 60 秒（`DWG_CONVERT_TIMEOUT_MS`）。已支持块引用、MTEXT、DIMENSION；`SPLINE` / `HATCH` 等暂不导入。
 
 ## 故障排除
 
@@ -191,7 +198,7 @@ curl http://localhost:3225/api/metrics | jq '.ai_requests, .ai_failures, .ai_fai
 | `TOOL_ROUND_LIMIT` | 工具轮次达到助手上限 | 先预览当前结果，或调高助手的最大轮次 |
 | `RATE_LIMITED` | 触发限流 | 按 `Retry-After` 等待，或调整 `AI_RATE_LIMIT_MAX` |
 
-仍无响应时检查后端日志中的 `LLM chat finished`，确认 provider、Base URL 与密钥有效；内网自建网关需要在 `AI_ALLOWED_ENDPOINTS` 中放行。
+仍无响应时检查后端日志中的 `LLM chat finished`，确认 provider、Base URL 与密钥有效；局域网 OpenAI 兼容网关使用 HTTP 时，后端设 `AI_ALLOW_PRIVATE_ENDPOINTS=true`，内网域名（如 `ccswitch.lan`、`host.docker.internal`）还需加入 `AI_ALLOWED_ENDPOINTS`。
 
 ## 下一步
 
