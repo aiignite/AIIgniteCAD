@@ -21,6 +21,18 @@ const input = (partial: Partial<ToolHintInput> = {}): ToolHintInput => ({
 });
 
 describe("describeToolHint", () => {
+    it("默认中文，英文模式返回对应文案", () => {
+        expect(toolLabel(ToolType.LINE)).toBe("直线");
+        expect(toolLabel(ToolType.LINE, "en")).toBe("Line");
+        expect(describeToolHint(input({ tool: ToolType.LINE }), "en").tool).toBe("Line");
+        expect(describeToolHint(input({ tool: ToolType.LINE }), "en").next).toContain(
+            "Specify the start point",
+        );
+        expect(
+            describeToolHint(input({ tool: ToolType.SELECT, selectedCount: 2 }), "en").next,
+        ).toContain("2 selected");
+    });
+
     it("直线区分起点与下一点阶段", () => {
         expect(describeToolHint(input({ tool: ToolType.LINE })).next).toContain("指定起点");
         expect(describeToolHint(input({ tool: ToolType.LINE, hasAnchor: true })).next).toContain(

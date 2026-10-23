@@ -22,6 +22,7 @@ import { getCombinedBoundingBox } from '../lib/transform';
 import { planAIGhostPreview } from '../lib/aiGhost';
 import { snapTypeLabel } from '../lib/snapping';
 import { describeToolHint } from '../lib/toolHints';
+import { useI18n } from '../lib/i18n';
 import { dynamicFieldLabel, dynamicFieldSuffix } from '../lib/dynamicInput';
 
 /** 选中集迷你工具栏：全部复用左侧工具栏的工具态，参数仍由各自工具收集 */
@@ -154,15 +155,19 @@ export const Canvas: React.FC<CanvasProps> = ({
     });
 
     const selectedCount = selectedIds.size;
-    const hint = describeToolHint({
-        tool: activeTool,
-        dragMode,
-        hasAnchor: drawStart !== null,
-        polyCount: polyPoints.length,
-        arcCount: arcPoints.length,
-        dimCount: dimPoints.length,
-        selectedCount,
-    });
+    const { t, locale } = useI18n();
+    const hint = describeToolHint(
+        {
+            tool: activeTool,
+            dragMode,
+            hasAnchor: drawStart !== null,
+            polyCount: polyPoints.length,
+            arcCount: arcPoints.length,
+            dimCount: dimPoints.length,
+            selectedCount,
+        },
+        locale,
+    );
     const hintText = `${hint.tool} · ${hint.next}`;
 
     // 光标坐标与操作提示只更新状态栏订阅者，避免整棵组件树随鼠标移动重渲染
@@ -281,9 +286,9 @@ export const Canvas: React.FC<CanvasProps> = ({
         <main className="flex-1 relative bg-cad-bg overflow-hidden group/canvas">
             {/* 视图状态浮层 */}
             <div className="absolute top-4 left-4 bg-cad-panel/80 backdrop-blur border border-cad-border rounded px-3 py-1.5 text-xs font-mono text-cad-muted pointer-events-none select-none z-10 flex items-center gap-2">
-                <span>俯视图 [二维线框]</span>
+                <span>{t('canvas.view2d')}</span>
                 <span className="w-px h-3 bg-gray-500"></span>
-                <span>缩放 {zoomPercent}%</span>
+                <span>{t('canvas.zoom', { value: zoomPercent })}</span>
             </div>
 
             <div

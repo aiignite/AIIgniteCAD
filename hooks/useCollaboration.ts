@@ -25,12 +25,14 @@ import {
     applyElementPatches,
 } from "../lib/collaboration";
 import { collaborationClient } from "../services/collaborationService";
+import { useI18n } from "../lib/i18n";
 import type { CADElement } from "../types";
 
 /** 本地连续编辑（拖拽、属性输入）合并成一个广播窗口 */
 const BROADCAST_DEBOUNCE_MS = 120;
 
 export function useCollaboration(): void {
+    const { t } = useI18n();
     const { state: appState } = useApp();
     const { state: canvasState, getElements, applyRemoteElements } = useCanvas();
     const snapshot = useSyncExternalStore(
@@ -55,11 +57,11 @@ export function useCollaboration(): void {
         const token =
             typeof localStorage === "undefined" ? null : localStorage.getItem("auth_token");
         if (!userId || !token) {
-            setCollaborationStatus("error", "登录后才能开启协作");
+            setCollaborationStatus("error", t("collab.needLogin"));
             return;
         }
         if (!projectId || !eligible) {
-            setCollaborationStatus("error", "当前项目尚未同步到服务端，暂不能协作");
+            setCollaborationStatus("error", t("collab.needSync"));
             return;
         }
 

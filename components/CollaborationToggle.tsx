@@ -13,6 +13,7 @@ import {
     subscribeCollaboration,
 } from "../store/collaboration";
 import { isCollaborationProjectId } from "../lib/collaboration";
+import { useI18n } from "../lib/i18n";
 
 const STATUS_DOT: Record<string, string> = {
     connected: "bg-emerald-500",
@@ -22,6 +23,7 @@ const STATUS_DOT: Record<string, string> = {
 };
 
 export const CollaborationToggle: React.FC = () => {
+    const { t } = useI18n();
     const { state: appState } = useApp();
     const snapshot = useSyncExternalStore(
         subscribeCollaboration,
@@ -36,12 +38,12 @@ export const CollaborationToggle: React.FC = () => {
     const online = snapshot.peers.length;
 
     const title = !eligible
-        ? "登录并等待项目同步到服务端后可用"
+        ? t("collab.notEligible")
         : snapshot.lastError
           ? snapshot.lastError
           : active
-            ? `实时协作（实验性）：${online} 位其他协作者在线，最后写入胜`
-            : "开启实时协作（实验性，全员可写，最后写入胜）";
+            ? t("collab.connected", { count: online })
+            : t("collab.off");
 
     return (
         <button
@@ -61,8 +63,8 @@ export const CollaborationToggle: React.FC = () => {
             ${eligible ? "" : "opacity-50 cursor-not-allowed"}`}
         >
             <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[snapshot.status]}`} />
-            协作
-            <span className="font-normal opacity-70">实验</span>
+            {t("collab.label")}
+            <span className="font-normal opacity-70">{t("collab.beta")}</span>
             {active && online > 0 && (
                 <span className="rounded bg-cad-primary/20 px-1">{online}</span>
             )}

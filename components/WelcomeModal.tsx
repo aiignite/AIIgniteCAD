@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { ProjectFile } from "../types";
 import { EXAMPLE_DRAWINGS } from "../services/examples";
+import type { TranslationKey } from "../lib/i18n";
 import { useI18n } from "../lib/i18n";
 
 interface WelcomeModalProps {
@@ -14,6 +15,19 @@ interface WelcomeModalProps {
     onOpenExample: (exampleId: string) => void;
     onClose: () => void;
 }
+
+/** 内置示例的名称与说明文案键 */
+const EXAMPLE_LABEL_KEYS: Record<
+    string,
+    { name: TranslationKey; description: TranslationKey }
+> = {
+    gear: { name: "example.gear.name", description: "example.gear.description" },
+    spring: { name: "example.spring.name", description: "example.spring.description" },
+    "floor-plan": {
+        name: "example.floorPlan.name",
+        description: "example.floorPlan.description",
+    },
+};
 
 export const WelcomeModal: React.FC<WelcomeModalProps> = ({
     visible,
@@ -263,10 +277,10 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
                                         {example.icon}
                                     </span>
                                     <span className="text-sm font-bold text-cad-text">
-                                        {example.name}
+                                        {t(EXAMPLE_LABEL_KEYS[example.id].name)}
                                     </span>
                                     <span className="text-[11px] leading-4 text-cad-muted">
-                                        {example.description}
+                                        {t(EXAMPLE_LABEL_KEYS[example.id].description)}
                                     </span>
                                 </button>
                             ))}
