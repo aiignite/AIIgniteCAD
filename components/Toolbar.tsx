@@ -14,6 +14,8 @@ import { groupElements, ungroupElements } from "../lib/groups";
 import BlockLibraryPanel from "./BlockLibraryPanel";
 import { TOOL_GROUPS, type ToolMeta } from "../lib/toolCatalog";
 import { useI18n, type TranslationKey } from "../lib/i18n";
+import { getEffectiveShortcutKey } from "../lib/shortcuts";
+import { useShortcutOverrides } from "../hooks/useShortcuts";
 
 /** 面板整体收起 / 各分组折叠状态的本地偏好 */
 const COLLAPSED_KEY = "cad_palette_collapsed_v1";
@@ -58,6 +60,8 @@ interface ToolbarProps {
 
 export const Toolbar: React.FC<ToolbarProps> = ({ onOpenSettings, onOpenReview, onOpenDrawings, currentUser }) => {
     const { t } = useI18n();
+    // 订阅键位覆盖：设置页改键后工具栏提示即时刷新
+    useShortcutOverrides();
     const { state, selectedIds, setActiveTool, commitAction } = useCanvas();
     const { activeTool, elements } = state;
     const { state: appState, setSidePanelOpen, showNotification } = useApp();
@@ -162,7 +166,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenSettings, onOpenReview, 
     /** 工具行：展开态给名称与单键，收起态只给图标并靠 title 提示 */
     const renderTool = (meta: ToolMeta) => {
         const label = t(meta.labelKey);
-        const hint = meta.shortcutKey ? `${label} (${meta.shortcutKey.toUpperCase()})` : label;
+        const effectiveKey = getEffectiveShortcutKey(`tool:${meta.tool}`) ?? meta.shortcutKey;
+        const hint = effectiveKey ? `${label} (${effectiveKey.toUpperCase()})` : label;
         const active = activeTool === meta.tool;
 
         if (collapsed) {
@@ -200,9 +205,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenSettings, onOpenReview, 
             >
                 <span className="material-symbols-outlined shrink-0 text-[18px]">{meta.icon}</span>
                 <span className="min-w-0 flex-1 truncate">{label}</span>
-                {meta.shortcutKey && (
+                {effectiveKey && (
                     <span className="shrink-0 font-mono text-[10px] uppercase text-cad-muted">
-                        {meta.shortcutKey}
+                        {effectiveKey}
                     </span>
                 )}
             </button>

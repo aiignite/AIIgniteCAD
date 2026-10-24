@@ -476,6 +476,36 @@ describe("选择与编辑工具", () => {
         expect(h.commits).toHaveLength(0);
     });
 
+    it("Shift + 点击未选中对象加入选择集且不被收窄", () => {
+        const first = line(0, 0, 10, 0, "el-1");
+        const second = line(0, 5, 10, 5, "el-2");
+        const h = createHarness({ elements: [first, second], selectedIds: ["el-1"], hit: second });
+        h.use(ToolType.SELECT);
+        h.ctx.shiftKey = true;
+
+        h.click(5, 5);
+
+        expect([...h.selection].sort()).toEqual(["el-1", "el-2"]);
+        expect(h.commits).toHaveLength(0);
+    });
+
+    it("Shift + 点击已选对象从选择集移出", () => {
+        const first = line(0, 0, 10, 0, "el-1");
+        const second = line(0, 5, 10, 5, "el-2");
+        const h = createHarness({
+            elements: [first, second],
+            selectedIds: ["el-1", "el-2"],
+            hit: second,
+        });
+        h.use(ToolType.SELECT);
+        h.ctx.shiftKey = true;
+
+        h.click(5, 5);
+
+        expect([...h.selection]).toEqual(["el-1"]);
+        expect(h.commits).toHaveLength(0);
+    });
+
     it("拖拽已选中的多个对象时仍整体移动", () => {
         const first = line(0, 0, 10, 0, "el-1");
         const second = line(0, 5, 10, 5, "el-2");

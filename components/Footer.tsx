@@ -55,7 +55,8 @@ export const Footer: React.FC<FooterProps> = ({ onCommand, hiddenCount, onShowAl
             {/* Command Line Input */}
             <div className="flex items-center px-4 py-2 border-b border-cad-border/50 bg-cad-bg transition-colors duration-300">
                 <span className="text-cad-primary font-mono text-sm mr-2 font-bold">&gt;</span>
-                <input 
+                <input
+                    id="command-input"
                     className="bg-transparent border-none text-cad-text text-sm w-full focus:ring-0 placeholder-gray-500 font-mono focus:outline-none transition-colors duration-300" 
                     placeholder={commandInput.prompt ?? t("footer.commandPlaceholder")} 
                     type="text"

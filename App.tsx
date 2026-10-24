@@ -45,6 +45,7 @@ import { useAlignDistribute } from "./hooks/useAlignDistribute";
 import { apiService } from "./services/apiService";
 import { indexedDBService } from "./services/indexedDBService";
 import { syncService } from "./services/syncService";
+import { getCanvasStatus } from "./store/canvasStatus";
 import { telemetryService } from "./services/telemetryService";
 import { createBlock, getBlock, insertBlockReference } from "./services/blockService";
 import { getExampleDrawing } from "./services/examples";
@@ -142,6 +143,10 @@ function App() {
     const { t, locale } = useI18n();
     const startupRef = useRef(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    /** 最近一次执行的命令，供 Space 重复 */
+    const lastCommandRef = useRef<string | null>(null);
+    /** handleCommand 每次渲染重建；keydown 闭包经 ref 取最新（声明在其后，effect 回填） */
+    const handleCommandRef = useRef<(cmd: string) => void>(() => undefined);
     const propertyCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastSavedRef = useRef<{ fileId: string; elements: CADElement[] } | null>(null);
     const autoVersionBaselineRef = useRef<{ projectId: string; revision: number } | null>(null);
@@ -1007,6 +1012,8 @@ function App() {
 
     // Command Line Handler：解析、别名、参数与执行全部委托给命令注册表
     const handleCommand = (cmd: string) => {
+        // Space 重复上一条命令：记录最近一次非空命令
+        if (cmd.trim()) lastCommandRef.current = cmd.trim();
         telemetryService.recordAction("command", { command: cmd });
         const outcome = executeCommand(cmd, {
             elements,
@@ -1441,6 +1448,11 @@ function App() {
         }
     }, [activeFile, elements, flushPropertyCommit, persistFile, updateFile, showNotification, t]);
 
+    // handleCommand 每次渲染重建；keydown 闭包经 ref 取最新
+    useEffect(() => {
+        handleCommandRef.current = handleCommand;
+    });
+
     // 全局快捷键：撤销 / 重做 / 复制粘贴 / 删除 / 文件操作 / 绘图辅助开关
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -1451,6 +1463,11 @@ function App() {
             if (e.key === "F1") {
                 e.preventDefault();
                 setShowShortcuts(true);
+                return;
+            }
+            if (e.key === "F2") {
+                e.preventDefault();
+                document.getElementById("command-input")?.focus();
                 return;
             }
 
@@ -1500,6 +1517,11 @@ function App() {
                     setShowPlot(true);
                     return;
                 }
+                if (key === "1") {
+                    e.preventDefault();
+                    setSidePanelOpen(!sidePanelOpen);
+                    return;
+                }
                 if (key === "o" || key === "n") {
                     e.preventDefault();
                     setShowDrawings(true);
@@ -1533,6 +1555,14 @@ function App() {
                     handleUngroupSelection();
                     return;
                 }
+            }
+
+            // Space 重复上一条命令（AutoCAD 习惯）；动态输入键入中让位
+            if (e.key === " " && !e.altKey && !modalOpen && lastCommandRef.current) {
+                if (getCanvasStatus().dynamicInput) return;
+                e.preventDefault();
+                handleCommandRef.current(lastCommandRef.current);
+                return;
             }
 
             // 删除不依赖焦点位置：点过工具栏按钮后仍能删掉选中集
@@ -1969,6 +1999,12 @@ function App() {
                 case "view.ortho":
                 case "view.polar":
                     toggleView(TOGGLE_MODE_KEYS[action.slice("view.".length) as MenuToggleId]);
+                    return;
+                case "view.properties":
+                    setSidePanelOpen(!sidePanelOpen);
+                    return;
+                case "view.commandline":
+                    document.getElementById("command-input")?.focus();
                     return;
                 case "view.review":
                     setShowReview(true);

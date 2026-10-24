@@ -18,6 +18,8 @@ export interface CanvasStatus {
     hint: string;
     /** 当前选中数量 */
     selectedCount: number;
+    /** 动态输入激活中（键入数值/等待第二点）；Space 重复命令在此期间让位 */
+    dynamicInput: boolean;
 }
 
 const INITIAL_STATUS: CanvasStatus = {
@@ -28,6 +30,7 @@ const INITIAL_STATUS: CanvasStatus = {
     zoomPercent: 100,
     hint: "",
     selectedCount: 0,
+    dynamicInput: false,
 };
 
 let status: CanvasStatus = INITIAL_STATUS;

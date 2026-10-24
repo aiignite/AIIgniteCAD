@@ -8,13 +8,18 @@
 
 import { ToolType } from "../types";
 import { findToolMeta } from "./toolCatalog";
-import { ACTION_SHORTCUTS, TOOL_SHORTCUTS, shortcutActionLabel } from "./shortcuts";
+import {
+    ACTION_SHORTCUTS,
+    SHORTCUT_BINDINGS,
+    getEffectiveShortcutKey,
+    shortcutActionLabel,
+} from "./shortcuts";
 import type { TranslationKey } from "./i18n";
 
 /** 设置页分区，菜单与设置页左侧导航共用同一套标识 */
 export type SettingsSection =
     "models" | "assistants" | "skills" | "drawing" | "appearance" | "conventions"
-    | "account" | "users";
+    | "shortcuts" | "account" | "users";
 
 /** 菜单命令的动作 id */
 export type MenuActionId =
@@ -53,6 +58,8 @@ export type MenuActionId =
     | "view.polar"
     | "view.review"
     | "view.conventions"
+    | "view.properties"
+    | "view.commandline"
     // 插入
     | "insert.text"
     | "insert.dimension"
@@ -374,6 +381,22 @@ export const MENUS: MenuDef[] = [
             { kind: "separator" },
             {
                 kind: "command",
+                id: "view.properties",
+                action: "view.properties",
+                labelKey: "menu.view.properties",
+                icon: "right_panel_open",
+                shortcut: "Mod+1",
+            },
+            {
+                kind: "command",
+                id: "view.commandline",
+                action: "view.commandline",
+                labelKey: "menu.view.commandline",
+                icon: "terminal",
+                shortcut: "F2",
+            },
+            {
+                kind: "command",
                 id: "view.review",
                 action: "view.review",
                 labelKey: "menu.view.review",
@@ -618,19 +641,27 @@ export function buildShortcutSections(): ShortcutSection[] {
         {
             id: "tools",
             labelKey: "shortcuts.tools",
-            rows: TOOL_SHORTCUTS.map((item) => ({
-                keys: item.key.toUpperCase(),
-                labelKey: findToolMeta(item.tool)?.labelKey ?? ("toolbar.title" as TranslationKey),
+            rows: SHORTCUT_BINDINGS.filter((binding) => binding.scope === "tool").map((binding) => ({
+                keys: (getEffectiveShortcutKey(binding.id) ?? binding.key).toUpperCase(),
+                labelKey: findToolMeta(binding.tool!)?.labelKey ?? ("toolbar.title" as TranslationKey),
             })),
         },
         {
             id: "edit",
             labelKey: "shortcuts.edit",
-            rows: Object.keys(ACTION_SHORTCUTS).map((key) => ({
-                keys: key.toUpperCase(),
-                labelKey: shortcutActionLabel(ACTION_SHORTCUTS[key]),
+            rows: SHORTCUT_BINDINGS.filter((binding) => binding.scope === "action").map((binding) => ({
+                keys: (getEffectiveShortcutKey(binding.id) ?? binding.key).toUpperCase(),
+                labelKey: shortcutActionLabel(binding.action!),
             })),
         },
-        { id: "combos", labelKey: "shortcuts.combos", rows: collectComboRows() },
+        {
+            id: "combos",
+            labelKey: "shortcuts.combos",
+            rows: [
+                ...collectComboRows(),
+                // 非菜单命令的固定键位
+                { keys: "Space", labelKey: "shortcuts.repeat" as TranslationKey },
+            ],
+        },
     ];
 }

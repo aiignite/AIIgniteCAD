@@ -112,6 +112,8 @@ export const getOrthoDelta = (ctx: ToolContext, delta: Point): Point => {
  * - 单选状态下按点击循环解析，同一位置短时间重复点击可在重叠图元间切换。
  *
  * 组合中的图元按整组处理：点中任一成员即选中整组。
+ * Shift + 点击沿用 AutoCAD 语义：未选中则加入选择集、已选中则移出；
+ * 该路径不进入拖拽——否则 mouseup 的收窄会把加选抵消（历史缺陷）。
  */
 export function handleSelectionPress(
     ctx: ToolContext,
@@ -125,9 +127,17 @@ export function handleSelectionPress(
         if (ctx.pressTargetRef) ctx.pressTargetRef.current = hit;
         const unit = selectionUnit(ctx.elements, hit.id);
         const unitSelected = unit.every((id) => ctx.selectedIds.has(id));
+        if (ctx.shiftKey) {
+            if (unitSelected) {
+                const remaining = [...ctx.selectedIds].filter((id) => !unit.includes(id));
+                ctx.setSelection(remaining);
+            } else {
+                ctx.addToSelection(unit);
+            }
+            return;
+        }
         if (!unitSelected) {
-            if (ctx.shiftKey) ctx.addToSelection(unit);
-            else ctx.setSelection(unit);
+            ctx.setSelection(unit);
         }
         ctx.setDragMode(mode);
         ctx.setDrawStart(ctx.rawPoint);
@@ -179,6 +189,8 @@ export function finishMove(ctx: ToolContext): void {
  */
 export function finishMoveOrNarrow(ctx: ToolContext): void {
     if (!ctx.drawStart) return;
+    // Shift 加选路径不进入拖拽；此处兜底，防止松开时把加选收窄掉
+    if (ctx.shiftKey) return;
     const target = ctx.pressTargetRef?.current;
     const dragged = dist(ctx.drawStart, ctx.rawPoint) > ctx.worldTolerance(3);
     if (!dragged && target) {

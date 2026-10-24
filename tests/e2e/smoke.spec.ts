@@ -193,6 +193,37 @@ test("动态输入：首次点击留住锚点，键入长度后回车成线", as
     await expect(firstElementLine(page)).toHaveCSS("stroke", "rgb(56, 189, 248)");
 });
 
+test("Shift + 点击加选：选择集累加且不被收窄", async ({ page }) => {
+    await openLoggedInApp(page);
+    await createDrawing(page, "Shift Select");
+
+    const svg = page.locator("#drawing-surface svg");
+
+    // 两条错开的水平线
+    await page.locator('[data-tool="LINE"]').click();
+    const a1 = await worldToScreen(page, 100, 100);
+    const a2 = await worldToScreen(page, 200, 100);
+    await page.mouse.click(a1.x, a1.y);
+    await page.mouse.click(a2.x, a2.y);
+    const b1 = await worldToScreen(page, 100, 200);
+    const b2 = await worldToScreen(page, 200, 200);
+    await page.mouse.click(b1.x, b1.y);
+    await page.mouse.click(b2.x, b2.y);
+    await expect(svg.locator("line")).toHaveCount(4);
+
+    await page.locator('[data-tool="SELECT"]').first().click();
+    const midA = await worldToScreen(page, 150, 100);
+    const midB = await worldToScreen(page, 150, 200);
+    await page.mouse.click(midA.x, midA.y);
+    await expect(page.locator("footer").getByText(/已选 1 个/)).toBeVisible();
+
+    await page.keyboard.down("Shift");
+    await page.mouse.click(midB.x, midB.y);
+    await page.keyboard.up("Shift");
+
+    await expect(page.locator("footer").getByText(/已选 2 个/)).toBeVisible();
+});
+
 test("旋转键入角度：基点按下后键入 90° 回车精确旋转", async ({ page }) => {
     await openLoggedInApp(page);
     await createDrawing(page, "Rotate Numeric");

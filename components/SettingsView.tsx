@@ -11,6 +11,7 @@ import AppearanceSection from "./settings/AppearanceSection";
 import AccountSection from "./settings/AccountSection";
 import DesignConventionsPanel from "./DesignConventionsPanel";
 import UsersSection from "./settings/UsersSection";
+import ShortcutsSection from "./settings/ShortcutsSection";
 import {
     buildDefaultModelOptions,
     buildRegistryView,
@@ -72,6 +73,7 @@ const BASE_NAV_GROUPS: readonly NavGroup[] = [
             { section: "conventions", labelKey: "settings.navConventions", icon: "design_services" },
             { section: "drawing", labelKey: "settings.navDrawing", icon: "settings" },
             { section: "appearance", labelKey: "settings.navAppearance", icon: "palette" },
+            { section: "shortcuts", labelKey: "settings.navShortcuts", icon: "keyboard" },
         ],
     },
     {
@@ -100,6 +102,10 @@ const SECTION_META: Record<
     conventions: {
         titleKey: "settings.navConventions",
         subtitleKey: "settings.conventionsSubtitle",
+    },
+    shortcuts: {
+        titleKey: "settings.shortcutsTitle",
+        subtitleKey: "settings.shortcutsSubtitle",
     },
     drawing: { titleKey: "settings.drawingTitle", subtitleKey: "settings.drawingSubtitle" },
     appearance: {
@@ -332,6 +338,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             );
         }
         if (section === "users") return <UsersSection />;
+        if (section === "shortcuts") return <ShortcutsSection />;
         if (section === "drawing") return <DrawingSettingsSection />;
         if (section === "appearance") return <AppearanceSection />;
         if (section === "account") return <AccountSection onLogout={onLogout} />;

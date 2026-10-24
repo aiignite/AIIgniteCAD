@@ -9,6 +9,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExtern
 import type { ArrayParams } from '../components/ArrayModal';
 import { CADElement, DEFAULT_SNAP_TYPES, DragMode, Point, SnapType, ToolType } from '../types';
 import { useCanvas } from '../store/canvasStore';
+import { updateCanvasStatus } from '../store/canvasStatus';
 import {
     getViewBox,
     setViewBox,
@@ -450,6 +451,12 @@ export function useCanvasInteraction({
         dimPoints,
     });
     const dynamicDraft = buildDynamicDraft(activeTool, dynamicAnchor, currentPoint);
+
+    // Space 重复命令需要知道动态输入是否激活；走 canvasStatus 外部 store 避免整树重渲
+    const dynamicActive = dynamicDraft !== null;
+    useEffect(() => {
+        updateCanvasStatus({ dynamicInput: dynamicActive });
+    }, [dynamicActive]);
 
     // 键盘回调通过 ref 读取最新草稿，避免每次移动光标都重绑监听
     const interactionRef = useRef<{

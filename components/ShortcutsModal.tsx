@@ -106,6 +106,9 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ onClose }) => {
                     <p className="text-[11px] leading-relaxed text-cad-muted">
                         {t("shortcuts.hint")}
                     </p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-cad-muted">
+                        {t("shortcuts.customizeHint")}
+                    </p>
                 </div>
             </div>
         </div>
