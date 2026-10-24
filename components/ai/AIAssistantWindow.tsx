@@ -156,7 +156,7 @@ const AIAssistantWindow: React.FC<AIAssistantWindowProps> = ({
     // 贴右时面板作为工作区的右列参与布局，与画布左右分开而不是浮在上层
     const placement = docked
         ? `relative z-20 h-full shrink-0 flex flex-col overflow-hidden bg-cad-bg border-l border-cad-border transition-[width] duration-150 ${open ? "" : "hidden"}`
-        : `fixed z-40 flex flex-col overflow-hidden bg-cad-bg border border-cad-border shadow-2xl transition-[opacity,transform,visibility] duration-150 ${compact ? "" : "rounded-2xl"} ${open ? "scale-100 opacity-100" : "pointer-events-none invisible scale-[0.98] opacity-0"}`;
+        : `fixed z-[45] flex flex-col overflow-hidden bg-cad-bg border border-cad-border shadow-2xl transition-[opacity,transform,visibility] duration-150 ${compact ? "" : "rounded-2xl"} ${open ? "scale-100 opacity-100" : "pointer-events-none invisible scale-[0.98] opacity-0"}`;
 
     return (
         <div

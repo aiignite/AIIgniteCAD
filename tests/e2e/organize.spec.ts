@@ -73,29 +73,32 @@ async function drawLine(
     return { start, end };
 }
 
-test("右侧面板默认收起，左侧工具栏的按钮负责打开", async ({ page }) => {
+test("右侧属性面板默认收起，左栏开关与检查窗体各自独立", async ({ page }) => {
     await openApp(page);
 
     // 默认收起：画布右侧没有属性面板
     await expect(page.getByText("属性", { exact: true })).toBeHidden();
 
+    // 图纸检查入口打开满屏窗体，Esc 返回
     await page.locator('aside [data-action="panel-review"]').click();
-    const reviewHeading = page.getByRole("heading", { name: "图纸检查" });
-    await expect(reviewHeading).toBeVisible();
+    const reviewDialog = page.getByRole("dialog", { name: "图纸检查" });
+    await expect(reviewDialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(reviewDialog).toBeHidden();
 
+    // 左栏开关展开右侧属性面板
     await page.locator('aside [data-action="panel-toggle"]').click();
-    await expect(reviewHeading).toBeHidden();
+    await expect(page.getByText("属性", { exact: true })).toBeVisible();
 });
 
-test("图纸管理在设置页内以主从布局呈现", async ({ page }) => {
+test("图纸清单以满屏主从布局呈现", async ({ page }) => {
     await openApp(page);
 
     await page.locator('aside [data-action="panel-files"]').click();
-    const drawings = page.locator('[data-settings-body="drawings"]');
+    const drawings = page.getByRole("dialog", { name: "图纸清单" });
     await expect(drawings).toBeVisible();
-    await expect(page.getByRole("heading", { name: "图纸管理" })).toBeVisible();
 
-    await page.locator('[data-action="settings-close"]').click();
+    await page.keyboard.press("Escape");
     await expect(drawings).toBeHidden();
 });
 

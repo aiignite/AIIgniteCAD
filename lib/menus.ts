@@ -13,8 +13,8 @@ import type { TranslationKey } from "./i18n";
 
 /** 设置页分区，菜单与设置页左侧导航共用同一套标识 */
 export type SettingsSection =
-    "models" | "assistants" | "skills" | "drawing" | "appearance" | "account"
-    | "drawings" | "users";
+    "models" | "assistants" | "skills" | "drawing" | "appearance" | "conventions"
+    | "account" | "users";
 
 /** 菜单命令的动作 id */
 export type MenuActionId =
@@ -145,7 +145,6 @@ export const MENUS: MenuDef[] = [
                 action: "file.manage",
                 labelKey: "menu.file.manage",
                 icon: "library_books",
-                section: "drawings",
             },
             { kind: "separator" },
             {
@@ -386,6 +385,7 @@ export const MENUS: MenuDef[] = [
                 action: "view.conventions",
                 labelKey: "menu.view.conventions",
                 icon: "design_services",
+                section: "conventions",
             },
         ],
     },

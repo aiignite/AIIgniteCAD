@@ -8,6 +8,10 @@ import { Header } from "./components/Header";
 import { Toolbar } from "./components/Toolbar";
 import { Canvas } from "./components/Canvas";
 import { RightPanel } from "./components/RightPanel";
+import FullScreenShell from "./components/FullScreenShell";
+import DrawingReviewPanel from "./components/DrawingReviewPanel";
+import DrawingsSection from "./components/settings/DrawingsSection";
+import type { ReviewIssue } from "./lib/designReview";
 import { Footer } from "./components/Footer";
 import { LoginPage } from "./components/LoginPage";
 import { RegisterPage } from "./components/RegisterPage";
@@ -27,7 +31,6 @@ import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ContextMenu, type ContextMenuItem } from "./components/ContextMenu";
 import {
     ToolType,
-    SidePanelMode,
     CADElement,
     Point,
     ProjectFile,
@@ -208,7 +211,6 @@ function App() {
         setFiles,
         setActiveFile,
         updateFile,
-        setSideMode,
         setSidePanelOpen,
         setLoading,
         showNotification,
@@ -219,7 +221,6 @@ function App() {
         currentUser,
         files,
         activeFile,
-        sideMode,
         sidePanelOpen,
         loading,
         notification,
@@ -246,6 +247,10 @@ function App() {
     const [showPlot, setShowPlot] = useState(false);
     const [showQuickSelect, setShowQuickSelect] = useState(false);
     const [showImageTrace, setShowImageTrace] = useState(false);
+    /** 图纸检查满屏窗体；原右侧栏承载，现与版本历史同款骨架 */
+    const [showReview, setShowReview] = useState(false);
+    /** 图纸清单满屏窗体（文件菜单 / 工具栏入口） */
+    const [showDrawings, setShowDrawings] = useState(false);
     const [aiOpen, setAiOpen] = useState(false);
     /** 快捷键速查表 */
     const [showShortcuts, setShowShortcuts] = useState(false);
@@ -282,6 +287,8 @@ function App() {
         showWelcomeModal ||
         showShortcuts ||
         settingsSection !== null ||
+        showReview ||
+        showDrawings ||
         aiPreview !== null ||
         pendingDeleteIds !== null ||
         activeTool === ToolType.ARRAY;
@@ -989,6 +996,15 @@ function App() {
         [setSelection],
     );
 
+    /** 图纸检查的「定位」：选中问题图元并缩放到包围盒 */
+    const handleLocateReviewIssue = useCallback(
+        (issue: ReviewIssue) => {
+            setSelection(issue.elementIds);
+            if (issue.bbox) zoomViewportToBounds(issue.bbox);
+        },
+        [setSelection],
+    );
+
     // Command Line Handler：解析、别名、参数与执行全部委托给命令注册表
     const handleCommand = (cmd: string) => {
         telemetryService.recordAction("command", { command: cmd });
@@ -1486,7 +1502,7 @@ function App() {
                 }
                 if (key === "o" || key === "n") {
                     e.preventDefault();
-                    setSettingsSection("drawings");
+                    setShowDrawings(true);
                     return;
                 }
                 return;
@@ -1877,7 +1893,7 @@ function App() {
             switch (action) {
                 case "file.new":
                 case "file.open":
-                    setSettingsSection("drawings");
+                    setShowDrawings(true);
                     return;
                 case "file.save":
                     void handleSave();
@@ -1955,12 +1971,13 @@ function App() {
                     toggleView(TOGGLE_MODE_KEYS[action.slice("view.".length) as MenuToggleId]);
                     return;
                 case "view.review":
-                    setSideMode(SidePanelMode.REVIEW);
-                    setSidePanelOpen(true);
+                    setShowReview(true);
                     return;
                 case "view.conventions":
-                    setSideMode(SidePanelMode.CONVENTIONS);
-                    setSidePanelOpen(true);
+                    setSettingsSection("conventions");
+                    return;
+                case "file.manage":
+                    setShowDrawings(true);
                     return;
                 case "tool.aiWindow":
                     setAiOpen(true);
@@ -1996,8 +2013,7 @@ function App() {
             handleZoomExtents,
             requestDeleteSelection,
             setActiveTool,
-            setSideMode,
-            setSidePanelOpen,
+                setSidePanelOpen,
             showAllObjects,
             toggleView,
         ],
@@ -2269,6 +2285,8 @@ function App() {
             <div className="flex flex-1 overflow-hidden relative">
                 <Toolbar
                     onOpenSettings={openSettings}
+                    onOpenReview={() => setShowReview(true)}
+                    onOpenDrawings={() => setShowDrawings(true)}
                     currentUser={currentUser}
                 />
                 <Canvas
@@ -2285,16 +2303,10 @@ function App() {
                 />
                 <RightPanel
                     key={currentUser?.id || "no-user"}
-                    mode={sideMode}
                     collapsed={!sidePanelOpen}
                     currentElements={elements}
                     onUpdateElement={handlePropertyUpdate}
                     onApplyAIAction={handleAIAction}
-                    onAskAIFix={handleAskAIFix}
-                    designConventions={activeFile?.designConventions ?? null}
-                    onSaveDesignConventions={handleSaveDesignConventions}
-                    files={files}
-                    activeFileId={activeFile?.id || null}
                 />
                 <AIAssistantWindow
                     open={aiOpen}
@@ -2317,16 +2329,52 @@ function App() {
                         onSectionChange={setSettingsSection}
                         onClose={() => setSettingsSection(null)}
                         onLogout={handleLogout}
-                        files={files}
-                        activeFileId={activeFile?.id || null}
-                        onLoadFile={(file) => void handleLoadFile(file)}
-                        onCreateFile={(name) => void handleCreateFile(name)}
-                        onRenameFile={(id, name) => void handleRenameFile(id, name)}
-                        onDeleteFile={(id) => void handleDeleteFile(id)}
                         currentUserRole={currentUser?.role ?? null}
+                        drawingName={activeFile?.name}
+                        designConventions={activeFile?.designConventions ?? null}
+                        onSaveDesignConventions={handleSaveDesignConventions}
+                        onOpenDrawings={() => setShowDrawings(true)}
                     />
                 )}
             </div>
+            {showReview && (
+                <FullScreenShell
+                    title={t("review.title")}
+                    icon="fact_check"
+                    subtitle={activeFile?.name}
+                    onClose={() => setShowReview(false)}
+                >
+                    <DrawingReviewPanel
+                        elements={elements}
+                        conventions={activeFile?.designConventions ?? null}
+                        onLocate={handleLocateReviewIssue}
+                        onAskAI={handleAskAIFix}
+                    />
+                </FullScreenShell>
+            )}
+
+            {showDrawings && (
+                <FullScreenShell
+                    title={t("panel.drawingsList")}
+                    icon="library_books"
+                    subtitle={t("panel.drawingsListSubtitle")}
+                    onClose={() => setShowDrawings(false)}
+                    scroll={false}
+                >
+                    <DrawingsSection
+                        files={files}
+                        activeFileId={activeFile?.id || null}
+                        onLoadFile={(file) => {
+                            setShowDrawings(false);
+                            void handleLoadFile(file);
+                        }}
+                        onCreateFile={(name) => void handleCreateFile(name)}
+                        onRenameFile={(id, name) => void handleRenameFile(id, name)}
+                        onDeleteFile={(id) => void handleDeleteFile(id)}
+                    />
+                </FullScreenShell>
+            )}
+
             {contextMenu && (
                 <ContextMenu
                     x={contextMenu.x}

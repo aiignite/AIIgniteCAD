@@ -159,20 +159,20 @@ export const Header: React.FC<HeaderProps> = ({
                     <button
                         onClick={onUndo}
                         disabled={!historyOverview.canUndo}
-                        className="p-1.5 rounded transition-colors hover:text-cad-text hover:bg-cad-text/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-cad-muted"
+                        className="size-8 flex items-center justify-center rounded transition-colors hover:text-cad-text hover:bg-cad-text/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-cad-muted"
                         title={t("header.undo")}
                         aria-disabled={!historyOverview.canUndo}
                     >
-                        <span className="material-symbols-outlined text-[20px]">undo</span>
+                        <span className="material-symbols-outlined text-[18px]">undo</span>
                     </button>
                     <button
                         onClick={onRedo}
                         disabled={!historyOverview.canRedo}
-                        className="p-1.5 rounded transition-colors hover:text-cad-text hover:bg-cad-text/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-cad-muted"
+                        className="size-8 flex items-center justify-center rounded transition-colors hover:text-cad-text hover:bg-cad-text/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-cad-muted"
                         title={t("header.redo")}
                         aria-disabled={!historyOverview.canRedo}
                     >
-                        <span className="material-symbols-outlined text-[20px]">redo</span>
+                        <span className="material-symbols-outlined text-[18px]">redo</span>
                     </button>
                     {/* 撤销历史：列表展示并可点击跳转到任意一步 */}
                     {historyOverview.entries.length > 0 && (
@@ -183,9 +183,9 @@ export const Header: React.FC<HeaderProps> = ({
                                 aria-expanded={historyOpen}
                                 title={t("header.history")}
                                 aria-label={t("header.history")}
-                                className="p-1.5 rounded transition-colors hover:text-cad-text hover:bg-cad-text/10"
+                                className="size-8 flex items-center justify-center rounded transition-colors hover:text-cad-text hover:bg-cad-text/10"
                             >
-                                <span className="material-symbols-outlined text-[20px]">history</span>
+                                <span className="material-symbols-outlined text-[18px]">history</span>
                             </button>
                             {historyOpen && (
                                 <>
@@ -244,8 +244,8 @@ export const Header: React.FC<HeaderProps> = ({
                     title={aiOpen ? t("header.aiClose") : t("header.aiOpen")}
                     className={`size-8 flex items-center justify-center rounded transition-colors ${
                         aiOpen
-                            ? "bg-cad-primary text-white shadow-lg shadow-blue-500/20"
-                            : "border border-cad-border text-cad-muted hover:text-cad-text hover:bg-cad-text/10"
+                            ? "bg-cad-primary text-white"
+                            : "text-cad-muted hover:text-cad-text hover:bg-cad-text/10"
                     }`}
                 >
                     <span className="material-symbols-outlined text-[18px]">smart_toy</span>
@@ -253,7 +253,7 @@ export const Header: React.FC<HeaderProps> = ({
 
                 <button
                     onClick={toggleTheme}
-                    className="size-8 rounded-full bg-cad-panel border border-cad-border flex items-center justify-center text-xs font-bold text-cad-text cursor-pointer hover:bg-cad-border transition-colors"
+                    className="size-8 flex items-center justify-center rounded text-cad-muted hover:text-cad-text hover:bg-cad-text/10 transition-colors"
                     title={isDark ? t("header.themeToLight") : t("header.themeToDark")}
                     aria-label={isDark ? t("header.themeToLight") : t("header.themeToDark")}
                 >
@@ -276,7 +276,7 @@ export const Header: React.FC<HeaderProps> = ({
                 {onExport && (
                     <button
                         onClick={onExport}
-                        className="hidden sm:flex size-8 items-center justify-center bg-cad-primary hover:bg-cad-primaryHover text-white rounded transition-colors shadow-lg shadow-blue-500/20"
+                        className="hidden sm:flex size-8 items-center justify-center bg-cad-primary hover:bg-cad-primaryHover text-white rounded transition-colors"
                         title={t("header.export")}
                         aria-label={t("header.export")}
                     >

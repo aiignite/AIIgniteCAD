@@ -26,15 +26,19 @@ test("检查面板列出问题、定位选中并带着摘要切到 AI 修复", a
         await page.mouse.up();
     }
 
+    // 状态栏的「已选 N」提示只在选择工具下出现，先切过去再开检查窗体
+    await page.locator('[data-tool="SELECT"]').first().click();
     await page.locator('aside [data-action="panel-review"]').click();
-    await expect(page.getByRole("heading", { name: "图纸检查" })).toBeVisible();
+    const reviewDialog = page.getByRole("dialog", { name: "图纸检查" });
+    await expect(reviewDialog).toBeVisible();
 
     const issue = page.locator('[data-review-issue="missing-dimension"]');
     await expect(issue).toBeVisible();
     await expect(issue).toContainText("缺少尺寸标注");
 
     await issue.locator('button[title="选中并缩放到问题位置"]').click();
-    await expect(page.getByText("已选中 3 个对象")).toBeVisible();
+    // 满屏窗体下属性面板被覆盖，改从状态栏断言选择集
+    await expect(page.locator("footer").getByText(/已选 3 个/)).toBeVisible();
 
     await issue.locator('button[title="忽略这条问题"]').click();
     await expect(page.getByText("当前筛选下没有问题")).toBeVisible();

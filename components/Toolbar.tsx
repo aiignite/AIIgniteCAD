@@ -7,10 +7,11 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { SidePanelMode, ToolType } from "../types";
+import { ToolType } from "../types";
 import { useCanvas } from "../store/canvasStore";
 import { useApp } from "../store/appStore";
 import { groupElements, ungroupElements } from "../lib/groups";
+import BlockLibraryPanel from "./BlockLibraryPanel";
 import { TOOL_GROUPS, type ToolMeta } from "../lib/toolCatalog";
 import { useI18n, type TranslationKey } from "../lib/i18n";
 
@@ -45,17 +46,21 @@ function readClosedGroups(): Set<string> {
 }
 
 interface ToolbarProps {
-    /** 打开设置页的指定分区（图纸管理已并入设置页） */
-    onOpenSettings: (section: "drawing" | "account" | "drawings") => void;
+    /** 打开设置页的指定分区 */
+    onOpenSettings: (section: "drawing" | "account" | "conventions") => void;
+    /** 打开图纸检查满屏窗体 */
+    onOpenReview: () => void;
+    /** 打开图纸清单满屏窗体 */
+    onOpenDrawings: () => void;
     /** 当前登录用户，用于面板入口的头像 */
     currentUser?: { username?: string };
 }
 
-export const Toolbar: React.FC<ToolbarProps> = ({ onOpenSettings, currentUser }) => {
+export const Toolbar: React.FC<ToolbarProps> = ({ onOpenSettings, onOpenReview, onOpenDrawings, currentUser }) => {
     const { t } = useI18n();
     const { state, selectedIds, setActiveTool, commitAction } = useCanvas();
     const { activeTool, elements } = state;
-    const { state: appState, setSideMode, setSidePanelOpen, showNotification } = useApp();
+    const { state: appState, setSidePanelOpen, showNotification } = useApp();
     const [collapsed, setCollapsed] = useState(readCollapsed);
     const [closedGroups, setClosedGroups] = useState<Set<string>>(readClosedGroups);
 
@@ -97,36 +102,25 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenSettings, currentUser })
         showNotification(t("notify.ungrouped"));
     }, [commitAction, elements, selectedIds, showNotification, t]);
 
-    /** 打开右侧面板并切换到指定模式 */
-    const openSidePanel = useCallback(
-        (mode: SidePanelMode) => {
-            setSideMode(mode);
-            setSidePanelOpen(true);
-        },
-        [setSideMode, setSidePanelOpen],
-    );
-
     const panelEntries = useMemo<PanelEntry[]>(() => {
         const entries: PanelEntry[] = [
             {
                 key: "panel-review",
                 icon: "rule",
                 labelKey: "menu.view.review",
-                onClick: () => openSidePanel(SidePanelMode.REVIEW),
-                active: appState.sidePanelOpen && appState.sideMode === SidePanelMode.REVIEW,
+                onClick: onOpenReview,
             },
             {
                 key: "panel-conventions",
                 icon: "design_services",
                 labelKey: "menu.view.conventions",
-                onClick: () => openSidePanel(SidePanelMode.CONVENTIONS),
-                active: appState.sidePanelOpen && appState.sideMode === SidePanelMode.CONVENTIONS,
+                onClick: () => onOpenSettings("conventions"),
             },
             {
                 key: "panel-files",
                 icon: "folder_open",
-                labelKey: "panel.projectFiles",
-                onClick: () => onOpenSettings("drawings"),
+                labelKey: "panel.drawingsList",
+                onClick: onOpenDrawings,
             },
             {
                 key: "panel-settings",
@@ -157,11 +151,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenSettings, currentUser })
 
         return entries;
     }, [
-        appState.sideMode,
         appState.sidePanelOpen,
         currentUser,
+        onOpenDrawings,
+        onOpenReview,
         onOpenSettings,
-        openSidePanel,
         setSidePanelOpen,
     ]);
 
@@ -384,6 +378,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenSettings, currentUser })
                         {groupOpen(group.key) && group.tools.map(renderTool)}
                     </React.Fragment>
                 ))}
+
+                {renderGroupHeader("blocks", "toolbar.blocks")}
+                {groupOpen("blocks") && (
+                    <BlockLibraryPanel currentElements={elements} />
+                )}
 
                 {renderGroupHeader("organize", "toolbar.organize")}
                 {groupOpen("organize") && organizeEntries.map(renderAction)}

@@ -169,6 +169,8 @@ const UsersSection: React.FC = () => {
                         </div>
 
                         <dl className="rounded-lg border border-cad-border bg-cad-bg p-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                            <dt className="text-cad-muted">{t("users.idLabel")}</dt>
+                            <dd className="text-cad-text font-mono break-all">{selected.id}</dd>
                             <dt className="text-cad-muted">{t("users.roleLabel")}</dt>
                             <dd className="text-cad-text font-bold">
                                 {selected.role === "admin"

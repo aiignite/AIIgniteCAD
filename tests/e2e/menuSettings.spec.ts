@@ -32,8 +32,8 @@ test("菜单栏：文件菜单打开图纸管理，视图菜单切换绘图辅�
     await openApp(page);
 
     await openMenu(page, "file");
-    await page.getByRole("menu").getByRole("menuitem", { name: "图纸管理" }).click();
-    const drawings = page.locator('[data-settings-body="drawings"]');
+    await page.getByRole("menu").getByRole("menuitem", { name: "图纸清单" }).click();
+    const drawings = page.getByRole("dialog", { name: "图纸清单" });
     await expect(drawings).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(drawings).toBeHidden();

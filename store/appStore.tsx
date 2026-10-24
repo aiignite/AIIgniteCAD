@@ -4,7 +4,7 @@
  */
 
 import React, { createContext, useContext, useReducer, useCallback, ReactNode } from "react";
-import { SidePanelMode, ProjectFile } from "../types";
+import { ProjectFile } from "../types";
 import { readUIPreferences, writeUIPreferences } from "../lib/uiPreferences";
 
 /* ─── State ─────────────────────────────────────────────────── */
@@ -14,8 +14,7 @@ export interface AppState {
   currentUser: any | null;
   files: ProjectFile[];
   activeFile: ProjectFile | null;
-  sideMode: SidePanelMode;
-  /** 右侧面板是否展开；默认收起，把画布面积让给绘图 */
+  /** 右侧属性面板是否展开；默认收起，把画布面积让给绘图 */
   sidePanelOpen: boolean;
   loading: boolean;
   notification: string | null;
@@ -26,7 +25,6 @@ const initialState: AppState = {
   currentUser: null,
   files: [],
   activeFile: null,
-  sideMode: SidePanelMode.REVIEW,
   // 面板展开状态持久化，刷新后保持上次的布局
   sidePanelOpen: readUIPreferences().sidePanelOpen,
   loading: false,
@@ -41,7 +39,6 @@ export type AppAction =
   | { type: "SET_FILES"; files: ProjectFile[] }
   | { type: "SET_ACTIVE_FILE"; file: ProjectFile | null }
   | { type: "UPDATE_FILE"; file: ProjectFile }
-  | { type: "SET_SIDE_MODE"; mode: SidePanelMode }
   | { type: "SET_SIDE_PANEL_OPEN"; value: boolean }
   | { type: "SET_LOADING"; value: boolean }
   | { type: "SHOW_NOTIFICATION"; message: string }
@@ -75,9 +72,6 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       };
     }
 
-    case "SET_SIDE_MODE":
-      return { ...state, sideMode: action.mode };
-
     case "SET_SIDE_PANEL_OPEN":
       return { ...state, sidePanelOpen: action.value };
 
@@ -108,7 +102,6 @@ interface AppContextValue {
   setFiles: (files: ProjectFile[]) => void;
   setActiveFile: (file: ProjectFile | null) => void;
   updateFile: (file: ProjectFile) => void;
-  setSideMode: (mode: SidePanelMode) => void;
   setSidePanelOpen: (value: boolean) => void;
   setLoading: (value: boolean) => void;
   showNotification: (message: string) => void;
@@ -148,11 +141,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     []
   );
 
-  const setSideMode = useCallback(
-    (mode: SidePanelMode) => dispatch({ type: "SET_SIDE_MODE", mode }),
-    []
-  );
-
   const setSidePanelOpen = useCallback(
     (value: boolean) => {
       dispatch({ type: "SET_SIDE_PANEL_OPEN", value });
@@ -186,7 +174,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setFiles,
     setActiveFile,
     updateFile,
-    setSideMode,
     setSidePanelOpen,
     setLoading,
     showNotification,
