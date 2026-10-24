@@ -104,19 +104,19 @@ test("连续粘贴的副本逐次错开，不完全重叠", async ({ page }) => 
     expect(new Set(lines).size).toBe(3);
 });
 
-test("Ctrl+S 保存图纸，Ctrl+O / Ctrl+N 打开图纸管理弹窗", async ({ page }) => {
+test("Ctrl+S 保存图纸，Ctrl+O / Ctrl+N 打开图纸管理分区", async ({ page }) => {
     await openApp(page);
 
     await page.keyboard.press(`${MOD}+s`);
     await expect(page.getByText("保存成功").first()).toBeVisible();
 
     await page.keyboard.press(`${MOD}+o`);
-    await expect(page.getByTestId("files-modal")).toBeVisible();
+    await expect(page.locator('[data-settings-body="drawings"]')).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(page.getByTestId("files-modal")).toBeHidden();
+    await expect(page.locator('[data-settings-body="drawings"]')).toBeHidden();
 
     await page.keyboard.press(`${MOD}+n`);
-    await expect(page.getByTestId("files-modal")).toBeVisible();
+    await expect(page.locator('[data-settings-body="drawings"]')).toBeVisible();
 });
 
 test("Ctrl+P 打开打印面板", async ({ page }) => {

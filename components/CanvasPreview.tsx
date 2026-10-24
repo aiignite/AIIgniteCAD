@@ -46,6 +46,10 @@ export interface CanvasPreviewProps {
     selectionMode?: SelectionMode | null;
     /** 极轴命中时的引导线：起点、当前吸附点与角度 */
     polarGuide?: { anchor: Point; point: Point; angle: number } | null;
+    /** 当前选中的图元：移动 / 复制拖拽时渲染整组幽灵并让夹点跟随 */
+    selectedElements?: CADElement[];
+    /** 交互层算好的移动 / 复制位移（已按正交模式约束） */
+    previewOffset?: { x: number; y: number };
 }
 
 /**
@@ -69,6 +73,8 @@ const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     pixelsPerUnit = 1,
     selectionMode,
     polarGuide,
+    selectedElements,
+    previewOffset = { x: 0, y: 0 },
 }) => {
     /** 将屏幕像素尺寸换算为当前视口下的世界单位 */
     const px = (value: number) => value / Math.max(pixelsPerUnit, 1e-6);
@@ -85,6 +91,15 @@ const CanvasPreview: React.FC<CanvasPreviewProps> = ({
             x: polarGuide.anchor.x + (dx / length) * extension,
             y: polarGuide.anchor.y + (dy / length) * extension,
         };
+    })();
+
+    /** 移动 / 复制拖拽：整组选中元素的实时位移；null 表示当前不在该阶段 */
+    const moveDelta = (() => {
+        const dragging =
+            (dragMode === 'MOVE_ITEMS' || dragMode === 'COPY_ITEMS') &&
+            drawStart && currentPoint && selectedElements && selectedElements.length > 0;
+        if (!dragging || (previewOffset.x === 0 && previewOffset.y === 0)) return null;
+        return previewOffset;
     })();
 
     return (
@@ -211,17 +226,36 @@ const CanvasPreview: React.FC<CanvasPreviewProps> = ({
                 </g>
             )}
 
-            {/* 夹点：选中图元的可拖拽控制点 */}
+            {/* 移动 / 复制拖拽：所有选中元素一起实时跟随光标 */}
+            {moveDelta && (
+                <g opacity={dragMode === 'COPY_ITEMS' ? 0.5 : 0.7} pointerEvents="none">
+                    {selectedElements!.map(element => (
+                        <CADElementRenderer
+                            key={element.id}
+                            element={element}
+                            offsetX={moveDelta.x}
+                            offsetY={moveDelta.y}
+                            isSelected={false}
+                            dimScale={drawingSettings.dimScale}
+                            dimPrecision={drawingSettings.dimPrecision}
+                        />
+                    ))}
+                </g>
+            )}
+
+            {/* 夹点：选中图元的可拖拽控制点；移动 / 复制拖拽时随整组一起位移 */}
             {grips && grips.length > 0 && (
                 <g pointerEvents="none">
                     {grips.map(grip => {
                         const isActive = activeGrip?.elementId === grip.elementId && activeGrip.key === grip.key;
                         const size = px(isActive ? 8 : 6);
+                        const gx = grip.point.x + (moveDelta?.x ?? 0);
+                        const gy = grip.point.y + (moveDelta?.y ?? 0);
                         return (
                             <rect
                                 key={`${grip.elementId}-${grip.key}`}
-                                x={grip.point.x - size / 2}
-                                y={grip.point.y - size / 2}
+                                x={gx - size / 2}
+                                y={gy - size / 2}
                                 width={size}
                                 height={size}
                                 fill={isActive ? '#f97316' : '#22d3ee'}

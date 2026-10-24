@@ -20,8 +20,25 @@ export interface AuthRequest extends Request {
     id: string;
     email: string;
     username: string;
+    role?: string;
   };
 }
+
+/** 管理员守卫：挂在 authenticate 之后，非 admin 返回 403 */
+export const requireAdmin = (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): void => {
+  if (req.user?.role !== "admin") {
+    res.status(403).json({
+      error: "Forbidden",
+      message: "Admin role required",
+    });
+    return;
+  }
+  next();
+};
 
 export const hashPassword = async (password: string): Promise<string> => {
   return await bcrypt.hash(password, 10);
@@ -34,9 +51,14 @@ export const comparePassword = async (
   return await bcrypt.compare(password, hashedPassword);
 };
 
-export const generateToken = (user: { id: string; email: string; username: string }): string => {
+export const generateToken = (user: {
+  id: string;
+  email: string;
+  username: string;
+  role?: string;
+}): string => {
   return jwt.sign(
-    { id: user.id, email: user.email, username: user.username },
+    { id: user.id, email: user.email, username: user.username, role: user.role ?? "user" },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
   );
@@ -77,7 +99,7 @@ export const authenticate = async (
 
     const user = await prisma.user.findUnique({
       where: { id: decoded.id },
-      select: { id: true, email: true, username: true },
+      select: { id: true, email: true, username: true, role: true },
     });
 
     if (!user) {

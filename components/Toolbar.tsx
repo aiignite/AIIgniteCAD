@@ -45,15 +45,13 @@ function readClosedGroups(): Set<string> {
 }
 
 interface ToolbarProps {
-    /** 打开图纸（文件夹）管理弹窗 */
-    onOpenFiles: () => void;
-    /** 打开设置页的指定分区 */
-    onOpenSettings: (section: "drawing" | "account") => void;
+    /** 打开设置页的指定分区（图纸管理已并入设置页） */
+    onOpenSettings: (section: "drawing" | "account" | "drawings") => void;
     /** 当前登录用户，用于面板入口的头像 */
     currentUser?: { username?: string };
 }
 
-export const Toolbar: React.FC<ToolbarProps> = ({ onOpenFiles, onOpenSettings, currentUser }) => {
+export const Toolbar: React.FC<ToolbarProps> = ({ onOpenSettings, currentUser }) => {
     const { t } = useI18n();
     const { state, selectedIds, setActiveTool, commitAction } = useCanvas();
     const { activeTool, elements } = state;
@@ -128,7 +126,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenFiles, onOpenSettings, c
                 key: "panel-files",
                 icon: "folder_open",
                 labelKey: "panel.projectFiles",
-                onClick: onOpenFiles,
+                onClick: () => onOpenSettings("drawings"),
             },
             {
                 key: "panel-settings",
@@ -162,7 +160,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenFiles, onOpenSettings, c
         appState.sideMode,
         appState.sidePanelOpen,
         currentUser,
-        onOpenFiles,
         onOpenSettings,
         openSidePanel,
         setSidePanelOpen,

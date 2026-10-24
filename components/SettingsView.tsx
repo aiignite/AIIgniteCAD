@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { SettingsSection } from "../lib/menus";
+import type { ProjectFile } from "../types";
 import { useAIRegistry, type UseAIRegistryResult } from "../hooks/useAIRegistry";
 import { useI18n, type TranslationKey } from "../lib/i18n";
 import LLMModelsPanel from "./LLMModelsPanel";
@@ -8,6 +9,8 @@ import AISkillsPanel from "./AISkillsPanel";
 import DrawingSettingsSection from "./settings/DrawingSettingsSection";
 import AppearanceSection from "./settings/AppearanceSection";
 import AccountSection from "./settings/AccountSection";
+import DrawingsSection from "./settings/DrawingsSection";
+import UsersSection from "./settings/UsersSection";
 import {
     buildDefaultModelOptions,
     buildRegistryView,
@@ -29,6 +32,15 @@ export interface SettingsViewProps {
     onSectionChange: (section: SettingsSection) => void;
     onClose: () => void;
     onLogout?: () => void;
+    /** 图纸管理分区需要的数据与动作 */
+    files: ProjectFile[];
+    activeFileId: string | null;
+    onLoadFile: (file: ProjectFile) => void;
+    onCreateFile: (name: string) => void;
+    onRenameFile: (id: string, newName: string) => void;
+    onDeleteFile: (id: string) => void;
+    /** 当前用户角色：admin 时左导航出现「用户管理」分区 */
+    currentUserRole?: string | null;
 }
 
 interface NavItem {
@@ -44,7 +56,7 @@ interface NavGroup {
     items: NavItem[];
 }
 
-const NAV_GROUPS: readonly NavGroup[] = [
+const BASE_NAV_GROUPS: readonly NavGroup[] = [
     {
         id: "ai",
         labelKey: "settings.groupAI" as TranslationKey,
@@ -55,9 +67,10 @@ const NAV_GROUPS: readonly NavGroup[] = [
         ],
     },
     {
-        id: "config",
-        labelKey: "settings.groupConfig" as TranslationKey,
+        id: "workspace",
+        labelKey: "settings.groupWorkspace" as TranslationKey,
         items: [
+            { section: "drawings", labelKey: "settings.navDrawings", icon: "library_books" },
             { section: "drawing", labelKey: "settings.navDrawing", icon: "settings" },
             { section: "appearance", labelKey: "settings.navAppearance", icon: "palette" },
         ],
@@ -65,7 +78,10 @@ const NAV_GROUPS: readonly NavGroup[] = [
     {
         id: "user",
         labelKey: null,
-        items: [{ section: "account", labelKey: "settings.navAccount", icon: "manage_accounts" }],
+        items: [
+            { section: "users", labelKey: "settings.navUsers", icon: "group" },
+            { section: "account", labelKey: "settings.navAccount", icon: "manage_accounts" },
+        ],
     },
 ];
 
@@ -82,11 +98,16 @@ const SECTION_META: Record<
         subtitleKey: "settings.assistantsSubtitle",
     },
     skills: { titleKey: "settings.skillsTitle", subtitleKey: "settings.skillsSubtitle" },
+    drawings: {
+        titleKey: "settings.drawingsTitle",
+        subtitleKey: "settings.drawingsSubtitle",
+    },
     drawing: { titleKey: "settings.drawingTitle", subtitleKey: "settings.drawingSubtitle" },
     appearance: {
         titleKey: "settings.appearanceTitle",
         subtitleKey: "settings.appearanceSubtitle",
     },
+    users: { titleKey: "settings.usersTitle", subtitleKey: "settings.usersSubtitle" },
     account: { titleKey: "settings.accountTitle", subtitleKey: "settings.accountSubtitle" },
 };
 
@@ -225,9 +246,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     onSectionChange,
     onClose,
     onLogout,
+    files,
+    activeFileId,
+    onLoadFile,
+    onCreateFile,
+    onRenameFile,
+    onDeleteFile,
+    currentUserRole,
 }) => {
     const { t } = useI18n();
     const registry = useAIRegistry();
+    const isAdmin = currentUserRole === "admin";
+    // 非管理员不出现「用户管理」入口；误入时落回账户分区
+    const NAV_GROUPS = useMemo(
+        () =>
+            isAdmin
+                ? BASE_NAV_GROUPS
+                : BASE_NAV_GROUPS.map((group) => ({
+                      ...group,
+                      items: group.items.filter((item) => item.section !== "users"),
+                  })),
+        [isAdmin],
+    );
     const [draft, setDraft] = useState<{ section: SettingsSection; query: string }>({
         section,
         query: "",
@@ -236,6 +276,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     const query = draft.section === section ? draft.query : "";
 
     const registrySection = asRegistrySection(section);
+
+    // 满屏界面支持 Esc 返回画布；输入控件内不拦截
+    useEffect(() => {
+        const handler = (event: KeyboardEvent) => {
+            if (event.key !== "Escape") return;
+            const target = event.target as HTMLElement | null;
+            if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+            onClose();
+        };
+        window.addEventListener("keydown", handler);
+        return () => window.removeEventListener("keydown", handler);
+    }, [onClose]);
+
+    // 非管理员落到 users 分区（菜单残留 / 直链）时退回账户页
+    useEffect(() => {
+        if (section === "users" && !isAdmin) onSectionChange("account");
+    }, [section, isAdmin, onSectionChange]);
 
     const rows = useMemo<RegistryRows>(
         () => ({
@@ -268,6 +325,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     const meta = SECTION_META[section];
 
     const renderBody = () => {
+        if (section === "drawings") {
+            return (
+                <DrawingsSection
+                    files={files}
+                    activeFileId={activeFileId}
+                    onLoadFile={onLoadFile}
+                    onCreateFile={onCreateFile}
+                    onRenameFile={onRenameFile}
+                    onDeleteFile={onDeleteFile}
+                />
+            );
+        }
+        if (section === "users") return <UsersSection />;
         if (section === "drawing") return <DrawingSettingsSection />;
         if (section === "appearance") return <AppearanceSection />;
         if (section === "account") return <AccountSection onLogout={onLogout} />;
@@ -294,7 +364,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
     return (
         <div
-            className="absolute inset-0 z-20 flex bg-cad-bg"
+            className="absolute inset-0 z-40 flex bg-cad-bg"
             role="dialog"
             aria-modal="true"
             aria-label={t("settings.navTitle")}

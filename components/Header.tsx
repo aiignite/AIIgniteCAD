@@ -11,6 +11,8 @@ interface HeaderProps {
     onSave?: () => void;
     /** 导出 DXF：与菜单栏「文件 → 导出 DXF」走同一个入口 */
     onExport?: () => void;
+    /** 打开设置页（顶栏齿轮，指向常用分区） */
+    onOpenSettings?: (section: "drawing" | "account") => void;
     /** 顶部 AI 助手入口：打开非模态浮窗 */
     aiOpen?: boolean;
     onToggleAI?: () => void;
@@ -32,6 +34,7 @@ export const Header: React.FC<HeaderProps> = ({
     fileName,
     onSave,
     onExport,
+    onOpenSettings,
     aiOpen = false,
     onToggleAI,
 }) => {
@@ -227,11 +230,11 @@ export const Header: React.FC<HeaderProps> = ({
 
                 <button
                     onClick={onSave}
-                    className="flex items-center gap-1.5 h-8 px-2.5 rounded text-cad-muted hover:text-cad-text hover:bg-cad-text/10 text-xs font-medium transition-colors"
+                    className="size-8 flex items-center justify-center rounded text-cad-muted hover:text-cad-text hover:bg-cad-text/10 transition-colors"
                     title={t("header.save")}
+                    aria-label={t("header.save")}
                 >
                     <span className="material-symbols-outlined text-[18px]">save</span>
-                    <span className="hidden md:inline">{t("header.save")}</span>
                 </button>
 
                 <button
@@ -239,14 +242,13 @@ export const Header: React.FC<HeaderProps> = ({
                     aria-label={aiOpen ? t("header.aiClose") : t("header.aiOpen")}
                     aria-pressed={aiOpen}
                     title={aiOpen ? t("header.aiClose") : t("header.aiOpen")}
-                    className={`flex items-center gap-2 h-8 px-3 rounded transition-colors ${
+                    className={`size-8 flex items-center justify-center rounded transition-colors ${
                         aiOpen
                             ? "bg-cad-primary text-white shadow-lg shadow-blue-500/20"
                             : "border border-cad-border text-cad-muted hover:text-cad-text hover:bg-cad-text/10"
                     }`}
                 >
                     <span className="material-symbols-outlined text-[18px]">smart_toy</span>
-                    <span className="hidden lg:inline text-xs font-bold">AI</span>
                 </button>
 
                 <button
@@ -260,13 +262,27 @@ export const Header: React.FC<HeaderProps> = ({
                     </span>
                 </button>
 
-                <button
-                    onClick={onExport}
-                    className="hidden sm:flex items-center gap-2 h-8 px-4 bg-cad-primary hover:bg-cad-primaryHover text-white text-sm font-bold rounded transition-colors shadow-lg shadow-blue-500/20"
-                >
-                    <span className="material-symbols-outlined text-[18px]">download</span>
-                    <span>{t("header.export")}</span>
-                </button>
+                {onOpenSettings && (
+                    <button
+                        onClick={() => onOpenSettings("drawing")}
+                        className="size-8 flex items-center justify-center rounded text-cad-muted hover:text-cad-text hover:bg-cad-text/10 transition-colors"
+                        title={t("settings.navTitle")}
+                        aria-label={t("settings.navTitle")}
+                    >
+                        <span className="material-symbols-outlined text-[18px]">settings</span>
+                    </button>
+                )}
+
+                {onExport && (
+                    <button
+                        onClick={onExport}
+                        className="hidden sm:flex size-8 items-center justify-center bg-cad-primary hover:bg-cad-primaryHover text-white rounded transition-colors shadow-lg shadow-blue-500/20"
+                        title={t("header.export")}
+                        aria-label={t("header.export")}
+                    >
+                        <span className="material-symbols-outlined text-[18px]">download</span>
+                    </button>
+                )}
             </div>
         </header>
     );

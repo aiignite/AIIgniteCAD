@@ -165,7 +165,11 @@ test("技能编辑器保存 steps/checks/examples 并在更新后递增版本", 
     );
 
     await page.getByLabel("技能名称").fill("标注审查 v2");
-    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await page
+        .getByTestId("ai-assistant-window")
+        .getByRole("button", { name: "保存" })
+        .first()
+        .click();
 
     expect(state.updated).toHaveLength(1);
     expect(state.updated[0]).toMatchObject({
@@ -207,7 +211,10 @@ test("技能可导出为 JSON，导入时校验并避让重复代码", async ({ 
     await openSkillsPanel(page);
 
     const downloadPromise = page.waitForEvent("download");
-    await page.getByRole("button", { name: "导出", exact: true }).click();
+    await page
+        .getByTestId("ai-assistant-window")
+        .getByRole("button", { name: "导出", exact: true })
+        .click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toBe("dimension-review.aiignite-skill.json");
 

@@ -404,6 +404,8 @@ export const Canvas: React.FC<CanvasProps> = ({
                         pixelsPerUnit={pixelsPerUnit}
                         selectionMode={selectionMode}
                         polarGuide={polarGuide}
+                        selectedElements={state.elements.filter((element) => selectedIds.has(element.id))}
+                        previewOffset={previewOffset}
                     />
 
                     {/* 其他协作者的远程光标（仅协作开启时渲染） */}

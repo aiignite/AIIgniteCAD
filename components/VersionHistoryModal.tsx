@@ -260,16 +260,13 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
 
     return (
         <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+            className="absolute inset-0 z-40 flex flex-col bg-cad-bg"
             role="dialog"
             aria-modal="true"
             aria-label={t("versions.title")}
-            onMouseDown={(event) => {
-                if (event.target === event.currentTarget) onClose();
-            }}
         >
-            <div className="bg-cad-panel border border-cad-border rounded-xl shadow-2xl w-[min(1100px,95vw)] h-[min(760px,90vh)] flex flex-col overflow-hidden">
-                <div className="flex items-center justify-between px-5 py-3 border-b border-cad-border">
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-cad-border bg-cad-panel">
                     <div>
                         <h2 className="text-base font-bold text-cad-text">{t("versions.title")}</h2>
                         <p className="text-[11px] text-cad-muted font-mono">
@@ -278,11 +275,13 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                     </div>
                     <button
                         onClick={onClose}
-                        className="p-1.5 rounded hover:bg-cad-text/10 text-cad-muted hover:text-cad-text transition-colors"
-                        title={t("common.close")}
+                        className="flex items-center gap-1.5 h-8 px-2.5 rounded border border-cad-border text-xs text-cad-muted hover:bg-cad-border/40 hover:text-cad-text transition-colors"
+                        title={t("versions.close")}
                         aria-label={t("versions.close")}
                     >
-                        <span className="material-symbols-outlined text-[20px]">close</span>
+                        <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+                        <span className="hidden md:inline">{t("settings.backToCanvas")}</span>
+                        <span className="material-symbols-outlined text-[16px]">close</span>
                     </button>
                 </div>
 

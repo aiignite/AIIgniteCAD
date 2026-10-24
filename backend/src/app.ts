@@ -12,6 +12,7 @@ import helmet from "helmet";
 import compression from "compression";
 
 import authRoutes from "./routes/auth";
+import userRoutes from "./routes/users";
 import projectRoutes from "./routes/projects";
 import versionRoutes from "./routes/versions";
 import llmRoutes from "./routes/llm";
@@ -139,6 +140,7 @@ export function createApp(): Express {
 
   // 业务路由
   app.use("/api/auth", authRateLimit(), authRoutes);
+  app.use("/api/users", userRoutes);
   // 版本路由先于通用项目路由挂载，避免进入项目 router 后再鉴权一次
   app.use("/api/projects/:id/versions", versionRoutes);
   app.use("/api/projects", projectRoutes);

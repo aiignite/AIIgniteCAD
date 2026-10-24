@@ -259,6 +259,10 @@ async function startServer() {
       });
     }
 
+    // 库里还没有 admin 时把最早注册的用户提为管理员（幂等）
+    const { ensureFirstAdmin } = await import("./lib/bootstrapAdmin");
+    await ensureFirstAdmin();
+
     server.listen(PORT, () => {
       logger.info("Backend server started", {
         environment: process.env.NODE_ENV || "development",

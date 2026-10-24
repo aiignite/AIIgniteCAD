@@ -87,16 +87,16 @@ test("右侧面板默认收起，左侧工具栏的按钮负责打开", async ({
     await expect(reviewHeading).toBeHidden();
 });
 
-test("图纸管理从独立弹窗进入", async ({ page }) => {
+test("图纸管理在设置页内以主从布局呈现", async ({ page }) => {
     await openApp(page);
 
     await page.locator('aside [data-action="panel-files"]').click();
-    const modal = page.getByTestId("files-modal");
-    await expect(modal).toBeVisible();
-    await expect(modal.getByText("Organize Drawing")).toBeVisible();
+    const drawings = page.locator('[data-settings-body="drawings"]');
+    await expect(drawings).toBeVisible();
+    await expect(page.getByRole("heading", { name: "图纸管理" })).toBeVisible();
 
-    await page.keyboard.press("Escape");
-    await expect(modal).toBeHidden();
+    await page.locator('[data-action="settings-close"]').click();
+    await expect(drawings).toBeHidden();
 });
 
 test("组合与解散：整组选中后可拆回独立图元", async ({ page }) => {

@@ -32,10 +32,11 @@ test("菜单栏：文件菜单打开图纸管理，视图菜单切换绘图辅�
     await openApp(page);
 
     await openMenu(page, "file");
-    await page.getByRole("menu").getByRole("menuitem", { name: "打开图纸" }).click();
-    await expect(page.getByTestId("files-modal")).toBeVisible();
+    await page.getByRole("menu").getByRole("menuitem", { name: "图纸管理" }).click();
+    const drawings = page.locator('[data-settings-body="drawings"]');
+    await expect(drawings).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(page.getByTestId("files-modal")).toBeHidden();
+    await expect(drawings).toBeHidden();
 
     // 菜单里的网格项与 F7 走同一条切换路径，因此同样给出状态提示
     await openMenu(page, "view");

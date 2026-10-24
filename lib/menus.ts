@@ -13,13 +13,15 @@ import type { TranslationKey } from "./i18n";
 
 /** 设置页分区，菜单与设置页左侧导航共用同一套标识 */
 export type SettingsSection =
-    "models" | "assistants" | "skills" | "drawing" | "appearance" | "account";
+    "models" | "assistants" | "skills" | "drawing" | "appearance" | "account"
+    | "drawings" | "users";
 
 /** 菜单命令的动作 id */
 export type MenuActionId =
     // 文件
     | "file.new"
     | "file.open"
+    | "file.manage"
     | "file.save"
     | "file.saveVersion"
     | "file.versions"
@@ -63,6 +65,7 @@ export type MenuActionId =
     | "settings.dimensionStyle"
     | "settings.appearance"
     | "settings.account"
+    | "settings.users"
     // AI 浮窗
     | "tool.aiWindow"
     // 帮助
@@ -135,6 +138,14 @@ export const MENUS: MenuDef[] = [
                 labelKey: "menu.file.open",
                 icon: "folder_open",
                 shortcut: "Mod+O",
+            },
+            {
+                kind: "command",
+                id: "file.manage",
+                action: "file.manage",
+                labelKey: "menu.file.manage",
+                icon: "library_books",
+                section: "drawings",
             },
             { kind: "separator" },
             {

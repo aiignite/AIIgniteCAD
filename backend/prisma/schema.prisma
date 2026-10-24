@@ -16,6 +16,8 @@ model User {
   username      String   @unique
   email         String   @unique
   passwordHash  String   @map("password_hash")
+  // admin 可进入设置页的用户管理分区：查看用户列表并调整角色
+  role          String   @default("user")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 

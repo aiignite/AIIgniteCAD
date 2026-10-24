@@ -88,7 +88,7 @@ test("语言默认中文，可在设置面板切换为英文并在刷新后保�
 
     await page.getByRole("button", { name: "English", exact: true }).click();
     await expect(page.locator('div[role="menubar"] [data-menu="file"]')).toContainText("File");
-    await expect(page.locator("header button").filter({ hasText: "Export" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Export" })).toBeVisible();
 
     await page.reload();
     await expect(page.getByText("Welcome to AI Ignite CAD")).toBeVisible();
@@ -341,7 +341,7 @@ test("导出 DXF 文件", async ({ page }) => {
     await drawLine(page);
 
     const downloadPromise = page.waitForEvent("download");
-    await page.locator("header button").filter({ hasText: "导出" }).click();
+    await page.getByRole("button", { name: "导出" }).click();
     const download = await downloadPromise;
 
     expect(download.suggestedFilename()).toMatch(/\.dxf$/);

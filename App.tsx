@@ -19,7 +19,6 @@ import { AIPreviewModal } from "./components/AIPreviewModal";
 import { PlotModal } from "./components/PlotModal";
 import { QuickSelectModal } from "./components/QuickSelectModal";
 import ImageTraceModal from "./components/ImageTraceModal";
-import FilesModal from "./components/FilesModal";
 import MenuBar from "./components/MenuBar";
 import SettingsView from "./components/SettingsView";
 import ShortcutsModal from "./components/ShortcutsModal";
@@ -247,7 +246,6 @@ function App() {
     const [showPlot, setShowPlot] = useState(false);
     const [showQuickSelect, setShowQuickSelect] = useState(false);
     const [showImageTrace, setShowImageTrace] = useState(false);
-    const [showFiles, setShowFiles] = useState(false);
     const [aiOpen, setAiOpen] = useState(false);
     /** 快捷键速查表 */
     const [showShortcuts, setShowShortcuts] = useState(false);
@@ -281,7 +279,6 @@ function App() {
         showPlot ||
         showQuickSelect ||
         showImageTrace ||
-        showFiles ||
         showWelcomeModal ||
         showShortcuts ||
         settingsSection !== null ||
@@ -1489,7 +1486,7 @@ function App() {
                 }
                 if (key === "o" || key === "n") {
                     e.preventDefault();
-                    setShowFiles(true);
+                    setSettingsSection("drawings");
                     return;
                 }
                 return;
@@ -1557,7 +1554,6 @@ function App() {
         requestDeleteSelection,
         toggleView,
         setActiveTool,
-        setShowFiles,
         setShowPlot,
         showNotification,
         t,
@@ -1881,7 +1877,7 @@ function App() {
             switch (action) {
                 case "file.new":
                 case "file.open":
-                    setShowFiles(true);
+                    setSettingsSection("drawings");
                     return;
                 case "file.save":
                     void handleSave();
@@ -2110,21 +2106,6 @@ function App() {
                 onClose={() => setShowWelcomeModal(false)}
             />
 
-            {/* 图纸（文件夹）管理弹窗 */}
-            <FilesModal
-                open={showFiles}
-                files={files}
-                activeFileId={activeFile?.id || null}
-                onClose={() => setShowFiles(false)}
-                onLoadFile={(file) => {
-                    setShowFiles(false);
-                    void handleLoadFile(file);
-                }}
-                onCreateFile={(name) => void handleCreateFile(name)}
-                onRenameFile={(id, name) => void handleRenameFile(id, name)}
-                onDeleteFile={(id) => void handleDeleteFile(id)}
-            />
-
             {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
 
             {/* TEXT INPUT MODAL */}
@@ -2275,6 +2256,7 @@ function App() {
                 fileName={activeFile?.name}
                 onSave={handleSave}
                 onExport={handleExportDXF}
+                onOpenSettings={openSettings}
                 aiOpen={aiOpen}
                 onToggleAI={() => setAiOpen((open) => !open)}
             />
@@ -2286,7 +2268,6 @@ function App() {
 
             <div className="flex flex-1 overflow-hidden relative">
                 <Toolbar
-                    onOpenFiles={() => setShowFiles(true)}
                     onOpenSettings={openSettings}
                     currentUser={currentUser}
                 />
@@ -2336,6 +2317,13 @@ function App() {
                         onSectionChange={setSettingsSection}
                         onClose={() => setSettingsSection(null)}
                         onLogout={handleLogout}
+                        files={files}
+                        activeFileId={activeFile?.id || null}
+                        onLoadFile={(file) => void handleLoadFile(file)}
+                        onCreateFile={(name) => void handleCreateFile(name)}
+                        onRenameFile={(id, name) => void handleRenameFile(id, name)}
+                        onDeleteFile={(id) => void handleDeleteFile(id)}
+                        currentUserRole={currentUser?.role ?? null}
                     />
                 )}
             </div>

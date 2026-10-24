@@ -32,7 +32,18 @@ export interface User {
     id: string;
     username: string;
     email: string;
+    role?: string;
     createdAt: string;
+}
+
+export interface ManagedUser {
+    id: string;
+    username: string;
+    email: string;
+    role: string;
+    createdAt: string;
+    updatedAt: string;
+    _count?: { projects: number };
 }
 
 export interface ProjectFile {
@@ -152,6 +163,18 @@ class ApiService {
 
     async getCurrentUser() {
         return this.request<{ user: User }>(`/auth/me`);
+    }
+
+    /** 用户管理（仅管理员）：列表与角色调整 */
+    async listUsers() {
+        return this.request<{ users: ManagedUser[] }>(`/users`);
+    }
+
+    async updateUserRole(id: string, role: "admin" | "user") {
+        return this.request<{ user: ManagedUser }>(`/users/${id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ role }),
+        });
     }
 
     async updateProfile(data: { username?: string; email?: string }) {

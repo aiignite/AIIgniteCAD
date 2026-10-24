@@ -163,6 +163,7 @@ router.post(
           id: true,
           username: true,
           email: true,
+          role: true,
           createdAt: true,
         },
       });
@@ -236,6 +237,7 @@ router.post(
         id: user.id,
         email: user.email,
         username: user.username,
+        role: user.role,
       });
 
       return res.json({
@@ -245,6 +247,7 @@ router.post(
           id: user.id,
           username: user.username,
           email: user.email,
+          role: user.role,
           createdAt: user.createdAt,
         },
       });
@@ -290,6 +293,7 @@ router.get("/me", async (req: AuthRequest, res: Response) => {
         id: true,
         username: true,
         email: true,
+        role: true,
         createdAt: true,
         updatedAt: true,
       },
