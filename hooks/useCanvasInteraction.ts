@@ -79,6 +79,8 @@ export interface CanvasInteractionOptions {
     onRequestTextEntry: (pos: Point) => void;
     /** 请求高级图形参数弹窗 */
     onRequestAdvancedShape?: (tool: ToolType, pos: Point) => void;
+    /** 请求打开填充对话框（HATCH 工具） */
+    onRequestHatch?: () => void;
     /** 状态栏通知 */
     onNotification: (msg: string) => void;
     /** 块拖放 */
@@ -96,6 +98,7 @@ export interface CanvasInteractionOptions {
 export function useCanvasInteraction({
     onRequestTextEntry,
     onRequestAdvancedShape,
+    onRequestHatch,
     onNotification,
     onBlockDrop,
     hiddenObjectIds = NO_HIDDEN,
@@ -440,6 +443,7 @@ export function useCanvasInteraction({
         onNotification,
         onRequestTextEntry,
         onRequestAdvancedShape,
+        onRequestHatch,
     });
 
     // 动态输入：已有第一点时推导可键入的字段与实时数值
@@ -901,31 +905,17 @@ export function useCanvasInteraction({
         return { x, y };
     }, [dragMode, drawStart, currentPoint, orthoMode]);
 
-    // 视口裁剪：仅渲染当前 viewBox（含 10% 缓冲）内的元素
+    // 视口裁剪：仅渲染当前 viewBox（含 10% 缓冲）内的元素。
+    // 空间索引在构建时已缓存包围盒，这里按原始顺序直接取精确相交的元素，
+    // 不再遍历全部图元、也不重复计算包围盒（平移 / 缩放每帧都会走到这里）。
     const visibleElements = useMemo(() => {
         const { minX, minY, maxX, maxY } = bufferedViewportBounds({
             viewBox,
             width: viewportSize.width,
             height: viewportSize.height,
         });
-
-        // 空间索引先筛出与视口相交的候选，再按原始顺序过滤，保持元素叠放次序
-        const candidates = new Set(
-            spatialIndex.queryRect(minX, minY, maxX, maxY).map(el => el.id),
-        );
-        return visibleSource.filter(el => {
-            if (!candidates.has(el.id)) return false;
-            const box = getElementBoundingBox(el);
-            // 退化包围盒无法判断可见性，保守保留
-            if (box.minX === 0 && box.minY === 0 && box.maxX === 0 && box.maxY === 0) return true;
-            // 矩形可能以负宽高存储，先归一化再比较
-            const boxMinX = Math.min(box.minX, box.maxX);
-            const boxMaxX = Math.max(box.minX, box.maxX);
-            const boxMinY = Math.min(box.minY, box.maxY);
-            const boxMaxY = Math.max(box.minY, box.maxY);
-            return boxMaxX >= minX && boxMinX <= maxX && boxMaxY >= minY && boxMinY <= maxY;
-        });
-    }, [visibleSource, spatialIndex, viewBox, viewportSize.width, viewportSize.height]);
+        return spatialIndex.queryVisible(minX, minY, maxX, maxY);
+    }, [spatialIndex, viewBox, viewportSize.width, viewportSize.height]);
 
     /** 框选语义：向右为窗口选择，向左为交叉选择 */
     const selectionMode = dragMode === 'SELECT_BOX' && drawStart && currentPoint

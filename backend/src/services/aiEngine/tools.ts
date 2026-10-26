@@ -520,8 +520,18 @@ export const CAD_TOOL_DEFINITIONS: CadToolDefinition[] = [
   {
     name: "check_drawing",
     description:
-      "Read-only: run deterministic drawing checks (zero-length lines, invalid circles, degenerate rectangles, duplicates, near-closed contours, missing dimensions) and return a sorted issue list.",
-    parameters: { type: "object", properties: {} },
+      "Read-only: run deterministic checks and return a sorted issue list. scope=drawing (default) checks the current drawing (zero-length lines, invalid circles, degenerate rectangles, duplicates, near-closed contours, missing dimensions, convention layers and text heights). scope=project checks cross-drawing consistency of units, text height, dimension precision, drafting standard and convention layer lists.",
+    parameters: {
+      type: "object",
+      properties: {
+        scope: {
+          type: "string",
+          enum: ["drawing", "project"],
+          description:
+            "drawing (default) = current drawing only; project = compare all drawings in the project.",
+        },
+      },
+    },
   },
   {
     name: "list_blocks",

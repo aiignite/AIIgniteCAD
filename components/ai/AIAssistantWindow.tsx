@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { AIActionResponse, Assistant, CADElement, DesignConventions } from "../../types";
 import type { DesignContextMeta } from "../../lib/aiContext";
+import type { DrawingFacts } from "../../lib/projectConsistency";
 import type { TurnMeta } from "../../hooks/useAIChat";
 import { useAIRegistry } from "../../hooks/useAIRegistry";
 import { useAIFloatingWindow } from "../../hooks/useAIFloatingWindow";
@@ -19,6 +20,8 @@ interface AIAssistantWindowProps {
     selectedIds: ReadonlySet<string>;
     units?: string;
     conventions?: DesignConventions | null;
+    /** 项目内图纸清单：让 AI 能做跨图纸一致性检查 */
+    projectDrawings?: DrawingFacts[];
     projectName?: string;
     blockCount?: number;
     hiddenObjectCount?: number;
@@ -59,6 +62,7 @@ const AIAssistantWindow: React.FC<AIAssistantWindowProps> = ({
     selectedIds,
     units,
     conventions,
+    projectDrawings,
     projectName,
     blockCount = 0,
     hiddenObjectCount = 0,
@@ -96,6 +100,12 @@ const AIAssistantWindow: React.FC<AIAssistantWindowProps> = ({
             blockCount,
             revision: canvasState.revision,
             hiddenCount: hiddenLayerElements + hiddenObjectCount,
+            projectDrawings: projectDrawings?.map((drawing) => ({
+                id: drawing.id,
+                name: drawing.name,
+                elementCount: drawing.elementCount,
+                units: drawing.conventions?.units,
+            })),
         };
     }, [
         blockCount,
@@ -106,6 +116,7 @@ const AIAssistantWindow: React.FC<AIAssistantWindowProps> = ({
         currentElements,
         hiddenObjectCount,
         projectName,
+        projectDrawings,
         units,
     ]);
 
@@ -226,6 +237,7 @@ const AIAssistantWindow: React.FC<AIAssistantWindowProps> = ({
                     units={units}
                     contextMeta={contextMeta}
                     conventions={conventions}
+                    projectDrawings={projectDrawings}
                     registry={registry}
                     assistant={assistant}
                     onAssistantChange={handleAssistantChange}

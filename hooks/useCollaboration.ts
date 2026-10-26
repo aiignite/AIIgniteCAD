@@ -19,10 +19,10 @@ import {
     upsertPeerCursor,
 } from "../store/collaboration";
 import {
-    diffElementPatches,
+    broadcastPendingChanges,
     isCollaborationProjectId,
-    isEmptyPatch,
     applyElementPatches,
+    applyElementSnapshot,
 } from "../lib/collaboration";
 import { collaborationClient } from "../services/collaborationService";
 import { useI18n } from "../lib/i18n";
@@ -40,7 +40,7 @@ export function useCollaboration(): void {
         getCollaborationSnapshot,
         getCollaborationSnapshot,
     );
-    const lastBroadcastRef = useRef<CADElement[] | null>(null);
+    const lastBroadcastRef = useRef<readonly CADElement[] | null>(null);
 
     const projectId = appState.activeFile?.id ?? null;
     const eligible = isCollaborationProjectId(projectId);
@@ -66,9 +66,25 @@ export function useCollaboration(): void {
         }
 
         lastBroadcastRef.current = getElements();
+
+        /** 把「基线 → 当前」的差异发给房间；只有真正发出才推进基线 */
+        const flushToPeers = () => {
+            const current = getElements();
+            lastBroadcastRef.current = broadcastPendingChanges(
+                lastBroadcastRef.current ?? [],
+                current,
+                (patch) => collaborationClient.sendPatch(patch),
+            );
+        };
+
         collaborationClient.connect(token, projectId, {
             onStatus: (status, error) => setCollaborationStatus(status, error ?? null),
-            onPeers: (peers) => setCollaborators(peers),
+            onPeers: (peers) => {
+                setCollaborators(peers);
+                // 加入 / 重连后先补发断线期间的本地修改，再向现有成员要一份图纸快照
+                flushToPeers();
+                if (peers.length > 0) collaborationClient.requestState();
+            },
             onSelfId: (socketId) => setCollaborationSession(projectId, socketId),
             onPeerJoined: (peer) => {
                 const current = getCollaborationSnapshot().peers.filter(
@@ -90,6 +106,15 @@ export function useCollaboration(): void {
                 lastBroadcastRef.current = merged;
                 applyRemoteElements(merged);
             },
+            onStateRequest: (requesterId) => {
+                collaborationClient.sendStateSnapshot(requesterId, getElements());
+            },
+            onStateSnapshot: (snapshot) => {
+                // 只覆盖 / 追加，不删除本地独有图元：本地可能还有未广播的编辑
+                const merged = applyElementSnapshot(getElements(), snapshot.elements);
+                lastBroadcastRef.current = merged;
+                applyRemoteElements(merged);
+            },
         });
 
         return () => {
@@ -107,10 +132,12 @@ export function useCollaboration(): void {
 
         const timer = setTimeout(() => {
             const next = getElements();
-            const baseline = lastBroadcastRef.current ?? [];
-            const patch = diffElementPatches(baseline, next);
-            lastBroadcastRef.current = next;
-            if (!isEmptyPatch(patch)) collaborationClient.sendPatch(patch);
+            // 未连接时广播基线保持不动：重连后 flushToPeers 会把这段差异补发
+            lastBroadcastRef.current = broadcastPendingChanges(
+                lastBroadcastRef.current ?? [],
+                next,
+                (patch) => collaborationClient.sendPatch(patch),
+            );
         }, BROADCAST_DEBOUNCE_MS);
 
         return () => clearTimeout(timer);

@@ -2,6 +2,8 @@
  * OffsetTool.ts — 偏移选中对象
  *
  * 优先使用动态输入键入的距离；未键入时以点击位置到选中对象形心的距离作为偏移量。
+ * 偏移方向由几何方向决定（行进方向左侧为正），点击只用于量取距离。
+ * 不支持或退化的对象会汇总提示，不再静默跳过。
  */
 
 import { dist } from "../lib/canvasGeometry";
@@ -28,10 +30,24 @@ const OffsetTool: CanvasTool = {
             return;
         }
 
-        const copies = offsetElements(targets, distance);
+        const { elements: copies, failures } = offsetElements(targets, distance);
+        if (copies.length === 0) {
+            ctx.onNotification(
+                failures.length > 0
+                    ? "Offset not supported for the selected objects."
+                    : "Type a distance or click farther from the selection.",
+            );
+            return;
+        }
+
         ctx.commitAction([...ctx.elements, ...copies]);
-        ctx.setSelection(copies.map(element => element.id));
-        ctx.onNotification(`Offset by ${distance.toFixed(2)}`);
+        ctx.setSelection(copies.map((element) => element.id));
+        const skipped = failures.length;
+        ctx.onNotification(
+            skipped > 0
+                ? `Offset by ${distance.toFixed(2)} · ${copies.length} copied, ${skipped} skipped (unsupported or degenerate)`
+                : `Offset by ${distance.toFixed(2)}`,
+        );
     },
 };
 

@@ -7,7 +7,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ToolType } from "../types";
+import { ToolType, BlockDefinition } from "../types";
 import { useCanvas } from "../store/canvasStore";
 import { useApp } from "../store/appStore";
 import { groupElements, ungroupElements } from "../lib/groups";
@@ -54,11 +54,13 @@ interface ToolbarProps {
     onOpenReview: () => void;
     /** 打开图纸清单满屏窗体 */
     onOpenDrawings: () => void;
+    /** 插入块（符号展开复制）到当前图纸 */
+    onInsertBlock?: (block: BlockDefinition) => void;
     /** 当前登录用户，用于面板入口的头像 */
     currentUser?: { username?: string };
 }
 
-export const Toolbar: React.FC<ToolbarProps> = ({ onOpenSettings, onOpenReview, onOpenDrawings, currentUser }) => {
+export const Toolbar: React.FC<ToolbarProps> = ({ onOpenSettings, onOpenReview, onOpenDrawings, onInsertBlock, currentUser }) => {
     const { t } = useI18n();
     // 订阅键位覆盖：设置页改键后工具栏提示即时刷新
     useShortcutOverrides();
@@ -386,7 +388,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenSettings, onOpenReview, 
 
                 {renderGroupHeader("blocks", "toolbar.blocks")}
                 {groupOpen("blocks") && (
-                    <BlockLibraryPanel currentElements={elements} />
+                    <BlockLibraryPanel currentElements={elements} onInsertBlock={onInsertBlock} />
                 )}
 
                 {renderGroupHeader("organize", "toolbar.organize")}

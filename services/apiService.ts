@@ -8,6 +8,8 @@ import type {
     ChatLogMessage,
     ChatSessionInfo,
     DesignConventions,
+    DrawingSettings,
+    Layer,
     LLMModel,
     LLMModelInput,
     ProjectVersion,
@@ -34,6 +36,7 @@ export interface User {
     email: string;
     role?: string;
     createdAt: string;
+    updatedAt?: string;
 }
 
 export interface ManagedUser {
@@ -273,6 +276,8 @@ class ApiService {
             description?: string;
             thumbnail?: string;
             designConventions?: DesignConventions | null;
+            layers?: Layer[];
+            drawingSettings?: DrawingSettings;
             baseUpdatedAt?: string;
         },
         options?: Pick<SyncRequestOptions, "idempotencyKey" | "baseUpdatedAt">,

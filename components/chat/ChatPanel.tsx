@@ -13,6 +13,7 @@ import LLMModelsPanel from "../LLMModelsPanel";
 import { apiService } from "../../services/apiService";
 import { getBlockCatalog } from "../../services/blockService";
 import type { BlockCatalogEntry } from "../../lib/blockCatalog";
+import type { DrawingFacts } from "../../lib/projectConsistency";
 import { useAIChat, type TurnMeta } from "../../hooks/useAIChat";
 import { useSkillCandidates } from "../../hooks/useSkillCandidates";
 import type { DesignContextMeta } from "../../lib/aiContext";
@@ -38,6 +39,8 @@ interface ChatPanelProps {
     contextMeta?: DesignContextMeta;
     /** 项目设计约定；会随草稿进入确定性检查 */
     conventions?: DesignConventions | null;
+    /** 项目内图纸清单；check_drawing 的 project 范围与计划预检都会用到 */
+    projectDrawings?: DrawingFacts[];
     /** 助手 / 技能 / 模型共用同一份注册表，内部抽屉直接读写 */
     registry: UseAIRegistryResult;
     assistant: Assistant | null;
@@ -57,6 +60,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     units,
     contextMeta,
     conventions,
+    projectDrawings,
     registry,
     assistant,
     onAssistantChange,
@@ -92,6 +96,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         units,
         contextMeta,
         conventions,
+        projectDrawings,
         assistant,
         modelId: modelChoice,
         onPreviewActions,
@@ -201,7 +206,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             const catalog = await getBlockCatalog(projectId ?? undefined);
             const outcome = applyToolCalls(
                 calls,
-                createDraft(currentElements, [...selectedIds], catalog, conventions ?? undefined),
+                createDraft(
+                    currentElements,
+                    [...selectedIds],
+                    catalog,
+                    conventions ?? undefined,
+                    projectDrawings,
+                ),
             );
             if (outcome.draft.actions.length === 0) {
                 resolvePlan(messageId, roundIndex, "failed", plan);
@@ -251,7 +262,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             const catalog = await getBlockCatalog(projectId ?? undefined);
             const outcome = applyToolCalls(
                 variantToToolCalls(variant),
-                createDraft(currentElements, [...selectedIds], catalog, conventions ?? undefined),
+                createDraft(
+                    currentElements,
+                    [...selectedIds],
+                    catalog,
+                    conventions ?? undefined,
+                    projectDrawings,
+                ),
             );
             if (outcome.draft.actions.length === 0) {
                 resolveVariants(messageId, roundIndex, "failed", {
@@ -577,6 +594,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                         elements={currentElements}
                         selectedIds={selectedIds}
                         blockCatalog={blockCatalog}
+                        conventions={conventions}
                         onRetry={chat.retry}
                         onApprovePlan={handleApprovePlan}
                         onDismissPlan={handleDismissPlan}

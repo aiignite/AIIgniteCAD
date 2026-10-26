@@ -9,12 +9,22 @@ import {
     type ReviewIssue,
     type ReviewSeverity,
 } from "../lib/designReview";
+import {
+    checkProjectConsistency,
+    consistencyIssueLabel,
+    summarizeConsistency,
+    type DrawingFacts,
+} from "../lib/projectConsistency";
 import { useI18n } from "../lib/i18n";
 
 interface DrawingReviewPanelProps {
     elements: CADElement[];
     /** 项目设计约定；约定里的图层与字高会参与检查 */
     conventions?: DesignConventions | null;
+    /** 项目内全部图纸的清单级事实；提供后可切换到「项目一致性」范围 */
+    drawings?: DrawingFacts[];
+    /** 当前图纸 id：项目范围里用于标记当前图纸 */
+    activeDrawingId?: string;
     /** 选中问题相关图元并缩放到包围盒 */
     onLocate: (issue: ReviewIssue) => void;
     /** 带着问题摘要切到对话面板；第二个参数是建议预选的图元 */
@@ -22,6 +32,7 @@ interface DrawingReviewPanelProps {
 }
 
 type SeverityFilter = "all" | ReviewSeverity;
+type ReviewScope = "drawing" | "project";
 
 const SEVERITY_STYLES: Record<ReviewSeverity, string> = {
     error: "bg-red-500/10 text-red-500 border-red-500/30",
@@ -34,6 +45,8 @@ const FILTERS: SeverityFilter[] = ["all", "error", "warning", "info"];
 const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
     elements,
     conventions,
+    drawings,
+    activeDrawingId,
     onLocate,
     onAskAI,
 }) => {
@@ -42,6 +55,15 @@ const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
         () => reviewDrawing(elements, { conventions: conventions ?? undefined, locale }),
         [elements, conventions, locale],
     );
+    const [scope, setScope] = useState<ReviewScope>("drawing");
+    const projectIssues = useMemo(
+        () =>
+            scope === "project" && drawings
+                ? checkProjectConsistency(drawings, locale)
+                : [],
+        [scope, drawings, locale],
+    );
+    const projectMode = scope === "project";
     const [filter, setFilter] = useState<SeverityFilter>("all");
     const [ignored, setIgnored] = useState<Set<string>>(new Set());
 
@@ -86,6 +108,25 @@ const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
         setIgnored((prev) => new Set(prev).add(key));
     };
 
+    const activeCount = projectMode ? projectIssues.length : issues.length;
+    const filterCounts = useMemo(() => {
+        if (!projectMode) return counts;
+        return projectIssues.reduce<Record<ReviewSeverity, number>>(
+            (acc, issue) => {
+                acc[issue.severity] += 1;
+                return acc;
+            },
+            { error: 0, warning: 0, info: 0 },
+        );
+    }, [projectMode, projectIssues, counts]);
+    const visibleProject = useMemo(
+        () =>
+            projectIssues.filter((issue) => filter === "all" || issue.severity === filter),
+        [projectIssues, filter],
+    );
+    const drawingNameOf = (id: string): string =>
+        drawings?.find((drawing) => drawing.id === id)?.name ?? id;
+
     return (
         <div className="flex flex-col h-full bg-cad-bg">
             <div className="px-3 py-2 border-b border-cad-border bg-cad-panel space-y-2">
@@ -97,15 +138,35 @@ const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
                          {t("review.title")}
                     </h3>
                     <span className="text-[10px] text-cad-muted">
-                        {issues.length === 0
+                        {activeCount === 0
                             ? t("review.noIssues")
-                            : t("review.issueCount", { count: issues.length })}
+                            : t("review.issueCount", { count: activeCount })}
                     </span>
                 </div>
                 <p className="text-[11px] text-cad-muted">
-                    {t("review.description")}
+                    {projectMode ? t("review.projectDescription") : t("review.description")}
                 </p>
-                {conventions && (
+                {drawings && drawings.length > 1 && (
+                    <div className="flex items-center gap-1">
+                        {(["drawing", "project"] as ReviewScope[]).map((value) => (
+                            <button
+                                key={value}
+                                onClick={() => setScope(value)}
+                                aria-pressed={scope === value}
+                                className={`px-2 py-0.5 rounded-full border text-[10px] transition-colors ${
+                                    scope === value
+                                        ? "border-cad-primary text-cad-primary bg-cad-primary/10"
+                                        : "border-cad-border text-cad-muted hover:text-cad-text"
+                                }`}
+                            >
+                                {value === "drawing"
+                                    ? t("review.scopeDrawing")
+                                    : t("review.scopeProject", { count: drawings.length })}
+                            </button>
+                        ))}
+                    </div>
+                )}
+                {!projectMode && conventions && (
                     <p className="text-[11px] text-cad-primary">
                         {t("review.conventionsApplied")}
                     </p>
@@ -119,7 +180,8 @@ const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
                                     ? t("review.all")
                                     : reviewSeverityLabel(value, locale),
                         };
-                        const count = item.value === "all" ? issues.length : counts[item.value];
+                        const count =
+                            item.value === "all" ? activeCount : filterCounts[item.value];
                         return (
                             <button
                                 key={item.value}
@@ -138,7 +200,55 @@ const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
             </div>
 
             <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-                {visible.length === 0 ? (
+                {projectMode ? (
+                    projectIssues.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-4">
+                            <span className="material-symbols-outlined text-[32px] text-emerald-500">
+                                task_alt
+                            </span>
+                            <p className="text-xs font-semibold text-cad-text">
+                                {t("review.projectEmpty")}
+                            </p>
+                            <p className="text-[11px] text-cad-muted">
+                                {t("review.projectEmptyDetail")}
+                            </p>
+                        </div>
+                    ) : (
+                        visibleProject.map((issue) => (
+                            <div
+                                key={`${issue.code}-${issue.drawingIds.join("-")}`}
+                                data-consistency-issue={issue.code}
+                                className="rounded-lg border border-cad-border bg-cad-panel p-2 space-y-1"
+                            >
+                                <div className="flex items-center gap-1.5">
+                                    <span
+                                        className={`shrink-0 px-1 py-px rounded border text-[10px] ${SEVERITY_STYLES[issue.severity]}`}
+                                    >
+                                        {reviewSeverityLabel(issue.severity, locale)}
+                                    </span>
+                                    <span className="min-w-0 flex-1 text-[11px] font-semibold text-cad-text">
+                                        {consistencyIssueLabel(issue.code, locale)}
+                                    </span>
+                                    <span className="shrink-0 text-[10px] text-cad-muted">
+                                        {t("review.issueDrawings", { count: issue.drawingIds.length })}
+                                    </span>
+                                </div>
+                                <p className="text-[11px] text-cad-muted break-words">
+                                    {issue.message}
+                                </p>
+                                <p className="text-[10px] text-cad-muted/80 break-words">
+                                    {issue.drawingIds
+                                        .slice(0, 4)
+                                        .map((id) =>
+                                            `${drawingNameOf(id)}${id === activeDrawingId ? "（当前）" : ""}`,
+                                        )
+                                        .join("、")}
+                                    {issue.drawingIds.length > 4 && ` +${issue.drawingIds.length - 4}`}
+                                </p>
+                            </div>
+                        ))
+                    )
+                ) : visible.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-4">
                         <span className="material-symbols-outlined text-[32px] text-emerald-500">
                             {issues.length === 0 ? "task_alt" : "filter_alt_off"}
@@ -214,17 +324,43 @@ const DrawingReviewPanel: React.FC<DrawingReviewPanelProps> = ({
             </div>
 
             <div className="border-t border-cad-border bg-cad-panel p-2 space-y-1.5">
-                <button
-                    onClick={handleAskAI}
-                    disabled={visible.length === 0}
-                    className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded bg-cad-primary text-white text-[11px] font-semibold disabled:opacity-40"
-                >
-                    <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
-                    {t("review.askAI")}
-                </button>
+                {projectMode ? (
+                    <button
+                        onClick={() =>
+                            void navigator.clipboard.writeText(
+                                [
+                                    summarizeConsistency(projectIssues, locale),
+                                    ...projectIssues.map(
+                                        (issue) =>
+                                            `- [${reviewSeverityLabel(issue.severity, locale)}] ${consistencyIssueLabel(
+                                                issue.code,
+                                                locale,
+                                            )}：${issue.message}`,
+                                    ),
+                                ].join("\n"),
+                            )
+                        }
+                        disabled={projectIssues.length === 0}
+                        className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded border border-cad-border text-[11px] font-semibold text-cad-text disabled:opacity-40"
+                    >
+                        <span className="material-symbols-outlined text-[16px]">content_copy</span>
+                        {t("review.copyConsistency")}
+                    </button>
+                ) : (
+                    <button
+                        onClick={handleAskAI}
+                        disabled={visible.length === 0}
+                        className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded bg-cad-primary text-white text-[11px] font-semibold disabled:opacity-40"
+                    >
+                        <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
+                        {t("review.askAI")}
+                    </button>
+                )}
                 <div className="flex items-center justify-between text-[10px] text-cad-muted">
-                    <span>{t("review.aiPrivacy")}</span>
-                    {ignoredCount > 0 && (
+                    <span>
+                        {projectMode ? t("review.projectPrivacy") : t("review.aiPrivacy")}
+                    </span>
+                    {!projectMode && ignoredCount > 0 && (
                         <button
                             onClick={() => setIgnored(new Set())}
                             className="text-cad-primary hover:underline"

@@ -13,6 +13,9 @@ const UUID_PATTERN =
 /** 单次补丁的图元上限，与前端 lib/collaboration.ts 保持一致 */
 export const MAX_PATCH_ELEMENTS = 2000;
 
+/** 房间状态快照的图元上限，与单次补丁上限一致 */
+export const MAX_STATE_ELEMENTS = MAX_PATCH_ELEMENTS;
+
 /** 协作坐标的绝对值上限，过滤明显异常的光标位置 */
 export const MAX_CURSOR_COORDINATE = 10_000_000;
 
@@ -71,6 +74,50 @@ export function sanitizeCursor(value: unknown): { x: number; y: number } | null 
     return null;
   }
   return { x, y };
+}
+
+export interface SanitizedStateSnapshot {
+  /** 请求方 socket id（服务端定向转发的目标） */
+  targetId: string;
+  elements: Record<string, unknown>[];
+  truncated: boolean;
+}
+
+/**
+ * 房间快照载荷：目标 socket id + 图元数组。
+ * 图元复用补丁的字段校验与数量上限，避免加入房间成为新的放大通道。
+ */
+export function sanitizeStateSnapshot(
+  value: unknown,
+): SanitizedStateSnapshot | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as {
+    targetId?: unknown;
+    elements?: unknown;
+    truncated?: unknown;
+  };
+  if (typeof candidate.targetId !== "string" || !candidate.targetId) return null;
+  if (candidate.targetId.length > 128) return null;
+
+  const sanitized = sanitizePatch({ upserts: candidate.elements, deletes: [] });
+  if (!sanitized) return null;
+
+  return {
+    targetId: candidate.targetId,
+    elements: sanitized.upserts,
+    truncated: candidate.truncated === true,
+  };
+}
+
+/** 从房间成员中选一个非请求者的 socket，作为快照应答方 */
+export function pickPeerSocket(
+  members: Iterable<string> | undefined,
+  excludeId: string,
+): string | null {
+  for (const socketId of members ?? []) {
+    if (socketId !== excludeId) return socketId;
+  }
+  return null;
 }
 
 /**

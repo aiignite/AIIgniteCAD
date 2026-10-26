@@ -62,6 +62,11 @@ bash scripts/deploy-remote.sh
    等待 `pg_isready` → 在 backend 容器内 `npx prisma migrate deploy` → 自检三个端点；
 4. 从外部验证 `https://aiignite.com.cn/cad/health` 与页面。
 
+> 迁移其实在 **backend 容器启动时就已应用**（启动流程里带 fail-fast 的 `migrate deploy`，日志中会出现
+> `Database migrations applied`），`deploy.sh` 第 3 步的迁移是幂等兜底，多数时候只会打印
+> `No pending migrations to apply.`。所以迁移失败会表现为容器反复重启而不是脚本报错，
+> 排查时先看 `logs backend` 而不是只看 `deploy.sh` 的输出。
+
 > rsync 是增量覆盖、不删除远端多余文件，也不会重置服务器 `.env`。
 > 发布内容 = 本地工作区，因此发布前先确认工作区就是你想上线的代码。要上线干净的提交而不是在写的功能，
 > 先从该提交开一个临时 worktree 再从那里跑（脚本按自身所在目录确定发布根目录）：
@@ -122,6 +127,20 @@ curl -sI https://aiignite.com.cn/cad/fonts/material-symbols/material.woff2 | gre
 ssh ubuntu@<服务器> 'docker exec aiignite-cad-postgres pg_dump -U ai_ignite_cad -d ai_ignite_cad' \
   > cad-$(date +%Y%m%d).sql
 ```
+
+含新迁移的发布务必先备份：迁移是单向的，里面若带数据清洗语句（例如建唯一索引前的去重 `DELETE`），
+出错后没有自动回滚路径。建议把备份留在本地 `.backups/`（已被 `.gitignore` 与 `deploy-remote.sh` 的
+rsync 排除，既不进仓库也不会上传到服务器）：
+
+```bash
+mkdir -p .backups
+ssh ubuntu@<服务器> 'docker exec aiignite-cad-postgres pg_dump -U ai_ignite_cad -d ai_ignite_cad | gzip -6' \
+  > .backups/cad-prod-$(date +%Y%m%d-%H%M).sql.gz
+gzip -t .backups/cad-prod-*.sql.gz && echo OK
+```
+
+发布前还可以先用只读 SQL 预演迁移里的破坏性语句会影响多少行（例如统计
+`GROUP BY project_id, element_id HAVING count(*) > 1` 的组数）；结果为 0 说明该迁移对现有数据无副作用。
 
 `postgres_data` 是命名卷，删卷即删库；`down -v` 之前先确认已备份。
 

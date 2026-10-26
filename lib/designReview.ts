@@ -535,9 +535,14 @@ export const reviewSeverityLabel = (severity: ReviewSeverity, locale: ReviewLoca
 export const reviewIssueLabel = (code: ReviewIssueCode, locale: ReviewLocale): string =>
     REVIEW_ISSUE_LABELS_BY_LOCALE[locale][code];
 
-/** 忽略与定位的稳定键：同一规则 + 同一组图元视为同一条问题 */
+/**
+ * 忽略与定位的稳定键：同一规则 + 同一组图元 + 同一描述视为同一条问题。
+ *
+ * 描述必须参与比较：把图元从图层 0 移到另一个未登记图层，规则与图元都没变，
+ * 但问题内容已经变了——只按 code + ids 判等会把新问题当成旧问题漏报。
+ */
 export function reviewIssueKey(issue: ReviewIssue): string {
-    return `${issue.code}:${[...issue.elementIds].sort().join("|")}`;
+    return `${issue.code}:${[...issue.elementIds].sort().join("|")}:${issue.message}`;
 }
 
 /** 把可见问题整理成可直接发给 AI 的修复请求，只携带摘要不携带图元 JSON */

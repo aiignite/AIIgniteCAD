@@ -16,9 +16,11 @@ import { useI18n } from "../lib/i18n";
 interface BlockLibraryPanelProps {
     /** 当前图元：建块时从选择集取内容 */
     currentElements: CADElement[];
+    /** 插入块：把块定义展开为普通图元（符号展开复制），由 App 落到画布 */
+    onInsertBlock?: (block: BlockDefinition) => void;
 }
 
-export const BlockLibraryPanel: React.FC<BlockLibraryPanelProps> = ({ currentElements }) => {
+export const BlockLibraryPanel: React.FC<BlockLibraryPanelProps> = ({ currentElements, onInsertBlock }) => {
     const { t } = useI18n();
     const { selectedIds } = useCanvas();
     const { showNotification } = useApp();
@@ -182,7 +184,20 @@ export const BlockLibraryPanel: React.FC<BlockLibraryPanelProps> = ({ currentEle
             <span className="material-symbols-outlined text-[16px] mr-2 text-cad-primary">
                 deployed_code
             </span>
-            <span className="truncate">{block.name}</span>
+            <span className="truncate flex-1">{block.name}</span>
+            {onInsertBlock && (
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onInsertBlock(block);
+                    }}
+                    className="material-symbols-outlined text-[14px] text-cad-text/60 hover:text-cad-primary"
+                    title={t("block.insertTitle")}
+                    aria-label={t("block.insertTitle")}
+                >
+                    add
+                </button>
+            )}
         </div>
     );
 

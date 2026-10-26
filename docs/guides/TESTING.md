@@ -36,7 +36,7 @@ npm audit --omit=dev --audit-level=high
 | --- | --- |
 | `geometry.test.ts` | 基础度量与向量运算 |
 | `transform.test.ts` | 移动、复制等图元变换 |
-| `canvasTools.test.ts` | 各绘制工具状态机 |
+| `canvasTools.test.ts` | 各绘制工具状态机（含 HATCH 请求打开填充对话框与未接线时的明确提示） |
 | `selection.test.ts` | 框选方向（窗口 / 交叉）判定 |
 | `quickSelect.test.ts` | 快速选择的类型 / 图层 / 颜色过滤 |
 | `clickCycle.test.ts` | 重叠图元点击循环选择 |
@@ -49,22 +49,32 @@ npm audit --omit=dev --audit-level=high
 | `viewport.test.ts` | 视口缩放 |
 | `minimap.test.ts` | 导航图几何 |
 | `namedViews.test.ts` | 命名视图校验 |
-| `spatialIndex.test.ts` | 空间网格索引 |
+| `spatialIndex.test.ts` | 空间网格索引：矩形 / 点查询、`queryVisible` 顺序与精确相交、退化包围盒兜底、与全量过滤等价 |
 | `frameCoalescer.test.ts` | 渲染帧合并 |
 | `renderer.test.ts` | SvgRenderer 坐标换算与命中测试 |
 | `plot.test.ts` | 图框布局、比例与线宽 |
 | `command.test.ts` | 命令模式撤销 / 重做历史 |
 | `commands.test.ts` | 命令行解析与参数分步 |
-| `dxf.test.ts` | DXF 导出 |
+| `dxf.test.ts` | DXF 导出与导入解析 |
+| `dxfUnits.test.ts` | DXF `$INSUNITS` 单位换算、导入 / 导出报告（跳过项、块展开超限）与单位往返 |
+| `dxfWorker.test.ts` | DXF Worker 客户端：并发 id 匹配、错误消息、崩溃后主线程回退、超时、dispose 与无 Worker 环境回退 |
+| `offset.test.ts` | 偏移几何正确性：法向平移与相邻段顶点取交、自交与退化判定、开放多段线、失败原因分类 |
+| `shapeRegeneration.test.ts` | 参数化图元重算与同步策略：仅移中心平移轮廓 vs 形状参数变化重算、螺旋起始半径旧存档推导 |
+| `crossDrawing.test.ts` | 跨图纸快照插入：包围盒左下角对齐、重新编号与共享分组、块引用跳过、上限截断 |
+| `projectConsistency.test.ts` | 项目一致性：单位 / 字高 / 精度 / 制图标准 / 约定图层清单差异、重名、空图纸、约定缺失 |
 | `examples.test.ts` | `examples/*.dxf` 可解析 |
 | `curveGeneration.test.ts` | 正弦 / 余弦等曲线生成 |
-| `block.test.ts` | 块定义管理 |
+| `block.test.ts` | 块定义管理、引用变换与插入语义（平移量 = 插入点 − 基点，符号展开复制） |
 | `blockCatalog.test.ts` | 块目录检索与展开为图元 |
-| `syncService.test.ts` | 同步队列、按项目合并 |
-| `collaboration.test.ts` | 图元差集补丁 |
+| `syncService.test.ts` | 同步队列、按项目合并、图层与绘图设置随项目更新上传 |
+| `indexedDBSaveElements.test.ts` | IndexedDB 元素快照事务替换与跨项目隔离 |
+| `projectDocument.test.ts` | 统一文档模型：旧存档迁移、Decimal 字符串收敛、非法图元 / 图层 / 设置拒绝、适配器往返 |
+| `indexedDBSaveDocument.test.ts` | 文档级原子保存：图元 / 图层 / 设置整份替换、旧存档回退迁移、删除连带清设置 |
+| `collaboration.test.ts` | 图元差集补丁、房间快照合并与截断、广播基线推进（发送失败不丢修改） |
+| `collaborationClient.test.ts` | 协作客户端：断线不推进基线、状态请求 / 快照收发与截断、入站载荷校验 |
 | `telemetry.test.ts` | 遥测批量上报 |
 | `versionDiff.test.ts` | 版本对比 |
-| `performance.test.ts` | 2000 元素渲染基准 |
+| `performance.test.ts` | 2000 / 10000 元素视口裁剪与平移帧预算（含索引构建耗时） |
 
 ### AI 相关
 
@@ -75,13 +85,15 @@ npm audit --omit=dev --audit-level=high
 | `aiAgentLoop.test.ts` | 前端工具循环与计划识别 |
 | `aiPlan.test.ts` | 计划解析与执行转换（含步骤可引用写工具） |
 | `aiVariants.test.ts` | 多方案解析与执行转换 |
-| `aiContext.test.ts` | 上下文分档摘要（brief 档事实行、图层截断计数） |
+| `aiContext.test.ts` | 上下文分档摘要（brief 档事实行、图层截断计数、项目图纸行） |
 | `aiSseEvents.test.ts` | SSE 行解析与事件类型 |
 | `aiChatHistory.test.ts` | 历史回放与反馈状态还原 |
 | `aiGhost.test.ts` | 幽灵预览计划 |
 | `designOps.test.ts` | 对齐 / 分布 / 图层 / 删除 |
-| `designTools.test.ts` | 查询 / 测量 / 检查 / 修复摘要，含写工具字段级错误 |
-| `previewReview.test.ts` | 预览结果门禁的差集计算 |
+| `designTools.test.ts` | 查询 / 测量 / 检查（含 `scope=project` 跨图纸）/ 修复摘要，含写工具字段级错误 |
+| `planReview.test.ts` | 计划预检：步骤分类、逐步模拟、问题归因到步骤、失败步骤不抛错 |
+| `changeExplanation.test.ts` | 变更说明：几何摘要、按图层聚合、截断与可复制文本 |
+| `previewReview.test.ts` | 预览结果门禁的差集计算（同一条问题需描述一致才算旧问题） |
 | `imageTrace.test.ts` | 轮廓提取、RDP 简化与缩放 |
 | `skillTransfer.test.ts` | 技能导入导出校验 |
 | `skillValidation.test.ts` | 技能字段校验（编辑器手写路径） |
@@ -96,15 +108,15 @@ npm audit --omit=dev --audit-level=high
 | `securityHeaders.test.ts` | CSP / HSTS / frame / referrer |
 | `observability.test.ts` | `requestId`、结构化日志与指标 |
 | `rateLimit.test.ts` | 各类限流窗口与 429 行为 |
-| `auth.test.ts` | 注册 / 登录 / 鉴权 |
-| `projects.test.ts` | 项目接口鉴权与归属 |
+| `auth.test.ts` | 注册 / 登录 / 鉴权，含资料与修改密码的受保护边界 |
+| `projects.test.ts` | 项目接口鉴权、归属、稳定元素 id 增量保存、图层整份替换与绘图设置 upsert（含载荷校验） |
 | `versions.test.ts` | 项目版本接口 |
 | `blocks.test.ts` | 块目录接口 |
 | `skills.test.ts` | 技能管理接口与写入校验 |
 | `assistants.test.ts` | 助手接口 |
 | `llmModels.test.ts` | 模型注册表接口 |
-| `sync.test.ts` | 同步幂等与冲突 |
-| `collaborationProtocol.test.ts` | 补丁与光标 sanitize |
+| `sync.test.ts` | 同步幂等、冲突与稳定元素 id 保存 |
+| `collaborationProtocol.test.ts` | 补丁 / 光标 / 房间快照 sanitize 与应答成员选择 |
 | `aiModelResolver.test.ts` | `resolveChatModel` 解析链 |
 | `aiPromptComposer.test.ts` | 系统提示词组装 |
 | `aiSkillRouter.test.ts` | 技能打分与激活 |

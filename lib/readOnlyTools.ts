@@ -10,6 +10,7 @@ import type { AgentDraft } from "./aiAgentLoop";
 import { queryElements } from "./elementQuery";
 import { measureGeometry, type MeasureKind } from "./measurement";
 import { reviewDrawing, summarizeReview } from "./designReview";
+import { checkProjectConsistency, summarizeConsistency } from "./projectConsistency";
 import { searchBlockCatalog } from "./blockCatalog";
 
 export interface ReadOnlyOutcome {
@@ -126,6 +127,31 @@ export function executeReadOnlyTool(
     }
 
     if (call.name === "check_drawing") {
+        // scope=project：跨图纸一致性（单位 / 字高 / 精度 / 标准 / 约定图层清单）
+        if (args.scope === "project") {
+            if (!draft.projectDrawings || draft.projectDrawings.length === 0) {
+                return {
+                    ok: false,
+                    error:
+                        "项目图纸清单当前不可用（未登录或列表未加载），只能检查当前图纸；请去掉 scope=project 重试",
+                };
+            }
+            const issues = checkProjectConsistency(draft.projectDrawings);
+            return {
+                ok: true,
+                summary: serializeCapped(
+                    {
+                        scope: "project",
+                        drawings: draft.projectDrawings.length,
+                        summary: summarizeConsistency(issues),
+                        count: issues.length,
+                        returned: Math.min(issues.length, 20),
+                        issues: issues.slice(0, 20),
+                    },
+                    "issues",
+                ),
+            };
+        }
         const issues = reviewDrawing(draft.elements, { conventions: draft.conventions });
         return {
             ok: true,

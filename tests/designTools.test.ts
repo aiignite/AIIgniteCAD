@@ -343,6 +343,31 @@ describe("executeReadOnlyTool", () => {
         expect(payload.issues[0].code).toBe("zero-length");
     });
 
+    it("check_drawing 的 project 范围做跨图纸一致性检查", () => {
+        const draft = createDraft([line("a", 0, 0, 10, 0)], [], [], undefined, [
+            { id: "p1", name: "平面图", elementCount: 10, conventions: { units: "mm" } },
+            { id: "p2", name: "立面图", elementCount: 8, conventions: { units: "m" } },
+        ]);
+        const outcome = executeReadOnlyTool(call("check_drawing", { scope: "project" }), draft, "");
+        expect(outcome.ok).toBe(true);
+        const payload = JSON.parse(outcome.summary ?? "");
+        expect(payload.scope).toBe("project");
+        expect(payload.drawings).toBe(2);
+        expect(payload.issues.map((issue: { code: string }) => issue.code)).toContain(
+            "units-mismatch",
+        );
+    });
+
+    it("没有项目清单时 project 范围明确报不可用", () => {
+        const outcome = executeReadOnlyTool(
+            call("check_drawing", { scope: "project" }),
+            createDraft([]),
+            "",
+        );
+        expect(outcome.ok).toBe(false);
+        expect(outcome.error).toContain("不可用");
+    });
+
     it("结果超出字符预算时裁剪数组且仍是合法 JSON", () => {
         const many = Array.from({ length: 20 }, (_, index) =>
             line(`very-long-element-id-${index}-${"x".repeat(40)}`, index, 0, index, 100),

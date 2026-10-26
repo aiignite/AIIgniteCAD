@@ -74,6 +74,8 @@ interface CanvasProps {
     onRequestTextEntry: (pos: Point) => void;
     /** 请求高级图形（齿轮/多边形/椭圆等）参数弹窗 */
     onRequestAdvancedShape?: (tool: ToolType, pos: Point) => void;
+    /** 请求打开填充对话框（HATCH 工具） */
+    onRequestHatch?: () => void;
     /** 状态栏通知 */
     onNotification: (msg: string) => void;
     /** 块拖放到画布 */
@@ -99,6 +101,7 @@ interface CanvasProps {
 export const Canvas: React.FC<CanvasProps> = ({
     onRequestTextEntry,
     onRequestAdvancedShape,
+    onRequestHatch,
     onNotification,
     onBlockDrop,
     aiPreview,
@@ -156,6 +159,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     } = useCanvasInteraction({
         onRequestTextEntry,
         onRequestAdvancedShape,
+        onRequestHatch,
         onNotification,
         onBlockDrop,
         hiddenObjectIds,

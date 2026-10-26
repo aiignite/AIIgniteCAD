@@ -4,14 +4,67 @@
  * 坐标约定：应用内部为屏幕坐标（Y 向下），DXF 为世界坐标（Y 向上）。
  * 导出时统一取反 Y，导入时再次取反，保证与外部 CAD 的视觉方向一致，
  * 同时应用内的往返导出/导入保持几何不变。
+ *
+ * 单位约定：应用内部 canonical 单位为 mm（与默认绘图设置一致）。
+ * 导入时按 $INSUNITS 换算到 mm；导出时按目标单位换算并写入对应的
+ * $INSUNITS，保证外部 CAD 按声明的单位解释坐标。
+ * 无法表达的图元（DIMENSION / HATCH 图案 / 未知类型）不静默丢弃：
+ * 导入汇总为 unsupported 报告，导出汇总为 skipped 报告。
  */
 
-import { CADElement, Point } from '../types';
+import { CADElement, Point, UnitType } from '../types';
 
 const uid = () => Math.random().toString(36).substr(2, 9);
 
-/** $INSUNITS = 4 → 毫米；应用当前默认单位为 mm */
-const INSUNITS_MM = 4;
+/** $INSUNITS 代码 → 该单位相对 mm 的换算系数 */
+const INSUNITS_TO_MM: Record<number, number> = {
+    0: 1, // unitless：按 1:1 处理
+    1: 25.4, // inches
+    2: 304.8, // feet
+    3: 1_609_344, // miles
+    4: 1, // millimeters
+    5: 10, // centimeters
+    6: 1000, // meters
+    7: 1_000_000, // kilometers
+    8: 0.001, // microinches
+    9: 0.000_001, // mils
+    10: 914.4, // yards
+    11: 10_000_000, // angstroms
+    12: 1_000_000, // nanometers
+    13: 1_000, // micrometers
+    14: 100, // decimeters
+    15: 10, // dekameters
+    16: 100_000, // hectometers
+    17: 1_000_000_000, // gigameters
+    18: 1.495_978_7e14, // astronomical units
+    19: 1.798_691_0e15, // light years
+    20: 9.460_730_5e19, // parsecs
+};
+
+/** 应用单位 → $INSUNITS 代码 */
+const UNIT_TO_INSUNITS: Record<UnitType, number> = {
+    mm: 4,
+    cm: 5,
+    m: 6,
+    in: 1,
+    ft: 2,
+};
+
+/** 应用单位 → 每单位多少 mm */
+const MM_PER_UNIT: Record<UnitType, number> = {
+    mm: 1,
+    cm: 10,
+    m: 1000,
+    in: 25.4,
+    ft: 304.8,
+};
+
+/** 导入单位换算：$INSUNITS → 应用内部 mm 的系数；无法识别时按 1:1 */
+export const dxfImportScale = (insunits: number | null): number => {
+    if (insunits === null || !Number.isFinite(insunits)) return 1;
+    const factor = INSUNITS_TO_MM[insunits];
+    return factor ?? 1;
+};
 
 /** 常用 AutoCAD 颜色索引（ACI）到十六进制颜色 */
 const ACI_TO_HEX: Record<number, string> = {
@@ -224,6 +277,7 @@ const writePolyline = (
     color: string,
     sourcePoints: Point[],
     closed: boolean,
+    format: (value: number) => string = num,
 ): string => {
     const points = sourcePoints.map(dxfPoint);
     if (closed && points.length > 1) {
@@ -237,16 +291,48 @@ const writePolyline = (
     let out = entityHeader('LWPOLYLINE', layer, color);
     out += `90\n${points.length}\n70\n${closed ? 1 : 0}\n`;
     points.forEach((point) => {
-        out += `10\n${num(point.x)}\n20\n${num(point.y)}\n`;
+        out += `10\n${format(point.x)}\n20\n${format(point.y)}\n`;
     });
     return out;
 };
 
+/** 导出选项 */
+export interface DxfExportOptions {
+    /** 图纸单位：坐标按该单位换算，$INSUNITS 同步声明；默认 mm */
+    units?: UnitType;
+}
+
+/** 导出报告：未被写入 DXF 的图元按类型汇总，替代静默丢弃 */
+export interface DxfExportReport {
+    units: UnitType;
+    exported: number;
+    skipped: Array<{ type: string; count: number }>;
+}
+
+export interface DxfExportResult {
+    dxf: string;
+    report: DxfExportReport;
+}
+
 /**
- * 导出 DXF。
+ * 导出 DXF（带报告）。
  * Y 轴取反以匹配 DXF 世界坐标；图层与 LTYPE 表一并写入。
+ * 坐标按 options.units 换算，并在 $INSUNITS 声明该单位。
  */
-export const exportToDXF = (elements: CADElement[]): string => {
+export const exportToDXFWithReport = (
+    elements: CADElement[],
+    options: DxfExportOptions = {},
+): DxfExportResult => {
+    const units: UnitType = options.units ?? 'mm';
+    const unitScale = 1 / MM_PER_UNIT[units];
+    /** 长度类数值（坐标 / 半径 / 字高）按单位换算 */
+    const length = (value: number): string => num(value * unitScale);
+
+    const skipped = new Map<string, number>();
+    const noteSkipped = (type: string) => {
+        skipped.set(type, (skipped.get(type) ?? 0) + 1);
+    };
+
     // 范围
     let minX = Infinity;
     let minY = Infinity;
@@ -276,16 +362,17 @@ export const exportToDXF = (elements: CADElement[]): string => {
 
     let dxf = '0\nSECTION\n2\nHEADER\n';
     dxf += '9\n$ACADVER\n1\nAC1018\n';
-    dxf += `9\n$INSUNITS\n70\n${INSUNITS_MM}\n`;
+    dxf += `9\n$INSUNITS\n70\n${UNIT_TO_INSUNITS[units]}\n`;
     dxf += '9\n$MEASUREMENT\n70\n1\n';
-    dxf += `9\n$EXTMIN\n10\n${num(extMinX)}\n20\n${num(extMinY)}\n30\n0\n`;
-    dxf += `9\n$EXTMAX\n10\n${num(extMaxX)}\n20\n${num(extMaxY)}\n30\n0\n`;
+    dxf += `9\n$EXTMIN\n10\n${length(extMinX)}\n20\n${length(extMinY)}\n30\n0\n`;
+    dxf += `9\n$EXTMAX\n10\n${length(extMaxX)}\n20\n${length(extMaxY)}\n30\n0\n`;
     dxf += '0\nENDSEC\n';
 
     dxf += buildTables(elements);
     dxf += '0\nSECTION\n2\nBLOCKS\n0\nENDSEC\n';
     dxf += '0\nSECTION\n2\nENTITIES\n';
 
+    let exported = 0;
     elements.forEach((el) => {
         const layer = el.layer || '0';
         const color = el.color || DEFAULT_COLOR;
@@ -294,11 +381,11 @@ export const exportToDXF = (elements: CADElement[]): string => {
             const start = dxfPoint(el.start);
             const end = dxfPoint(el.end);
             dxf += entityHeader('LINE', layer, color);
-            dxf += `10\n${num(start.x)}\n20\n${num(start.y)}\n11\n${num(end.x)}\n21\n${num(end.y)}\n`;
+            dxf += `10\n${length(start.x)}\n20\n${length(start.y)}\n11\n${length(end.x)}\n21\n${length(end.y)}\n`;
         } else if (el.type === 'CIRCLE' && el.center && el.radius) {
             const center = dxfPoint(el.center);
             dxf += entityHeader('CIRCLE', layer, color);
-            dxf += `10\n${num(center.x)}\n20\n${num(center.y)}\n40\n${num(el.radius)}\n`;
+            dxf += `10\n${length(center.x)}\n20\n${length(center.y)}\n40\n${length(el.radius)}\n`;
         } else if (el.type === 'RECTANGLE' && el.start && el.width && el.height) {
             const x = Math.min(el.start.x, el.start.x + el.width);
             const y = Math.min(el.start.y, el.start.y + el.height);
@@ -309,18 +396,18 @@ export const exportToDXF = (elements: CADElement[]): string => {
                 { x: x + w, y },
                 { x: x + w, y: y + h },
                 { x, y: y + h },
-            ], true);
+            ], true, length);
         } else if (el.type === 'TEXT' && el.start && el.text) {
             const start = dxfPoint(el.start);
             const safeText = el.text.replace(/\r?\n/g, ' ');
             dxf += entityHeader('TEXT', layer, color);
-            dxf += `10\n${num(start.x)}\n20\n${num(start.y)}\n30\n0\n40\n${num(el.fontSize || 12)}\n`;
+            dxf += `10\n${length(start.x)}\n20\n${length(start.y)}\n30\n0\n40\n${length(el.fontSize || 12)}\n`;
             if (el.rotation && Math.abs(el.rotation) > 1e-9) {
                 dxf += `50\n${num(el.rotation)}\n`;
             }
             dxf += `1\n${safeText}\n`;
         } else if (el.type === 'LWPOLYLINE' && el.points) {
-            dxf += writePolyline(layer, color, el.points, Boolean(el.closed));
+            dxf += writePolyline(layer, color, el.points, Boolean(el.closed), length);
         } else if (el.type === 'ARC' && el.center && el.radius && el.startAngle !== undefined && el.endAngle !== undefined) {
             // 屏幕上顺时针(θ 增大)对应 DXF 的顺时针；DXF ARC 固定逆时针绘制
             const startScreen = normalizeAngle(el.startAngle);
@@ -329,7 +416,7 @@ export const exportToDXF = (elements: CADElement[]): string => {
             const dxfEnd = el.clockwise ? -startScreen : -endScreen;
             const center = dxfPoint(el.center);
             dxf += entityHeader('ARC', layer, color);
-            dxf += `10\n${num(center.x)}\n20\n${num(center.y)}\n40\n${num(el.radius)}\n`;
+            dxf += `10\n${length(center.x)}\n20\n${length(center.y)}\n40\n${length(el.radius)}\n`;
             dxf += `50\n${num(normalizeAngle(dxfStart))}\n51\n${num(normalizeAngle(dxfEnd))}\n`;
         } else if (el.type === 'ELLIPSE' && el.center && el.radiusX && el.radiusY) {
             const center = dxfPoint(el.center);
@@ -341,8 +428,9 @@ export const exportToDXF = (elements: CADElement[]): string => {
             const majorX = major * Math.cos(axisAngle);
             const majorY = -major * Math.sin(axisAngle);
             dxf += entityHeader('ELLIPSE', layer, color);
-            dxf += `10\n${num(center.x)}\n20\n${num(center.y)}\n30\n0\n`;
-            dxf += `11\n${num(majorX)}\n21\n${num(majorY)}\n31\n0\n`;
+            dxf += `10\n${length(center.x)}\n20\n${length(center.y)}\n30\n0\n`;
+            dxf += `11\n${length(majorX)}\n21\n${length(majorY)}\n31\n0\n`;
+            // 40 为长短轴之比，不随单位缩放
             dxf += `40\n${num(minor / major)}\n41\n0\n42\n${num(Math.PI * 2)}\n`;
         } else if (
             (el.type === 'GEAR' || el.type === 'SPIRAL' || el.type === 'SPRING') &&
@@ -350,14 +438,39 @@ export const exportToDXF = (elements: CADElement[]): string => {
             el.points.length > 1
         ) {
             // 高级曲线以多段线输出，外部 CAD 可直接查看/编辑
-            dxf += writePolyline(layer, color, el.points, el.type === 'GEAR');
+            dxf += writePolyline(layer, color, el.points, el.type === 'GEAR', length);
+        } else if (el.type === 'HATCH' && el.points && el.points.length > 1) {
+            // DXF HATCH 的图案定义依赖目标环境的图案表，这里只导出边界轮廓，
+            // 保证填充区域不丢失；图案本身在报告中说明
+            dxf += writePolyline(layer, color, el.points, true, length);
+        } else {
+            // DIMENSION 等未适配 DXF 语义的图元：计入报告，不静默丢弃
+            noteSkipped(el.type);
+            return;
         }
-        // DIMENSION 暂不适配 DXF 标注样式
+        exported += 1;
     });
 
     dxf += '0\nENDSEC\n0\nEOF';
-    return dxf;
+
+    return {
+        dxf,
+        report: {
+            units,
+            exported,
+            skipped: [...skipped].map(([type, count]) => ({ type, count })),
+        },
+    };
 };
+
+/**
+ * 导出 DXF（仅文本）。
+ * 需要跳过明细时使用 exportToDXFWithReport。
+ */
+export const exportToDXF = (
+    elements: CADElement[],
+    options: DxfExportOptions = {},
+): string => exportToDXFWithReport(elements, options).dxf;
 
 /* ─── 导入 ─────────────────────────────────────────────────── */
 
@@ -551,12 +664,59 @@ const mergeOldPolylines = (source: RawDxfEntity[]): RawDxfEntity[] => {
     return merged;
 };
 
-/** 解析 DXF 文本为应用图元；块引用先展开，再统一 Y 取反与角度翻转 */
-export const parseDXF = (dxfContent: string): CADElement[] => {
+/** 解析报告：不静默丢弃任何实体，未支持的按类型汇总 */
+export interface DxfImportReport {
+    /** 文件声明的 $INSUNITS 代码；缺失为 null */
+    insunits: number | null;
+    /** $INSUNITS → 应用内部 mm 的换算系数 */
+    unitScale: number;
+    /** 解析到的受支持实体总数（含块内展开前） */
+    supportedEntities: number;
+    /** 最终生成的图元数 */
+    imported: number;
+    /** 不支持的实体类型与数量 */
+    unsupported: Array<{ type: string; count: number }>;
+    /** 因几何为空被丢弃的实体数 */
+    dropped: number;
+    /** 触达最大块嵌套深度而被跳过的 INSERT 数 */
+    blockDepthLimitHit: boolean;
+    /** 触达最大展开实体数而截断 */
+    entityLimitHit: boolean;
+}
+
+export interface DxfImportResult {
+    elements: CADElement[];
+    report: DxfImportReport;
+}
+
+/** 结构性关键字：不计入"不支持的实体" */
+const DXF_STRUCTURAL = new Set([
+    'SECTION',
+    'ENDSEC',
+    'TABLE',
+    'ENDTAB',
+    'LAYER',
+    'BLOCK',
+    'ENDBLK',
+    'SEQEND',
+]);
+
+/** 解析 DXF 文本为应用图元（带报告）；块引用先展开，再统一单位换算、Y 取反与角度翻转 */
+export const parseDXFWithReport = (dxfContent: string): DxfImportResult => {
     const pairs = tokenize(dxfContent);
     const layerColors = new Map<string, string>();
     const blocks: RawBlock[] = [];
     const entities: RawDxfEntity[] = [];
+
+    const unsupportedCounts = new Map<string, number>();
+    const noteUnsupported = (type: string) => {
+        if (!type || DXF_STRUCTURAL.has(type)) return;
+        unsupportedCounts.set(type, (unsupportedCounts.get(type) ?? 0) + 1);
+    };
+
+    let insunits: number | null = null;
+    let pendingHeaderVar: string | null = null;
+    let supportedEntities = 0;
 
     let section = '';
     let tableName = '';
@@ -632,11 +792,30 @@ export const parseDXF = (dxfContent: string): CADElement[] => {
                 }
                 if (currentBlock && SUPPORTED_ENTITIES.has(value)) {
                     entity = createRawEntity(value);
+                    supportedEntities += 1;
+                } else if (currentBlock) {
+                    noteUnsupported(value);
                 }
                 continue;
             }
-            if (section === 'ENTITIES' && SUPPORTED_ENTITIES.has(value)) {
-                entity = createRawEntity(value);
+            if (section === 'ENTITIES') {
+                if (SUPPORTED_ENTITIES.has(value)) {
+                    entity = createRawEntity(value);
+                    supportedEntities += 1;
+                } else {
+                    noteUnsupported(value);
+                }
+            }
+            continue;
+        }
+
+        if (section === 'HEADER') {
+            // 只关心 $INSUNITS（70）；其余头变量跳过
+            if (code === 9) pendingHeaderVar = value;
+            else if (code === 70 && pendingHeaderVar === '$INSUNITS') {
+                const parsed = Number.parseInt(value, 10);
+                if (Number.isFinite(parsed)) insunits = parsed;
+                pendingHeaderVar = null;
             }
             continue;
         }
@@ -670,24 +849,62 @@ export const parseDXF = (dxfContent: string): CADElement[] => {
     const mergedEntities = mergeOldPolylines(entities);
     for (const block of blocks) block.entities = mergeOldPolylines(block.entities);
 
+    // 单位换算：$INSUNITS → 应用内部 canonical 单位 mm
+    const unitScale = dxfImportScale(insunits);
+    const scaleBlock = (block: RawBlock): RawBlock =>
+        unitScale === 1
+            ? block
+            : {
+                  ...block,
+                  basePoint: {
+                      x: block.basePoint.x * unitScale,
+                      y: block.basePoint.y * unitScale,
+                  },
+              };
+
     const blockMap = new Map<string, RawBlock>();
-    for (const block of blocks) blockMap.set(block.name.toLowerCase(), block);
+    for (const block of blocks) blockMap.set(block.name.toLowerCase(), scaleBlock(block));
 
     const expanded: RawDxfEntity[] = [];
+    const stats: ExpandStats = { blockDepthLimitHit: false };
     for (const item of mergedEntities) {
         expanded.push(
-            ...expandEntity(item, blockMap, IDENTITY_TRANSFORM, new Set<string>(), 0),
+            ...expandEntity(item, blockMap, IDENTITY_TRANSFORM, new Set<string>(), 0, stats),
         );
         if (expanded.length >= MAX_EXPANDED_ENTITIES) break;
     }
 
+    const entityLimitHit = expanded.length >= MAX_EXPANDED_ENTITIES;
+
     const elements: CADElement[] = [];
+    let dropped = 0;
     for (const item of expanded.slice(0, MAX_EXPANDED_ENTITIES)) {
-        const parsed = finalizeEntity(item, resolveColor);
+        const scaled = unitScale === 1 ? item : scaleRawEntity(item, unitScale);
+        const parsed = finalizeEntity(scaled, resolveColor);
         if (parsed) elements.push(parsed);
+        else dropped += 1;
     }
-    return elements;
+
+    return {
+        elements,
+        report: {
+            insunits,
+            unitScale,
+            supportedEntities,
+            imported: elements.length,
+            unsupported: [...unsupportedCounts]
+                .map(([type, count]) => ({ type, count }))
+                .sort((a, b) => b.count - a.count),
+            dropped,
+            blockDepthLimitHit: stats.blockDepthLimitHit,
+            entityLimitHit,
+        },
+    };
 };
+
+/** 解析 DXF 文本为应用图元；需要导入明细时使用 parseDXFWithReport */
+export const parseDXF = (dxfContent: string): CADElement[] =>
+    parseDXFWithReport(dxfContent).elements;
 
 function parseEntityProp(entity: RawDxfEntity, code: number, value: string) {
     const val = Number.parseFloat(value);
@@ -823,6 +1040,28 @@ const cleanMText = (raw: string): string =>
 const inheritLayer = (source: RawDxfEntity, parentLayer: string): RawDxfEntity =>
     source.layer === '0' && parentLayer !== '0' ? { ...source, layer: parentLayer } : source;
 
+/** 单位换算：把 DXF 世界坐标下的原始实体整体缩放到应用内部 mm */
+function scaleRawEntity(entity: RawDxfEntity, factor: number): RawDxfEntity {
+    if (factor === 1) return entity;
+    const scaleCoord = (value: number | undefined): number | undefined =>
+        value === undefined ? undefined : value * factor;
+    return {
+        ...entity,
+        points: entity.points.map((point) => ({ x: point.x * factor, y: point.y * factor })),
+        x1: scaleCoord(entity.x1),
+        y1: scaleCoord(entity.y1),
+        x2: scaleCoord(entity.x2),
+        y2: scaleCoord(entity.y2),
+        x3: scaleCoord(entity.x3),
+        y3: scaleCoord(entity.y3),
+        x4: scaleCoord(entity.x4),
+        y4: scaleCoord(entity.y4),
+        measure: scaleCoord(entity.measure),
+        majorX: scaleCoord(entity.majorX),
+        majorY: scaleCoord(entity.majorY),
+    };
+}
+
 function transformRawEntity(entity: RawDxfEntity, matrix: DxfTransform): RawDxfEntity {
     const scale = uniformScale(matrix);
     const rotationOffset = transformRotation(matrix);
@@ -898,18 +1137,24 @@ function transformRawEntity(entity: RawDxfEntity, matrix: DxfTransform): RawDxfE
     return transformed;
 }
 
+/** 展开过程中的统计信息：用于导入报告 */
+interface ExpandStats {
+    blockDepthLimitHit: boolean;
+}
+
 function expandEntity(
     entity: RawDxfEntity,
     blocks: Map<string, RawBlock>,
     matrix: DxfTransform,
     stack: Set<string>,
     depth: number,
+    stats: ExpandStats,
 ): RawDxfEntity[] {
     if (entity.type === 'INSERT') {
-        return expandInsert(entity, blocks, matrix, stack, depth);
+        return expandInsert(entity, blocks, matrix, stack, depth, stats);
     }
     if (entity.type === 'DIMENSION') {
-        return expandDimension(entity, blocks, matrix, stack, depth);
+        return expandDimension(entity, blocks, matrix, stack, depth, stats);
     }
     if (entity.type === 'MTEXT') {
         const text = cleanMText(entity.text ?? '');
@@ -925,9 +1170,13 @@ function expandInsert(
     parentMatrix: DxfTransform,
     stack: Set<string>,
     depth: number,
+    stats: ExpandStats,
 ): RawDxfEntity[] {
     const name = (insert.blockName ?? '').trim().toLowerCase();
-    if (!name || depth >= MAX_BLOCK_DEPTH || stack.has(name)) return [];
+    if (!name || depth >= MAX_BLOCK_DEPTH || stack.has(name)) {
+        if (name) stats.blockDepthLimitHit = true;
+        return [];
+    }
     const block = blocks.get(name);
     if (!block) return [];
 
@@ -964,6 +1213,7 @@ function expandInsert(
                     matrix,
                     nextStack,
                     depth + 1,
+                    stats,
                 )) {
                     result.push(expanded);
                     if (result.length >= MAX_EXPANDED_ENTITIES) return result;
@@ -980,6 +1230,7 @@ function expandDimension(
     parentMatrix: DxfTransform,
     stack: Set<string>,
     depth: number,
+    stats: ExpandStats,
 ): RawDxfEntity[] {
     const name = (dimension.blockName ?? '').trim().toLowerCase();
     if (name && depth < MAX_BLOCK_DEPTH && !stack.has(name)) {
@@ -996,6 +1247,7 @@ function expandDimension(
                     parentMatrix,
                     nextStack,
                     depth + 1,
+                    stats,
                 )) {
                     result.push(expanded);
                     if (result.length >= MAX_EXPANDED_ENTITIES) break;

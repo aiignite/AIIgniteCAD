@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { body, validationResult } from "express-validator";
 import { prisma } from "../lib/prisma";
-import { hashPassword, comparePassword, generateToken, AuthRequest } from "../middleware/auth";
+import { hashPassword, comparePassword, generateToken, authenticate, AuthRequest } from "../middleware/auth";
 import { encryptSecret } from "../lib/crypto";
 import { logger } from "../lib/logger";
 
@@ -329,6 +329,7 @@ router.post("/logout", async (req: AuthRequest, res: Response) => {
 // Update user profile
 router.put(
   "/profile",
+  authenticate,
   [
     body("username").optional().trim().isLength({ min: 3, max: 50 }).withMessage("Username must be 3-50 characters"),
     body("email").optional().isEmail().withMessage("Invalid email address"),
@@ -410,6 +411,7 @@ router.put(
 // Change password
 router.post(
   "/change-password",
+  authenticate,
   [
     body("currentPassword").notEmpty().withMessage("Current password is required"),
     body("newPassword").isLength({ min: 6 }).withMessage("New password must be at least 6 characters"),

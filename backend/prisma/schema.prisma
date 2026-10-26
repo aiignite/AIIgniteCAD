@@ -220,6 +220,8 @@ model BlockReference {
 model Element {
   id           String   @id @default(uuid())
   projectId    String   @map("project_id")
+  // 客户端图元 id：增量保存与元素计数的稳定标识，可空用于兼容历史数据
+  elementId    String?  @map("element_id")
   layerId      String?  @map("layer_id")
   elementType  String   @map("element_type") // LINE, CIRCLE, etc.
   geometryData Json     @map("geometry_data") // 完整的几何数据
@@ -233,6 +235,7 @@ model Element {
   layer   Layer?  @relation(fields: [layerId], references: [id], onDelete: SetNull)
 
   @@index([projectId])
+  @@index([projectId, elementId])
   @@index([layerId])
   @@index([elementType])
   @@index([isDeleted])

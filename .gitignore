@@ -45,6 +45,13 @@ backend/.env.*
 # 服务器发布配置（含主机地址与口令），绝不提交
 scripts/deploy.env
 
+# 发布前数据库备份（含业务数据），绝不提交
+.backups/
+
 # 本地 Agent 工具目录
 .trae/
 .zcode/
+.workbuddy/
+
+# 视频素材（B 站演示片，体积大，不进历史）
+docs/bilibili/

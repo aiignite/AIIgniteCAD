@@ -6,6 +6,7 @@
 
 import type {
     CADElement,
+    DesignConventions,
     DrawingSettings,
     Layer,
     ProjectVersion,
@@ -18,11 +19,14 @@ export interface LayerSnapshotInput {
     lockedLayers: string[];
 }
 
-export function buildVersionSnapshot(
+/**
+ * 汇总图层定义：显式图层顺序在前，再补上仅存在于图元中的历史图层。
+ * 版本快照与日常文档保存共用同一套规则，避免两处图层语义漂移。
+ */
+export function collectLayers(
     elements: CADElement[],
     layerState: LayerSnapshotInput,
-    settings: DrawingSettings,
-): ProjectVersion["snapshotData"] {
+): Layer[] {
     const hidden = new Set(layerState.hiddenLayers);
     const locked = new Set(layerState.lockedLayers);
     const seen = new Set<string>();
@@ -38,14 +42,27 @@ export function buildVersionSnapshot(
     layerState.layerOrder.forEach(add);
     elements.forEach((element) => add(element.layer || "0"));
 
-    const layers: Layer[] = names.map((name) => ({
+    return names.map((name) => ({
         id: `layer-${name}`,
         name,
         color: layerState.layerColors[name] ?? "#e6edf3",
         isVisible: !hidden.has(name),
         isLocked: locked.has(name),
-        lineType: "CONTINUOUS",
+        lineType: "CONTINUOUS" as const,
     }));
+}
 
-    return { elements, layers, settings };
+export function buildVersionSnapshot(
+    elements: CADElement[],
+    layerState: LayerSnapshotInput,
+    settings: DrawingSettings,
+    designConventions?: DesignConventions | null,
+): ProjectVersion["snapshotData"] {
+    return {
+        elements,
+        layers: collectLayers(elements, layerState),
+        settings,
+        // 约定随版本一起保存：恢复版本时制图标准不会退回旧值
+        ...(designConventions !== undefined ? { designConventions } : {}),
+    };
 }

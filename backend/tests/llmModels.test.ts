@@ -5,7 +5,7 @@
  * 默认模型互斥、连接测试与用量摘要。
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 
 const { prismaMock, probeMock } = vi.hoisted(() => {
@@ -82,6 +82,10 @@ describe("模型注册表接口", () => {
     prismaMock.$transaction.mockResolvedValue([]);
   });
 
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("列表不返回密文，只返回 hasApiKey 与脱敏预览", async () => {
     prismaMock.lLMModel.findMany.mockResolvedValue([modelRow({ apiKeyEncrypted: "secret-value" })]);
 
@@ -108,6 +112,7 @@ describe("模型注册表接口", () => {
   });
 
   it("拒绝指向内网或元数据地址的端点", async () => {
+    vi.stubEnv("AI_ALLOW_PRIVATE_ENDPOINTS", "");
     const privateIp = await authed("post", "/api/llm").send({
       name: "内网",
       provider: "OpenAI",

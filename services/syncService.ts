@@ -10,7 +10,7 @@
 import { apiService } from "./apiService";
 import type { SaveElementsResponse } from "./apiService";
 import { indexedDBService } from "./indexedDBService";
-import type { ProjectFile, SyncQueueItem } from "../types";
+import type { DrawingSettings, Layer, ProjectFile, SyncQueueItem } from "../types";
 
 export interface SyncStatusSnapshot {
     online: boolean;
@@ -61,6 +61,8 @@ interface SyncApi {
             description?: string;
             thumbnail?: string;
             designConventions?: ProjectFile["designConventions"];
+            layers?: Layer[];
+            drawingSettings?: DrawingSettings;
             baseUpdatedAt?: string;
         },
         options?: { idempotencyKey?: string; baseUpdatedAt?: string },
@@ -377,6 +379,9 @@ export class SyncService {
                     description: project.description,
                     thumbnail: project.thumbnail,
                     designConventions: project.designConventions,
+                    // 图层与绘图设置随项目元数据一起上传：日常保存的就是完整文档
+                    layers: project.layers,
+                    drawingSettings: project.drawingSettings,
                 },
                 {
                     baseUpdatedAt: typeof metadataBase === "string" ? metadataBase : undefined,

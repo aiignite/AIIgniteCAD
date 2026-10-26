@@ -1,11 +1,22 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import type { CADElement, DesignConventions } from "../../types";
 import type { PlanProposal, PlanStatus, PlanStep } from "../../lib/aiPlan";
 import { planToToolCalls } from "../../lib/aiPlan";
+import type { BlockCatalogEntry } from "../../lib/blockCatalog";
+import type { PlanPreflight } from "../../lib/planReview";
+import { preflightPlan, summarizePreflight } from "../../lib/planReview";
+import { reviewSeverityLabel } from "../../lib/designReview";
+import { useI18n } from "../../lib/i18n";
 import { describeToolCall, toolLabel } from "../../lib/aiUi";
 
 interface PlanCardProps {
     proposal: PlanProposal;
     status: PlanStatus;
+    /** 预检所需的当前图纸状态；缺省时不做预检 */
+    elements?: CADElement[];
+    selectedIds?: readonly string[];
+    blockCatalog?: BlockCatalogEntry[];
+    conventions?: DesignConventions | null;
     onApprove: (proposal: PlanProposal) => void;
     onDismiss: () => void;
 }
@@ -15,10 +26,11 @@ const PlanStepRow: React.FC<{
     step: PlanStep;
     editable: boolean;
     total: number;
+    issues?: { error: number; warning: number; info: number };
     onChange: (step: PlanStep) => void;
     onMove: (direction: -1 | 1) => void;
     onRemove: () => void;
-}> = ({ index, step, editable, total, onChange, onMove, onRemove }) => (
+}> = ({ index, step, editable, total, issues, onChange, onMove, onRemove }) => (
     <li className="rounded-md border border-cad-border/80 bg-cad-bg/40 p-2 space-y-1">
         <div className="flex items-center gap-1">
             <span className="text-[10px] font-mono text-cad-muted shrink-0">{index + 1}.</span>
@@ -76,13 +88,76 @@ const PlanStepRow: React.FC<{
                 })}
             </p>
         )}
+        {issues && (issues.error > 0 || issues.warning > 0) && (
+            <p
+                className={`text-[10px] pl-4 ${
+                    issues.error > 0 ? "text-red-400" : "text-amber-500"
+                }`}
+            >
+                预检：
+                {issues.error > 0 && `错误 ${issues.error}`}
+                {issues.error > 0 && issues.warning > 0 && " / "}
+                {issues.warning > 0 && `警告 ${issues.warning}`}
+            </p>
+        )}
     </li>
 );
 
-const PlanCard: React.FC<PlanCardProps> = ({ proposal, status, onApprove, onDismiss }) => {
+const PlanCard: React.FC<PlanCardProps> = ({
+    proposal,
+    status,
+    elements,
+    selectedIds,
+    blockCatalog,
+    conventions,
+    onApprove,
+    onDismiss,
+}) => {
+    const { locale } = useI18n();
     const [steps, setSteps] = useState<PlanStep[]>(proposal.steps);
     const editable = status === "pending";
     const executable = planToToolCalls({ ...proposal, steps }).length > 0;
+
+    // 预检：按当前选择集模拟执行，只在待确认时计算；放到宏任务里避免阻塞卡片首帧。
+    // 结果连同「计算时的步骤签名」一起存，签名不匹配就视为过期，避免 effect 里同步 setState。
+    const [preflightState, setPreflightState] = useState<{
+        key: string;
+        result: PlanPreflight;
+    } | null>(null);
+    const preflightKey =
+        editable && elements && steps.length > 0
+            ? [
+                  steps
+                      .map((step) => `${step.tool ?? ""}${JSON.stringify(step.arguments ?? {})}`)
+                      .join(";"),
+                  elements.length,
+                  selectedIds?.length ?? 0,
+              ].join("|")
+            : null;
+    useEffect(() => {
+        if (!preflightKey || !elements) return;
+        let cancelled = false;
+        const timer = setTimeout(() => {
+            const result = preflightPlan({
+                elements,
+                selectedIds: selectedIds ?? [],
+                blocks: { entries: blockCatalog ?? [], ok: true },
+                conventions: conventions ?? undefined,
+                proposal: { ...proposal, steps },
+                locale,
+            });
+            if (!cancelled) setPreflightState({ key: preflightKey, result });
+        }, 0);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+        // proposal 只作为 goal/checks 等静态信息的来源，重算由 preflightKey 与 elements 触发
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [preflightKey, elements, selectedIds, blockCatalog, conventions, locale]);
+
+    const preflight =
+        preflightState && preflightState.key === preflightKey ? preflightState.result : null;
 
     const updateStep = (index: number, next: PlanStep) =>
         setSteps((prev) => prev.map((step, i) => (i === index ? next : step)));
@@ -123,20 +198,33 @@ const PlanCard: React.FC<PlanCardProps> = ({ proposal, status, onApprove, onDism
             )}
 
             <ol className="space-y-1">
-                {steps.map((step, index) => (
-                    <PlanStepRow
-                        key={`step-${index}`}
-                        index={index}
-                        step={step}
-                        editable={editable}
-                        total={steps.length}
-                        onChange={(next) => updateStep(index, next)}
-                        onMove={(direction) => moveStep(index, direction)}
-                        onRemove={() =>
-                            setSteps((prev) => prev.filter((_, item) => item !== index))
-                        }
-                    />
-                ))}
+                {steps.map((step, index) => {
+                    const stepReview = preflight?.steps[index];
+                    const issues = stepReview
+                        ? stepReview.introduced.reduce(
+                              (acc, issue) => {
+                                  acc[issue.severity] += 1;
+                                  return acc;
+                              },
+                              { error: 0, warning: 0, info: 0 },
+                          )
+                        : undefined;
+                    return (
+                        <PlanStepRow
+                            key={`step-${index}`}
+                            index={index}
+                            step={step}
+                            editable={editable}
+                            total={steps.length}
+                            issues={issues}
+                            onChange={(next) => updateStep(index, next)}
+                            onMove={(direction) => moveStep(index, direction)}
+                            onRemove={() =>
+                                setSteps((prev) => prev.filter((_, item) => item !== index))
+                            }
+                        />
+                    );
+                })}
             </ol>
 
             {proposal.checks.length > 0 && (
@@ -148,6 +236,64 @@ const PlanCard: React.FC<PlanCardProps> = ({ proposal, status, onApprove, onDism
                 <p className="text-[10px] text-amber-600 dark:text-amber-400 break-words">
                     风险：{proposal.risks.join("；")}
                 </p>
+            )}
+
+            {preflight && (
+                <div
+                    className={`rounded border px-2 py-1.5 space-y-1 ${
+                        preflight.hasErrors
+                            ? "border-red-500/40 bg-red-500/10"
+                            : preflight.introduced.length > 0
+                              ? "border-amber-500/40 bg-amber-500/10"
+                              : "border-emerald-500/30 bg-emerald-500/10"
+                    }`}
+                    data-plan-preflight={preflight.hasErrors ? "error" : "ok"}
+                >
+                    <p
+                        className={`text-[10px] font-semibold ${
+                            preflight.hasErrors
+                                ? "text-red-400"
+                                : preflight.introduced.length > 0
+                                  ? "text-amber-500"
+                                  : "text-emerald-600 dark:text-emerald-400"
+                        }`}
+                    >
+                        {summarizePreflight(preflight, locale)}
+                    </p>
+                    {preflight.failedSteps > 0 && (
+                        <p className="text-[10px] text-red-400">
+                            {preflight.failedSteps} 个步骤模拟执行失败，执行计划时会被跳过。
+                        </p>
+                    )}
+                    {preflight.introduced.length > 0 && (
+                        <ul className="space-y-0.5">
+                            {preflight.introduced.slice(0, 3).map((issue) => (
+                                <li
+                                    key={`${issue.code}-${issue.elementIds.join("-")}-${issue.message}`}
+                                    className="text-[10px] text-cad-text break-words"
+                                >
+                                    <span
+                                        className={
+                                            issue.severity === "error"
+                                                ? "text-red-400"
+                                                : issue.severity === "warning"
+                                                  ? "text-amber-500"
+                                                  : "text-cad-muted"
+                                        }
+                                    >
+                                        [{reviewSeverityLabel(issue.severity, locale)}]
+                                    </span>{" "}
+                                    {issue.message}
+                                </li>
+                            ))}
+                            {preflight.introduced.length > 3 && (
+                                <li className="text-[10px] text-cad-muted">
+                                    其余 {preflight.introduced.length - 3} 条在执行前的预览中可见。
+                                </li>
+                            )}
+                        </ul>
+                    )}
+                </div>
             )}
 
             {editable ? (

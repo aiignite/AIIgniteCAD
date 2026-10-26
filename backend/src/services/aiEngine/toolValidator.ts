@@ -491,8 +491,20 @@ export function validateToolCall(
       clean[key] = value;
       continue;
     }
-    if (key === "mode" || key === "axis") {
-      const allowed = key === "mode" ? ALIGN_MODES : DISTRIBUTE_AXES;
+    if (key === "scope") {
+      // 只读检查的范围：显式声明枚举，避免未知值被静默当成「当前图纸」
+      if (value !== "drawing" && value !== "project") {
+        return {
+          ok: false,
+          reason: "BAD_ENUM",
+          message: `${name}.scope 仅支持 drawing / project`,
+          toolName: name,
+        };
+      }
+      clean[key] = value;
+      continue;
+    }
+    if (key === "mode" || key === "axis") {      const allowed = key === "mode" ? ALIGN_MODES : DISTRIBUTE_AXES;
       if (typeof value !== "string" || !allowed.has(value)) {
         return {
           ok: false,

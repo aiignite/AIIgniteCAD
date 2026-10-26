@@ -222,6 +222,26 @@ describe("块引用与炸开", () => {
         expect(exploded[0].end!.y).toBeCloseTo(120, 6);
     });
 
+    it("插入语义：平移量 = 插入点 - 基点，且生成新 id（符号展开复制）", () => {
+        // 定义内图元已相对基点归一化；插入时按 (插入点 - 基点) 平移
+        const block = makeBlockDefinition({
+            name: "Chair",
+            basePoint: { x: 5, y: 5 },
+            elements: [lineElement(0, 0, 10, 0)],
+        });
+        const insertion = { x: 100, y: 100 };
+        const ref = createBlockReference(block.id, {
+            x: insertion.x - block.basePoint.x,
+            y: insertion.y - block.basePoint.y,
+        });
+
+        const exploded = explodeBlockReference(ref, block);
+        expect(exploded).toHaveLength(1);
+        expect(exploded[0].id).not.toBe(block.elements[0].id);
+        expectPoint(exploded[0].start!, 95, 95);
+        expectPoint(exploded[0].end!, 105, 95);
+    });
+
     it("旋转、缩放与镜像块引用", () => {
         const ref = createBlockReference("def-1", { x: 10, y: 0 }, "0", 30, 2, 2);
 

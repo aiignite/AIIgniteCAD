@@ -21,6 +21,7 @@ import { PLAN_TOOL_NAME, parsePlanProposal, type PlanProposal } from "./aiPlan";
 import { VARIANTS_TOOL_NAME, parseVariantProposal, type VariantProposal } from "./aiVariants";
 import { findBlockEntry, type BlockCatalogEntry, type BlockCatalogResult } from "./blockCatalog";
 import type { ReviewConventions } from "./designReview";
+import type { DrawingFacts as ProjectDrawingFacts } from "./projectConsistency";
 
 export interface AgentToolResult {
     toolCallId: string;
@@ -49,6 +50,12 @@ export interface AgentDraft {
     blockInsertions: { blockId: string; name: string }[];
     /** 项目设计约定；check_drawing 等确定性检查会读取它 */
     conventions?: ReviewConventions;
+    /**
+     * 项目内全部图纸的清单级事实（名称、图元数、约定）。
+     * check_drawing 的 scope=project 用它做跨图纸一致性检查；
+     * 缺省表示调用方没有提供项目清单，此时只能检查当前图纸。
+     */
+    projectDrawings?: ProjectDrawingFacts[];
 }
 
 export interface CanvasStats {
@@ -85,6 +92,7 @@ export function createDraft(
     selectedIds: string[] = [],
     blocks: BlockCatalogEntry[] | BlockCatalogResult = [],
     conventions?: ReviewConventions,
+    projectDrawings?: ProjectDrawingFacts[],
 ): AgentDraft {
     const known = new Set(elements.map((element) => element.id));
     const catalog = Array.isArray(blocks) ? { entries: blocks, ok: true } : blocks;
@@ -96,6 +104,7 @@ export function createDraft(
         blocksUnavailable: !catalog.ok,
         blockInsertions: [],
         conventions,
+        projectDrawings,
     };
 }
 

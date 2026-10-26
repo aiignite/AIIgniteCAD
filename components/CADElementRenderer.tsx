@@ -4,10 +4,11 @@
  * 避免大图纸下每次交互都重建全部 SVG 节点。
  */
 
-import React from 'react';
+import React, { useId } from 'react';
 import { CADElement, Point } from '../types';
 import { add, distance, dot, subtract } from '../lib/geometry';
 import { AI_GHOST_COLORS } from '../lib/aiGhost';
+import { generateHatchPattern } from '../services/hatchService';
 
 /** 打印 / 图框渲染覆盖项；未提供时保持屏幕渲染行为 */
 export interface CADElementRenderOverrides {
@@ -232,6 +233,74 @@ const CADElementRenderer: React.FC<CADElementRendererProps> = ({
                 : 'rgb(var(--cad-text))';
     // 位移为零时省略 transform，减少无意义的属性
     const transform = offsetX !== 0 || offsetY !== 0 ? `translate(${offsetX}, ${offsetY})` : undefined;
+    const clipUid = useId();
+
+    if (el.type === 'HATCH' && el.points && el.points.length > 2) {
+        // 填充：边界多边形 + 图案线（clipPath 裁到边界内）。
+        // 间距取 hatchScale × 10，角度取 hatchAngle 或图案自带角度。
+        const pointsAttr = el.points.map(p => `${p.x},${p.y}`).join(' ');
+        const patternType = el.hatchPattern?.type ?? 'SOLID';
+        const hatchColor = el.hatchColor ?? el.color;
+        const angle = el.hatchAngle ?? el.hatchPattern?.angle ?? 0;
+        const spacing = 10 * (el.hatchScale && el.hatchScale > 0 ? el.hatchScale : 1);
+
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        el.points.forEach(p => {
+            minX = Math.min(minX, p.x);
+            minY = Math.min(minY, p.y);
+            maxX = Math.max(maxX, p.x);
+            maxY = Math.max(maxY, p.y);
+        });
+
+        const patternPath =
+            patternType === 'SOLID'
+                ? ''
+                : generateHatchPattern(patternType, { minX, minY, maxX, maxY }, spacing, angle);
+
+        return (
+            <g transform={transform} opacity={ghost ? 0.6 : 1}>
+                <defs>
+                    <clipPath id={`hatch-clip-${clipUid}`}>
+                        <polygon points={pointsAttr} />
+                    </clipPath>
+                </defs>
+                {patternType === 'SOLID' ? (
+                    <polygon
+                        points={pointsAttr}
+                        fill={monochrome ? '#000000' : hatchColor}
+                        fillOpacity={monochrome ? 0.15 : 0.35}
+                        stroke={color}
+                        strokeWidth={style.strokeWidth}
+                        vectorEffect={vectorEffect}
+                    />
+                ) : (
+                    <>
+                        <polygon
+                            points={pointsAttr}
+                            fill="none"
+                            stroke={color}
+                            strokeWidth={style.strokeWidth}
+                            vectorEffect={vectorEffect}
+                        />
+                        {patternPath && (
+                            <path
+                                d={patternPath}
+                                fill="none"
+                                stroke={monochrome ? '#000000' : hatchColor}
+                                strokeWidth={1}
+                                clipPath={`url(#hatch-clip-${clipUid})`}
+                                vectorEffect={vectorEffect}
+                            />
+                        )}
+                    </>
+                )}
+            </g>
+        );
+    }
+
     // DXF 文字旋转为世界坐标逆时针，屏幕 Y 向下时需取反
     const textRotation = el.rotation ?? 0;
     const textTransform = [

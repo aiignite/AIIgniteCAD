@@ -233,3 +233,91 @@ describe("GET /api/auth/me", () => {
     expect(res.body.user.id).toBe("user-1");
   });
 });
+
+describe("受保护账户接口", () => {
+  const authUser = {
+    id: "user-1",
+    username: "alice",
+    email: "alice@example.com",
+    role: "user",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("PUT /api/auth/profile 缺少 token 时返回 401", async () => {
+    const res = await request(app)
+      .put("/api/auth/profile")
+      .send({ username: "alice2" });
+
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe("No token provided");
+    expect(prismaMock.user.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("PUT /api/auth/profile token 非法时返回 401", async () => {
+    const res = await request(app)
+      .put("/api/auth/profile")
+      .set("Authorization", "Bearer invalid-token")
+      .send({ username: "alice2" });
+
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe("Invalid or expired token");
+    expect(prismaMock.user.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("PUT /api/auth/profile 有效 token 时可更新资料", async () => {
+    prismaMock.user.findUnique.mockResolvedValue(authUser);
+    prismaMock.user.findFirst.mockResolvedValue(null);
+    prismaMock.user.update.mockResolvedValue({
+      id: "user-1",
+      username: "alice2",
+      email: "alice@example.com",
+      createdAt: new Date(),
+    });
+
+    const res = await request(app)
+      .put("/api/auth/profile")
+      .set("Authorization", `Bearer ${generateToken(authUser)}`)
+      .send({ username: "alice2" });
+
+    expect(res.status).toBe(200);
+    expect(prismaMock.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "user-1" },
+        data: { username: "alice2" },
+      }),
+    );
+  });
+
+  it("POST /api/auth/change-password 缺少 token 时返回 401", async () => {
+    const res = await request(app)
+      .post("/api/auth/change-password")
+      .send({ currentPassword: "123456", newPassword: "654321" });
+
+    expect(res.status).toBe(401);
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+  });
+
+  it("POST /api/auth/change-password 有效 token 且当前密码正确时更新密码", async () => {
+    const passwordHash = await bcrypt.hash("123456", 4);
+    prismaMock.user.findUnique
+      .mockResolvedValueOnce(authUser)
+      .mockResolvedValueOnce({ ...authUser, passwordHash });
+    prismaMock.user.update.mockResolvedValue({ id: "user-1" });
+
+    const res = await request(app)
+      .post("/api/auth/change-password")
+      .set("Authorization", `Bearer ${generateToken(authUser)}`)
+      .send({ currentPassword: "123456", newPassword: "654321" });
+
+    expect(res.status).toBe(200);
+    expect(prismaMock.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "user-1" },
+        data: { passwordHash: expect.any(String) },
+      }),
+    );
+  });
+});

@@ -7,8 +7,14 @@
 
 import { io, type Socket } from "socket.io-client";
 import { API_BASE_URL } from "./apiService";
-import type { ElementPatch } from "../lib/collaboration";
+import {
+    capElementSnapshot,
+    parseElementList,
+    type ElementPatch,
+    type ElementSnapshot,
+} from "../lib/collaboration";
 import type { Collaborator, PeerCursor } from "../store/collaboration";
+import type { CADElement } from "../types";
 
 export interface CollaborationHandlers {
     onStatus: (status: "connecting" | "connected" | "error", error?: string | null) => void;
@@ -18,7 +24,21 @@ export interface CollaborationHandlers {
     onCursor: (cursor: PeerCursor) => void;
     onPeerLeft: (socketId: string) => void;
     onPatch: (patch: ElementPatch) => void;
+    /** 房间内有人请求当前图纸状态；只有被服务端点名的成员会收到 */
+    onStateRequest?: (requesterId: string) => void;
+    /** 收到其他成员回传的图纸快照（加入房间时的初始对账） */
+    onStateSnapshot?: (snapshot: ElementSnapshot) => void;
 }
+
+/** 便于测试注入的最小 socket 形状；浏览器里就是 socket.io 的 Socket */
+export type CollaborationSocket = Pick<Socket, "on" | "emit" | "disconnect" | "removeAllListeners"> & {
+    connected: boolean;
+};
+
+export type CollaborationSocketFactory = (
+    url: string,
+    options: Record<string, unknown>,
+) => CollaborationSocket;
 
 /** Socket 与 REST 同源：从 API 地址去掉 /api 后缀 */
 export function collaborationSocketUrl(): string {
@@ -42,10 +62,14 @@ export function collaborationSocketPath(apiBaseUrl: string = API_BASE_URL): stri
 const CURSOR_THROTTLE_MS = 60;
 
 export class CollaborationClient {
-    private socket: Socket | null = null;
+    private socket: CollaborationSocket | null = null;
     private projectId: string | null = null;
     private handlers: CollaborationHandlers | null = null;
     private lastCursorAt = 0;
+
+    constructor(
+        private readonly socketFactory: CollaborationSocketFactory = io as unknown as CollaborationSocketFactory,
+    ) {}
 
     get connected(): boolean {
         return this.socket?.connected ?? false;
@@ -57,7 +81,7 @@ export class CollaborationClient {
         this.handlers = handlers;
         handlers.onStatus("connecting");
 
-        const socket = io(collaborationSocketUrl(), {
+        const socket = this.socketFactory(collaborationSocketUrl(), {
             auth: { token },
             path: collaborationSocketPath(),
             transports: ["websocket", "polling"],
@@ -93,6 +117,22 @@ export class CollaborationClient {
             if (payload?.patch) this.handlers?.onPatch(payload.patch);
         });
 
+        // 服务端把「谁需要初始图纸」转给房间内的一个成员，由该成员回传快照
+        socket.on("state-request", (payload: { requesterId?: unknown }) => {
+            if (typeof payload?.requesterId === "string") {
+                this.handlers?.onStateRequest?.(payload.requesterId);
+            }
+        });
+
+        socket.on("state-snapshot", (payload: { elements?: unknown; truncated?: unknown }) => {
+            const elements = parseElementList(payload?.elements);
+            if (!elements) return;
+            this.handlers?.onStateSnapshot?.({
+                elements,
+                truncated: payload?.truncated === true,
+            });
+        });
+
         socket.on("cursor-move", (payload: PeerCursor) => {
             if (payload?.socketId && Number.isFinite(payload.x) && Number.isFinite(payload.y)) {
                 this.handlers?.onCursor(payload);
@@ -113,10 +153,35 @@ export class CollaborationClient {
         });
     }
 
-    /** 广播本地图元差集；未连接时静默丢弃，重连后由下一次提交补齐 */
-    sendPatch(patch: ElementPatch): void {
-        if (!this.socket?.connected || !this.projectId) return;
+    /**
+     * 广播本地图元差集。
+     * @returns 是否真正发出：未连接时返回 false，调用方据此决定是否推进广播基线，
+     *          避免断线期间的修改被基线"吞掉"、重连后补不出去。
+     */
+    sendPatch(patch: ElementPatch): boolean {
+        if (!this.socket?.connected || !this.projectId) return false;
         this.socket.emit("element-patch", { projectId: this.projectId, patch });
+        return true;
+    }
+
+    /** 请求房间内的现有成员回传图纸快照（新加入者用） */
+    requestState(): boolean {
+        if (!this.socket?.connected || !this.projectId) return false;
+        this.socket.emit("state-request", { projectId: this.projectId });
+        return true;
+    }
+
+    /** 响应快照请求：截断到上限后只发给请求方（由服务端定向转发） */
+    sendStateSnapshot(targetId: string, elements: readonly CADElement[]): boolean {
+        if (!this.socket?.connected || !this.projectId) return false;
+        const snapshot = capElementSnapshot(elements);
+        this.socket.emit("state-snapshot", {
+            projectId: this.projectId,
+            targetId,
+            elements: snapshot.elements,
+            truncated: snapshot.truncated,
+        });
+        return true;
     }
 
     /** 光标位置按 60ms 节流，只用于在线提示 */

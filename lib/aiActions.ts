@@ -195,7 +195,10 @@ export function computeAIActionOutcome(
         const targets = selectTargets(normalizedElements, selected, baseElements);
         const distance = Number(params?.distance ?? 20);
         if (targets.length === 0 || !Number.isFinite(distance) || distance === 0) return null;
-        return appendWithFreshIds(baseElements, offsetElements(targets, distance));
+        // 偏移会拒绝不支持/退化的对象；全部失败时视为无操作，由预览层提示
+        const outcome = offsetElements(targets, distance);
+        if (outcome.elements.length === 0) return null;
+        return appendWithFreshIds(baseElements, outcome.elements);
     }
     if (operation === "ARRAY") {
         const targets = selectTargets(normalizedElements, selected, baseElements);

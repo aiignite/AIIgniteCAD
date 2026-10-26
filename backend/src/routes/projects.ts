@@ -65,6 +65,185 @@ const isStaleWrite = (baseUpdatedAt: unknown, serverUpdatedAt: Date): boolean =>
   return serverUpdatedAt.getTime() > base + CONFLICT_TOLERANCE_MS;
 };
 
+type ParsedLayers =
+  | { ok: true; layers: Omit<Prisma.LayerUncheckedCreateInput, "projectId" | "displayOrder">[] }
+  | { ok: false; message: string };
+
+const LINE_TYPES = ["CONTINUOUS", "DASHED", "DOTTED", "DASHDOT"] as const;
+
+/**
+ * 图层载荷校验：整份替换语义，要求图层名非空且不重复。
+ * 颜色与线型非法时回落默认值，缺省可见性/锁定按默认处理。
+ */
+const parseLayers = (raw: unknown): ParsedLayers => {
+  if (!Array.isArray(raw)) {
+    return { ok: false, message: "layers must be an array" };
+  }
+
+  const layers: Omit<Prisma.LayerUncheckedCreateInput, "projectId" | "displayOrder">[] = [];
+  const seen = new Set<string>();
+
+  for (const [index, entry] of raw.entries()) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return { ok: false, message: `layers[${index}] must be an object` };
+    }
+
+    const { name, color, isVisible, isLocked, lineType, lineWeight } = entry as {
+      name?: unknown;
+      color?: unknown;
+      isVisible?: unknown;
+      isLocked?: unknown;
+      lineType?: unknown;
+      lineWeight?: unknown;
+    };
+
+    if (typeof name !== "string" || !name.trim() || name.length > 100) {
+      return {
+        ok: false,
+        message: `layers[${index}].name must be a non-empty string (max 100 chars)`,
+      };
+    }
+    const layerName = name.trim();
+    if (seen.has(layerName)) {
+      return { ok: false, message: `Duplicate layer name: ${layerName}` };
+    }
+    seen.add(layerName);
+
+    if (color !== undefined && (typeof color !== "string" || !color || color.length > 32)) {
+      return {
+        ok: false,
+        message: `layers[${index}].color must be a non-empty string (max 32 chars)`,
+      };
+    }
+    if (lineWeight !== undefined && lineWeight !== null) {
+      if (
+        typeof lineWeight !== "number" ||
+        !Number.isFinite(lineWeight) ||
+        lineWeight < 0 ||
+        lineWeight > 100
+      ) {
+        return {
+          ok: false,
+          message: `layers[${index}].lineWeight must be a number between 0 and 100`,
+        };
+      }
+    }
+
+    layers.push({
+      name: layerName,
+      color: typeof color === "string" && color ? color : "#e6edf3",
+      isVisible: isVisible === undefined ? true : isVisible === true,
+      isLocked: isLocked === true,
+      lineType:
+        typeof lineType === "string" && (LINE_TYPES as readonly string[]).includes(lineType)
+          ? lineType
+          : "CONTINUOUS",
+      ...(typeof lineWeight === "number" ? { lineWeight } : {}),
+    });
+  }
+
+  return { ok: true, layers };
+};
+
+type ParsedDrawingSettings =
+  | { ok: true; settings: DrawingSettingsUpdate }
+  | { ok: false; message: string };
+
+/** 已校验的绘图设置字段；Prisma 的更新输入类型在使用处转换 */
+interface DrawingSettingsUpdate {
+  units?: string;
+  gridSpacing?: number;
+  snapDistance?: number;
+  dimScale?: number;
+  dimPrecision?: number;
+}
+
+const DRAWING_UNITS = ["mm", "cm", "m", "in", "ft"] as const;
+
+/** 绘图设置校验：与前端 normalizeDrawingSettings 同一套取值域 */
+const parseDrawingSettings = (raw: unknown): ParsedDrawingSettings => {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, message: "drawingSettings must be an object" };
+  }
+
+  const { units, gridSpacing, snapDistance, dimScale, dimPrecision } = raw as {
+    units?: unknown;
+    gridSpacing?: unknown;
+    snapDistance?: unknown;
+    dimScale?: unknown;
+    dimPrecision?: unknown;
+  };
+
+  if (
+    units !== undefined &&
+    (typeof units !== "string" || !(DRAWING_UNITS as readonly string[]).includes(units))
+  ) {
+    return { ok: false, message: "drawingSettings.units is invalid" };
+  }
+
+  const settings: DrawingSettingsUpdate = {};
+  for (const [field, value] of [
+    ["gridSpacing", gridSpacing],
+    ["snapDistance", snapDistance],
+    ["dimScale", dimScale],
+  ] as const) {
+    if (value === undefined) continue;
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+      return { ok: false, message: `drawingSettings.${field} must be a positive number` };
+    }
+    settings[field] = value;
+  }
+
+  if (
+    dimPrecision !== undefined &&
+    (typeof dimPrecision !== "number" ||
+      !Number.isInteger(dimPrecision) ||
+      dimPrecision < 0 ||
+      dimPrecision > 8)
+  ) {
+    return {
+      ok: false,
+      message: "drawingSettings.dimPrecision must be an integer between 0 and 8",
+    };
+  }
+  if (dimPrecision !== undefined) settings.dimPrecision = dimPrecision;
+  if (units !== undefined) settings.units = units;
+
+  return { ok: true, settings };
+};
+
+type ParsedElements =
+  | { ok: true; ids: string[] }
+  | { ok: false; message: string };
+
+/** 增量保存要求每个图元带稳定 id；重复 id 会让 upsert 目标不明确 */
+const parseElementIds = (elements: unknown[]): ParsedElements => {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+
+  for (const [index, element] of elements.entries()) {
+    if (!element || typeof element !== "object" || Array.isArray(element)) {
+      return { ok: false, message: `elements[${index}] must be an object` };
+    }
+
+    const { id, type } = element as { id?: unknown; type?: unknown };
+    if (typeof id !== "string" || !id) {
+      return { ok: false, message: `elements[${index}].id must be a non-empty string` };
+    }
+    if (typeof type !== "string" || !type) {
+      return { ok: false, message: `elements[${index}].type must be a non-empty string` };
+    }
+    if (seen.has(id)) {
+      return { ok: false, message: `Duplicate element id: ${id}` };
+    }
+
+    seen.add(id);
+    ids.push(id);
+  }
+
+  return { ok: true, ids };
+};
+
 // Get all projects for current user
 router.get("/", async (req: AuthRequest, res: Response) => {
   try {
@@ -84,7 +263,11 @@ router.get("/", async (req: AuthRequest, res: Response) => {
           take: 1,
         },
         _count: {
-          select: { elements: true },
+          select: {
+            elements: {
+              where: { isDeleted: false },
+            },
+          },
         },
       },
     });
@@ -254,6 +437,24 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
       });
     }
 
+    const hasLayers = Object.prototype.hasOwnProperty.call(req.body, "layers");
+    const layersPayload = hasLayers ? parseLayers(req.body.layers) : null;
+    if (layersPayload && !layersPayload.ok) {
+      return res.status(400).json({
+        error: "Bad Request",
+        message: layersPayload.message,
+      });
+    }
+
+    const hasSettings = Object.prototype.hasOwnProperty.call(req.body, "drawingSettings");
+    const settingsPayload = hasSettings ? parseDrawingSettings(req.body.drawingSettings) : null;
+    if (settingsPayload && !settingsPayload.ok) {
+      return res.status(400).json({
+        error: "Bad Request",
+        message: settingsPayload.message,
+      });
+    }
+
     const prior =
       typeof baseUpdatedAt === "string"
         ? await prisma.project.findFirst({
@@ -274,38 +475,75 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
       });
     }
 
-    const project = await prisma.project.updateMany({
-      where: {
-        id,
-        userId,
-        isDeleted: false,
-      },
-      data: {
-        name,
-        description,
-        thumbnail,
-        ...(hasConventions
-          ? {
-              designConventions:
-                conventions.value === null
-                  ? Prisma.DbNull
-                  : (conventions.value as unknown as Prisma.InputJsonValue),
-            }
-          : {}),
-      },
+    // 元数据、图层整份替换与设置 upsert 在同一事务内完成，
+    // 避免出现"项目已改名但图层还是旧集合"的半份状态
+    const updatedProject = await prisma.$transaction(async (tx) => {
+      const result = await tx.project.updateMany({
+        where: {
+          id,
+          userId,
+          isDeleted: false,
+        },
+        data: {
+          name,
+          description,
+          thumbnail,
+          ...(hasConventions
+            ? {
+                designConventions:
+                  conventions.value === null
+                    ? Prisma.DbNull
+                    : (conventions.value as unknown as Prisma.InputJsonValue),
+              }
+            : {}),
+        },
+      });
+
+      if (result.count === 0) {
+        return null;
+      }
+
+      if (layersPayload?.ok) {
+        await tx.layer.deleteMany({ where: { projectId: id } });
+        if (layersPayload.layers.length > 0) {
+          await tx.layer.createMany({
+            data: layersPayload.layers.map((layer, index) => ({
+              ...layer,
+              projectId: id,
+              displayOrder: index,
+            })),
+          });
+        }
+      }
+
+      if (settingsPayload?.ok) {
+        const settings = settingsPayload.settings as Omit<
+          Prisma.DrawingSettingsUncheckedCreateInput,
+          "projectId"
+        >;
+        await tx.drawingSettings.upsert({
+          where: { projectId: id },
+          create: { projectId: id, ...settings },
+          update: settings as Prisma.DrawingSettingsUncheckedUpdateInput,
+        });
+      }
+
+      return tx.project.findUnique({
+        where: { id },
+        include: {
+          layers: { orderBy: { displayOrder: "asc" } },
+          drawingSettings: true,
+        },
+      });
     });
 
-    if (project.count === 0) {
+    if (!updatedProject) {
       await cancelIdempotent(key);
       return res.status(404).json({
         error: "Not Found",
         message: "Project not found",
       });
     }
-
-    const updatedProject = await prisma.project.findUnique({
-      where: { id },
-    });
 
     metrics.increment("sync.project_updates");
     if (conflict) {
@@ -438,6 +676,14 @@ router.post("/:id/elements", async (req: AuthRequest, res: Response) => {
     });
   }
 
+  const parsedElements = parseElementIds(elements);
+  if (!parsedElements.ok) {
+    return res.status(400).json({
+      error: "Bad Request",
+      message: parsedElements.message,
+    });
+  }
+
   try {
     const project = await prisma.project.findFirst({
       where: {
@@ -476,40 +722,73 @@ router.post("/:id/elements", async (req: AuthRequest, res: Response) => {
     }
 
     const savedAt = new Date();
+    const incomingIds = parsedElements.ids;
 
-    await prisma.$transaction(async (tx) => {
-      await tx.element.updateMany({
+    const saveResult = await prisma.$transaction(async (tx) => {
+      const existing = await tx.element.findMany({
         where: {
           projectId: id,
+          isDeleted: false,
+          elementId: { in: incomingIds },
         },
-        data: {
-          isDeleted: true,
-        },
+        select: { id: true, elementId: true },
       });
 
+      const rowIdByElementId = new Map(
+        existing.map((row) => [row.elementId as string, row.id]),
+      );
+
+      let created = 0;
+      let updated = 0;
       for (const el of elements) {
-        await tx.element.create({
-          data: {
-            projectId: id,
-            elementType: el.type,
-            geometryData: el,
-            properties: {
-              color: el.color,
-              layer: el.layer,
-            },
+        const rowId = rowIdByElementId.get(el.id);
+        const data = {
+          elementId: el.id,
+          elementType: el.type,
+          geometryData: el,
+          properties: {
+            color: el.color,
+            layer: el.layer,
           },
-        });
+        };
+
+        if (rowId) {
+          await tx.element.update({ where: { id: rowId }, data });
+          updated += 1;
+        } else {
+          await tx.element.create({
+            data: {
+              projectId: id,
+              ...data,
+            },
+          });
+          created += 1;
+        }
       }
+
+      const stale = await tx.element.updateMany({
+        where: {
+          projectId: id,
+          isDeleted: false,
+          elementId: { notIn: incomingIds },
+        },
+        data: { isDeleted: true },
+      });
 
       // 图元写入同样推进项目版本游标，供客户端做冲突检测
       await tx.project.update({
         where: { id },
         data: { updatedAt: savedAt },
       });
+
+      return { created, updated, deleted: stale.count };
     });
 
     metrics.increment("sync.element_saves");
     metrics.increment("sync.saved_elements", elements.length);
+    metrics.increment("sync.created_elements", saveResult.created);
+    metrics.increment("sync.updated_elements", saveResult.updated);
+    metrics.increment("sync.deleted_elements", saveResult.deleted);
     if (conflict) {
       metrics.increment("sync.conflicts");
       logger.warn("Stale element write overwritten (last write wins)", {
@@ -523,6 +802,9 @@ router.post("/:id/elements", async (req: AuthRequest, res: Response) => {
     return res.json({
       message: "Elements saved successfully",
       count: elements.length,
+      created: saveResult.created,
+      updated: saveResult.updated,
+      deleted: saveResult.deleted,
       conflict,
       updatedAt: savedAt.toISOString(),
       ...(conflict ? { serverUpdatedAt: project.updatedAt.toISOString() } : {}),

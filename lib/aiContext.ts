@@ -25,6 +25,15 @@ export interface DesignContextMeta {
     blockCount?: number;
     revision?: number;
     hiddenCount?: number;
+    /** 项目内图纸清单：让模型知道还有哪些图纸，避免把跨图纸问题当成单图问题 */
+    projectDrawings?: readonly ProjectDrawingInfo[];
+}
+
+export interface ProjectDrawingInfo {
+    id?: string;
+    name: string;
+    elementCount: number;
+    units?: string;
 }
 
 export interface CanvasContextOptions {
@@ -264,6 +273,25 @@ export function summarizeCanvasContext(
         .filter(Boolean)
         .join(" · ");
     if (project) lines.push(`Project: ${project}`);
+
+    // 项目里还有其他图纸时点名它们：跨图纸问题（单位、字高、约定）只能这样被发现
+    const drawings = meta?.projectDrawings ?? [];
+    if (drawings.length > 1) {
+        const others = drawings
+            .filter((drawing) => drawing.name !== meta?.projectName)
+            .slice(0, 4)
+            .map(
+                (drawing) =>
+                    `${drawing.name} ×${drawing.elementCount}${
+                        drawing.units ? ` ${drawing.units}` : ""
+                    }`,
+            );
+        lines.push(
+            `Project drawings: ${drawings.length} total${
+                others.length > 0 ? ` — also: ${others.join("; ")}` : ""
+            }`,
+        );
+    }
 
     const order = orderedLayers(layerCounts, meta);
     lines.push(describeLayers(layerCounts, tier, meta, order));

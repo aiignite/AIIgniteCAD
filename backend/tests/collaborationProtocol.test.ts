@@ -18,8 +18,10 @@ import {
   MAX_PATCH_ELEMENTS,
   canJoinProject,
   isUuid,
+  pickPeerSocket,
   sanitizeCursor,
   sanitizePatch,
+  sanitizeStateSnapshot,
 } from "../src/lib/collaborationProtocol";
 
 const PROJECT_ID = "0f8fad5b-d9cb-469f-a165-70867728950e";
@@ -62,6 +64,59 @@ describe("isUuid", () => {
   it("区分服务端项目 id 与本地短 id", () => {
     expect(isUuid(PROJECT_ID)).toBe(true);
     expect(isUuid("abc123xyz")).toBe(false);
+  });
+});
+
+describe("sanitizeStateSnapshot", () => {
+  it("保留目标 socket 与合法图元，未截断时 truncated 为 false", () => {
+    const snapshot = sanitizeStateSnapshot({
+      targetId: "socket-1",
+      elements: [{ id: "a", type: "LINE" }],
+    });
+    expect(snapshot).toEqual({
+      targetId: "socket-1",
+      elements: [{ id: "a", type: "LINE" }],
+      truncated: false,
+    });
+  });
+
+  it("拒绝缺目标、超长目标与非法图元", () => {
+    expect(sanitizeStateSnapshot(null)).toBeNull();
+    expect(sanitizeStateSnapshot({ elements: [] })).toBeNull();
+    expect(sanitizeStateSnapshot({ targetId: "", elements: [] })).toBeNull();
+    expect(
+      sanitizeStateSnapshot({ targetId: "x".repeat(129), elements: [] }),
+    ).toBeNull();
+    expect(
+      sanitizeStateSnapshot({ targetId: "socket-1", elements: [{ type: "LINE" }] }),
+    ).toBeNull();
+    expect(
+      sanitizeStateSnapshot({ targetId: "socket-1", elements: "not-array" }),
+    ).toBeNull();
+  });
+
+  it("超限图元整包拒绝，与补丁上限一致", () => {
+    expect(
+      sanitizeStateSnapshot({
+        targetId: "socket-1",
+        elements: Array.from({ length: MAX_PATCH_ELEMENTS + 1 }, (_, i) => ({
+          id: String(i),
+          type: "LINE",
+        })),
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("pickPeerSocket", () => {
+  it("跳过请求者，返回房间内其他成员", () => {
+    expect(pickPeerSocket(["self", "peer-1"], "self")).toBe("peer-1");
+    expect(pickPeerSocket(["self", "peer-1", "peer-2"], "self")).toBe("peer-1");
+  });
+
+  it("没有其他成员或房间为空时返回 null", () => {
+    expect(pickPeerSocket(["self"], "self")).toBeNull();
+    expect(pickPeerSocket(undefined, "self")).toBeNull();
   });
 });
 

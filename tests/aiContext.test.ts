@@ -206,6 +206,36 @@ describe("上下文事实与明细分离", () => {
         expect(summary.text).toContain("有标注：否 · 块引用：0 · 隐藏图层：0 · 锁定图层：0");
     });
 
+    it("项目有多张图纸时点名其他图纸与单位", () => {
+        const summary = summarizeCanvasContext([line("a")], new Set(), {
+            tier: "standard",
+            meta: {
+                projectName: "平面图",
+                projectDrawings: [
+                    { id: "p1", name: "平面图", elementCount: 20, units: "mm" },
+                    { id: "p2", name: "立面图", elementCount: 12, units: "mm" },
+                ],
+            },
+        });
+
+        expect(summary.text).toContain("Project drawings: 2 total");
+        expect(summary.text).toContain("立面图 ×12 mm");
+        // 当前图纸不重复列在「also」里
+        expect(summary.text).not.toContain("also: 平面图");
+    });
+
+    it("只有一张图纸时不输出项目图纸行", () => {
+        const summary = summarizeCanvasContext([line("a")], new Set(), {
+            tier: "standard",
+            meta: {
+                projectName: "平面图",
+                projectDrawings: [{ id: "p1", name: "平面图", elementCount: 20 }],
+            },
+        });
+
+        expect(summary.text).not.toContain("Project drawings");
+    });
+
     it("standard 档图层截断时补隐藏 / 锁定计数", () => {
         const names = Array.from({ length: 10 }, (_, index) => `L${index}`);
         const elements = names.map((name, index) =>

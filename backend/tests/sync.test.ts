@@ -71,6 +71,7 @@ describe("同步接口幂等与冲突", () => {
       }),
     );
     prismaMock.element.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.element.findMany.mockResolvedValue([]);
     prismaMock.element.create.mockResolvedValue({ id: "element-1" });
     prismaMock.project.update.mockResolvedValue({ id: "project-1" });
   });
@@ -92,7 +93,7 @@ describe("同步接口幂等与冲突", () => {
 
     const first = await postElements()
       .set("Idempotency-Key", "idem-1")
-      .send({ elements: [{ type: "LINE" }] });
+      .send({ elements: [{ id: "el-1", type: "LINE" }] });
 
     expect(first.status).toBe(200);
     expect(first.body.count).toBe(1);
@@ -101,7 +102,7 @@ describe("同步接口幂等与冲突", () => {
 
     const second = await postElements()
       .set("Idempotency-Key", "idem-1")
-      .send({ elements: [{ type: "LINE" }] });
+      .send({ elements: [{ id: "el-1", type: "LINE" }] });
 
     expect(second.status).toBe(200);
     expect(second.body.duplicate).toBe(true);
@@ -119,7 +120,7 @@ describe("同步接口幂等与冲突", () => {
     const res = await postElements()
       .set("Idempotency-Key", "idem-2")
       .send({
-        elements: [{ type: "CIRCLE" }],
+        elements: [{ id: "el-2", type: "CIRCLE" }],
         baseUpdatedAt: "2026-10-21T00:00:00.000Z",
       });
 

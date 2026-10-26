@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import type { CADElement } from "../../types";
+import type { CADElement, DesignConventions } from "../../types";
 import type { ChatFeedback, ChatUiMessage } from "../../lib/aiChatHistory";
 import type { PlanProposal } from "../../lib/aiPlan";
 import type { DesignVariant, VariantProposal } from "../../lib/aiVariants";
@@ -16,6 +16,8 @@ interface ChatMessageItemProps {
     elements: CADElement[];
     selectedIds: ReadonlySet<string>;
     blockCatalog?: BlockCatalogEntry[];
+    /** 项目设计约定：计划预检会按它检查图层与字高 */
+    conventions?: DesignConventions | null;
     onRetry?: () => void;
     onApprovePlan?: (
         messageId: string,
@@ -46,6 +48,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
     elements,
     selectedIds,
     blockCatalog,
+    conventions,
     onRetry,
     onApprovePlan,
     onDismissPlan,
@@ -108,6 +111,10 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
                                 <PlanCard
                                     proposal={round.plan.proposal}
                                     status={round.plan.status}
+                                    elements={elements}
+                                    selectedIds={[...selectedIds]}
+                                    blockCatalog={blockCatalog}
+                                    conventions={conventions}
                                     onApprove={(proposal) =>
                                         onApprovePlan?.(
                                             message.id,

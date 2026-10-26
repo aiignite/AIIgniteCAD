@@ -97,6 +97,7 @@ export interface CADElement {
     // Spiral specific
     turns?: number; // Number of turns
     radiusIncrement?: number; // How much radius increases per turn
+    startRadius?: number; // Spiral starting radius (stored for parameter regeneration)
     // Spring specific
     coils?: number; // Number of coils
     wireRadius?: number; // Radius of the wire
@@ -269,7 +270,8 @@ export interface ProjectFile {
     elements?: CADElement[];
     blockReferences?: BlockReference[]; // 块引用
     blockDefinitions?: BlockDefinition[]; // 项目中的块定义
-    layers?: Layer[]; // 图层
+    layers?: Layer[]; // 图层（统一文档模型的日常保存字段）
+    drawingSettings?: DrawingSettings; // 绘图设置（统一文档模型的日常保存字段）
     thumbnail?: string;
     userId?: string;
     isDeleted?: boolean;
@@ -300,6 +302,7 @@ export interface ProjectVersion {
         blockReferences?: BlockReference[];
         layers?: Layer[];
         settings?: DrawingSettings;
+        designConventions?: DesignConventions | null;
     };
     elementCount?: number;
     commitMessage?: string;

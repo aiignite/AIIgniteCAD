@@ -101,6 +101,9 @@ const createApi = () => ({
                 name?: string;
                 description?: string;
                 thumbnail?: string;
+                designConventions?: unknown;
+                layers?: unknown[];
+                drawingSettings?: unknown;
                 baseUpdatedAt?: string;
             },
             _options?: { idempotencyKey?: string; baseUpdatedAt?: string },
@@ -155,6 +158,49 @@ describe("SyncService", () => {
         expect(queue).toHaveLength(0);
         expect(service.getSnapshot().pendingCount).toBe(0);
         expect(service.getSnapshot().lastSyncedAt).toBeTruthy();
+    });
+
+    it("UPDATE 队列项携带图层与绘图设置时随项目元数据一起上传", async () => {
+        const { db } = createDb([
+            makeItem({
+                data: {
+                    id: "project-1",
+                    name: "Plan",
+                    lastModified: "2026-10-21T00:00:00.000Z",
+                    elements: [{ id: "line-1", type: "LINE" }],
+                    layers: [
+                        {
+                            id: "layer-0",
+                            name: "0",
+                            color: "#e6edf3",
+                            isVisible: true,
+                            isLocked: false,
+                            lineType: "CONTINUOUS",
+                        },
+                    ],
+                    drawingSettings: {
+                        units: "cm",
+                        gridSpacing: 25,
+                        snapDistance: 5,
+                        dimScale: 1,
+                        dimPrecision: 2,
+                    },
+                },
+            }),
+        ]);
+        const api = createApi();
+        const service = new SyncService(db as any, api as any, () => online);
+
+        await service.flush();
+
+        expect(api.saveProjectElements).toHaveBeenCalledTimes(1);
+        expect(api.updateProject).toHaveBeenCalledTimes(1);
+        const [id, data] = api.updateProject.mock.calls[0];
+        expect(id).toBe("project-1");
+        expect(data.layers).toEqual([
+            expect.objectContaining({ name: "0", isVisible: true }),
+        ]);
+        expect(data.drawingSettings).toMatchObject({ units: "cm", gridSpacing: 25 });
     });
 
     it("上一轮同步进行中到达的保存请求不会被丢弃", async () => {

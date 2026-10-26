@@ -12,7 +12,6 @@ import { describe, expect, it } from "vitest";
 import CADElementRenderer from "../components/CADElementRenderer";
 import type { CADElement } from "../types";
 import { SpatialGrid } from "../lib/spatialIndex";
-import { getElementBoundingBox } from "../lib/geometry";
 import { svgRenderer } from "../renderer/svgRenderer";
 import { bufferedViewportBounds } from "../renderer/svgRenderer";
 
@@ -92,21 +91,13 @@ describe("2000 元素渲染基准", () => {
                 height: 900,
             };
             const bounds = bufferedViewportBounds(viewport);
-            const candidates = new Set(
-                grid
-                    .queryRect(bounds.minX, bounds.minY, bounds.maxX, bounds.maxY)
-                    .map((el) => el.id),
+            // 与 useCanvasInteraction 的可见元素计算保持一致：索引查询即精确裁剪
+            const visible = grid.queryVisible(
+                bounds.minX,
+                bounds.minY,
+                bounds.maxX,
+                bounds.maxY,
             );
-            const visible = elements.filter((el) => {
-                if (!candidates.has(el.id)) return false;
-                const box = getElementBoundingBox(el);
-                return (
-                    Math.max(box.minX, box.maxX) >= bounds.minX &&
-                    Math.min(box.minX, box.maxX) <= bounds.maxX &&
-                    Math.max(box.minY, box.maxY) >= bounds.minY &&
-                    Math.min(box.minY, box.maxY) <= bounds.maxY
-                );
-            });
             svgRenderer.hitTestAll(
                 { x: viewport.viewBox.x + 600, y: viewport.viewBox.y + 450 },
                 visible,
@@ -127,5 +118,72 @@ describe("2000 元素渲染基准", () => {
 
         expect(averageFrameMs).toBeLessThan(FRAME_BUDGET_MS);
         expect(estimatedFps).toBeGreaterThanOrEqual(50);
+    });
+
+    it("10000 元素平移帧预算（索引查询 + 精确裁剪）", () => {
+        const random = createRandom(20261026);
+        const elements: CADElement[] = [];
+        for (let i = 0; i < 10000; i++) {
+            if (i % 4 === 0) {
+                elements.push({
+                    id: `big-${i}`,
+                    type: "CIRCLE",
+                    center: { x: random() * 12000, y: random() * 9000 },
+                    radius: 5 + random() * 40,
+                    layer: "0",
+                    color: "#e6edf3",
+                });
+            } else {
+                const x = random() * 12000;
+                const y = random() * 9000;
+                elements.push({
+                    id: `big-${i}`,
+                    type: "LINE",
+                    start: { x, y },
+                    end: { x: x + 20 + random() * 120, y: y + 20 + random() * 120 },
+                    layer: "0",
+                    color: "#e6edf3",
+                });
+            }
+        }
+
+        const buildStart = performance.now();
+        const grid = new SpatialGrid(elements);
+        const buildMs = performance.now() - buildStart;
+
+        const frameTimes: number[] = [];
+        let visibleTotal = 0;
+        for (let frame = 0; frame < 60; frame++) {
+            const frameStart = performance.now();
+            const viewport = {
+                viewBox: { x: frame * 30, y: frame * 15, w: 1200, h: 900 },
+                width: 1200,
+                height: 900,
+            };
+            const bounds = bufferedViewportBounds(viewport);
+            const visible = grid.queryVisible(
+                bounds.minX,
+                bounds.minY,
+                bounds.maxX,
+                bounds.maxY,
+            );
+            visibleTotal += visible.length;
+            frameTimes.push(performance.now() - frameStart);
+        }
+
+        const averageFrameMs =
+            frameTimes.reduce((sum, value) => sum + value, 0) / frameTimes.length;
+        const estimatedFps = 1000 / Math.max(averageFrameMs, 0.001);
+
+        console.log(
+            `[benchmark] 10000 elements: index ${buildMs.toFixed(1)}ms, ` +
+                `pan ${averageFrameMs.toFixed(2)}ms/frame (~${estimatedFps.toFixed(0)} FPS budget), ` +
+                `avg visible ${(visibleTotal / 60).toFixed(0)}`,
+        );
+
+        // 索引构建是一次性成本，给 500ms 的宽松上限；帧预算仍按 50 FPS 约束
+        expect(buildMs).toBeLessThan(500);
+        expect(averageFrameMs).toBeLessThan(FRAME_BUDGET_MS);
+        expect(visibleTotal).toBeGreaterThan(0);
     });
 });

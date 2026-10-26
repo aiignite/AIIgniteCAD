@@ -34,12 +34,13 @@ import {
     CADElement,
     Point,
     ProjectFile,
-    ProjectVersion,
     AIActionResponse,
     DesignConventions,
+    BlockDefinition,
 } from "./types";
 import { useCanvas } from "./store/canvasStore";
 import { useApp } from "./store/appStore";
+import { useDrawingFiles } from "./hooks/useDrawingFiles";
 import { useCollaboration } from "./hooks/useCollaboration";
 import { useAlignDistribute } from "./hooks/useAlignDistribute";
 import { apiService } from "./services/apiService";
@@ -47,14 +48,18 @@ import { indexedDBService } from "./services/indexedDBService";
 import { syncService } from "./services/syncService";
 import { getCanvasStatus } from "./store/canvasStatus";
 import { telemetryService } from "./services/telemetryService";
-import { createBlock, getBlock, insertBlockReference } from "./services/blockService";
+import { createBlock, getBlock } from "./services/blockService";
 import { getExampleDrawing } from "./services/examples";
-import { parseDXF, exportToDXF } from "./services/dxfService";
-import { isDwgFile, parseDrawingFile } from "./services/drawingImport";
+import { parseDXF, exportToDXFWithReport } from "./services/dxfService";
+import { isDwgFile, parseDrawingFileWithReport } from "./services/drawingImport";
 import { createHatch } from "./services/hatchService";
 import { isEditableTarget } from "./lib/keyboard";
 import { executeCommand } from "./lib/commands/registry";
 import { buildVersionSnapshot } from "./lib/versionSnapshot";
+import {
+    createDefaultDrawingSettings,
+    createDefaultLayers,
+} from "./lib/projectDocument";
 import { summarizeElementTypes } from "./lib/versionDiff";
 import { computeAIActionOutcome } from "./lib/aiActions";
 import { planAIGhostPreview } from "./lib/aiGhost";
@@ -88,8 +93,14 @@ import {
     zoomViewportToBounds,
 } from "./store/viewport";
 import { elementClipboard } from "./store/clipboard";
+import { createBlockReference, explodeBlockReference } from "./lib/block";
+import { GROUP_ID_PREFIX } from "./lib/groups";
 import * as Transform from "./lib/transform";
 import { loadNamedViews, saveNamedView as persistNamedView } from "./services/namedViews";
+import { loadDrawingElements } from "./services/drawingLoader";
+import { buildXrefInsert } from "./lib/crossDrawing";
+import { getElementBoundingBox } from "./lib/geometry";
+import type { DrawingFacts } from "./lib/projectConsistency";
 import type { TurnMeta } from "./hooks/useAIChat";
 import {
     generateGear,
@@ -99,13 +110,6 @@ import {
     generateSpring,
     generateInvolute,
 } from "./services/advancedShapesService";
-
-/** 空图纸复用同一引用，避免加载/新建后立即触发一次无意义的自动保存 */
-const EMPTY_ELEMENTS: CADElement[] = [];
-
-/** 每 N 次提交自动保存一个版本；失败后最多每 60 秒重试一次 */
-const AUTO_VERSION_INTERVAL = 20;
-const AUTO_VERSION_RETRY_MS = 60_000;
 
 /** 超过该数量的删除需要二次确认，避免误删整片图形 */
 const BULK_DELETE_THRESHOLD = 5;
@@ -130,15 +134,6 @@ interface AIPreviewState {
     turn?: TurnMeta;
 }
 
-/** 兼容旧工程数据：选中状态已迁移到独立 selectedIds，图元上不再保留 selected 字段 */
-const stripLegacySelection = (elements: CADElement[]): CADElement[] =>
-    elements.map((element) => {
-        if (!("selected" in element)) return element;
-        const clean = { ...element };
-        delete (clean as { selected?: boolean }).selected;
-        return clean;
-    });
-
 function App() {
     const { t, locale } = useI18n();
     const startupRef = useRef(false);
@@ -148,9 +143,6 @@ function App() {
     /** handleCommand 每次渲染重建；keydown 闭包经 ref 取最新（声明在其后，effect 回填） */
     const handleCommandRef = useRef<(cmd: string) => void>(() => undefined);
     const propertyCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const lastSavedRef = useRef<{ fileId: string; elements: CADElement[] } | null>(null);
-    const autoVersionBaselineRef = useRef<{ projectId: string; revision: number } | null>(null);
-    const autoVersionAttemptRef = useRef(0);
     const aiFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [authMode, setAuthMode] = useState<"login" | "register">("login");
     const [showWelcomeModal, setShowWelcomeModal] = useState(false);
@@ -164,20 +156,15 @@ function App() {
         clearSelection,
         addElement,
         updateElement,
-        bulkUpdate,
-        setElements,
         commitAction,
         commitCurrent,
         getElements,
         setActiveTool,
-        setDrawingSettings,
         undo,
         redo,
-        loadHistory,
         resetCanvas,
         addLayer,
         setCurrentLayer,
-        loadLayerState,
         dispatch: canvasDispatch,
     } = useCanvas();
     const { elements, activeTool, drawingSettings, snapMode, gridMode, orthoMode, polarMode } =
@@ -215,7 +202,6 @@ function App() {
         setCurrentUser,
         setFiles,
         setActiveFile,
-        updateFile,
         setSidePanelOpen,
         setLoading,
         showNotification,
@@ -273,6 +259,23 @@ function App() {
         () => countHiddenObjects(elements, hiddenObjectIds),
         [elements, hiddenObjectIds],
     );
+    /**
+     * 项目内图纸的清单级事实：跨图纸一致性检查与 AI 的项目视图共用。
+     * 当前图纸用实时图元数，其余用列表里的计数（不为此逐张加载图纸）。
+     */
+    const drawingFacts = useMemo<DrawingFacts[]>(
+        () =>
+            files.map((file) => ({
+                id: file.id,
+                name: file.name,
+                elementCount:
+                    file.id === activeFile?.id
+                        ? elements.length
+                        : (file.elementCount ?? file.elements?.length ?? 0),
+                conventions: file.designConventions ?? null,
+            })),
+        [files, activeFile?.id, elements.length],
+    );
     /** 右键上下文菜单：菜单项在打开瞬间按当前选择集生成 */
     const [contextMenu, setContextMenu] = useState<{
         x: number;
@@ -324,6 +327,33 @@ function App() {
         }
     }, [notification, clearNotification]);
 
+    /** 立即提交尚未落盘的属性编辑（撤销/重做/手动保存前调用） */
+    const flushPropertyCommit = useCallback(() => {
+        if (!propertyCommitTimerRef.current) return;
+        clearTimeout(propertyCommitTimerRef.current);
+        propertyCommitTimerRef.current = null;
+        commitCurrent();
+    }, [commitCurrent]);
+
+    // 图纸文件管理与文档持久化：统一 ProjectDocument（图元 + 图层 + 设置 + 约定）
+    const {
+        handleSave,
+        activateNewFile,
+        handleSaveVersion,
+        handleOpenVersionHistory,
+        handleRestoreVersion,
+        handleLoadFile,
+        handleCreateFile,
+        handleRenameFile,
+        handleDeleteFile,
+        noteProjectRemapped,
+    } = useDrawingFiles({
+        isLoggedIn,
+        flushPropertyCommit,
+        setHiddenIds,
+        onOpenVersionHistory: () => setShowVersionHistory(true),
+    });
+
     // 同步事件：冲突提示与离线新建后的项目 id 迁移
     useEffect(() => {
         return syncService.onEvent((event) => {
@@ -354,14 +384,9 @@ function App() {
                     chatKey: activeFile.chatKey ?? event.oldId,
                 });
             }
-            if (lastSavedRef.current?.fileId === event.oldId) {
-                lastSavedRef.current = {
-                    ...lastSavedRef.current,
-                    fileId: event.newId,
-                };
-            }
+            noteProjectRemapped(event.oldId, event.newId);
         });
-    }, [files, activeFile, showNotification, setFiles, setActiveFile, t]);
+    }, [files, activeFile, showNotification, setFiles, setActiveFile, t, noteProjectRemapped]);
 
     // 前端遥测：全局错误由 service 监听，这里同步上报积压状态
     useEffect(() => {
@@ -385,14 +410,6 @@ function App() {
         [updateElement, commitCurrent],
     );
 
-    /** 立即提交尚未落盘的属性编辑（撤销/重做/手动保存前调用） */
-    const flushPropertyCommit = useCallback(() => {
-        if (!propertyCommitTimerRef.current) return;
-        clearTimeout(propertyCommitTimerRef.current);
-        propertyCommitTimerRef.current = null;
-        commitCurrent();
-    }, [commitCurrent]);
-
     const handleUndo = useCallback(() => {
         flushPropertyCommit();
         undo();
@@ -403,6 +420,49 @@ function App() {
         redo();
     }, [flushPropertyCommit, redo]);
 
+    /**
+     * 插入块（符号展开复制）：
+     * 把块定义展开为普通图元并共享 groupId，整体可移动、可解散。
+     * 语义说明：这是"展开复制"而不是持续关联的块引用——编辑块定义不会
+     * 传播到已插入的实例；需要新形态时应重新插入。
+     */
+    const insertBlockElements = useCallback(
+        (blockDef: BlockDefinition, position: Point) => {
+            // 定义内图元已相对基点归一化，插入点减去基点得到平移量
+            const reference = createBlockReference(
+                blockDef.id,
+                { x: position.x - blockDef.basePoint.x, y: position.y - blockDef.basePoint.y },
+                canvasState.currentLayer,
+            );
+            const expanded = explodeBlockReference(reference, blockDef);
+            if (expanded.length === 0) {
+                showNotification(t("notify.blockInsertFailed"));
+                return 0;
+            }
+            const groupId = `${GROUP_ID_PREFIX}${Math.random().toString(36).slice(2, 9)}`;
+            const inserted = expanded.map((element) => ({ ...element, groupId }));
+            commitAction([...getElements(), ...inserted]);
+            setSelection(inserted.map((element) => element.id));
+            showNotification(
+                t("notify.blockInserted", { name: blockDef.name, count: inserted.length }),
+            );
+            return inserted.length;
+        },
+        [canvasState.currentLayer, commitAction, getElements, setSelection, showNotification, t],
+    );
+
+    /** 面板按钮插入：展开到当前视口中心 */
+    const handleInsertBlock = useCallback(
+        (blockDef: BlockDefinition) => {
+            const viewBox = getViewBox();
+            insertBlockElements(blockDef, {
+                x: viewBox.x + viewBox.w / 2,
+                y: viewBox.y + viewBox.h / 2,
+            });
+        },
+        [insertBlockElements],
+    );
+
     const handleBlockDrop = useCallback(
         async (blockId: string, position: Point) => {
             try {
@@ -410,38 +470,9 @@ function App() {
                 const blockDef = await getBlock(blockId);
                 if (!blockDef) {
                     showNotification(t("notify.blockNotFound", { name: blockId }));
-                    setLoading(false);
                     return;
                 }
-
-                const clones = blockDef.elements.map((el) => {
-                    const clone = JSON.parse(JSON.stringify(el));
-                    clone.id = Math.random().toString(36).substr(2, 9);
-                    const dx = position.x - blockDef.basePoint.x;
-                    const dy = position.y - blockDef.basePoint.y;
-                    if (clone.start) {
-                        clone.start.x += dx;
-                        clone.start.y += dy;
-                    }
-                    if (clone.end) {
-                        clone.end.x += dx;
-                        clone.end.y += dy;
-                    }
-                    if (clone.center) {
-                        clone.center.x += dx;
-                        clone.center.y += dy;
-                    }
-                    if (clone.points) {
-                        clone.points = clone.points.map((p: Point) => ({
-                            x: p.x + dx,
-                            y: p.y + dy,
-                        }));
-                    }
-                    return clone;
-                });
-                commitAction([...elements, ...clones]);
-                setSelection(clones.map((el: CADElement) => el.id));
-                showNotification(t("notify.blockInserted", { name: blockDef.name }));
+                insertBlockElements(blockDef, position);
             } catch (e: any) {
                 console.error(e);
                 showNotification(t("notify.blockInsertFailed"));
@@ -449,7 +480,67 @@ function App() {
                 setLoading(false);
             }
         },
-        [elements, commitAction, setSelection, setLoading, showNotification, t],
+        [getBlock, insertBlockElements, setLoading, showNotification, t],
+    );
+
+    /**
+     * 跨图纸快照插入：把另一张图纸的图元一次性复制进当前图纸。
+     * 与块插入同一取舍（展开复制 + 共享 groupId），不做持续引用，
+     * 因此不会出现外部引用丢失、循环引用或版本漂移。
+     */
+    const handleInsertDrawingSnapshot = useCallback(
+        async (file: ProjectFile) => {
+            if (!activeFile || file.id === activeFile.id) return;
+            try {
+                setLoading(true);
+                const sourceElements = await loadDrawingElements(file.id);
+                if (!sourceElements) {
+                    showNotification(t("notify.xrefLoadFailed", { name: file.name }));
+                    return;
+                }
+                const current = getElements();
+                // 目标点放在当前内容右侧、纵向对齐左下角；空图从原点开始
+                let target: Point = { x: 0, y: 0 };
+                if (current.length > 0) {
+                    let minY = Infinity;
+                    let maxX = -Infinity;
+                    for (const element of current) {
+                        const box = getElementBoundingBox(element);
+                        minY = Math.min(minY, box.minY, box.maxY);
+                        maxX = Math.max(maxX, box.minX, box.maxX);
+                    }
+                    if (Number.isFinite(minY) && Number.isFinite(maxX)) {
+                        target = { x: maxX + 50, y: minY };
+                    }
+                }
+                const insert = buildXrefInsert(
+                    { id: file.id, name: file.name, elements: sourceElements },
+                    { target },
+                );
+                if (insert.elements.length === 0) {
+                    showNotification(t("notify.xrefEmpty", { name: file.name }));
+                    return;
+                }
+                commitAction([...current, ...insert.elements]);
+                setSelection(insert.selection);
+                const notes = [
+                    t("notify.xrefInserted", { name: file.name, count: insert.elements.length }),
+                ];
+                if (insert.skipped > 0) {
+                    notes.push(t("notify.xrefSkipped", { count: insert.skipped }));
+                }
+                if (insert.truncated > 0) {
+                    notes.push(t("notify.xrefTruncated", { count: insert.truncated }));
+                }
+                showNotification(notes.join(" · "));
+            } catch (error) {
+                console.error(error);
+                showNotification(t("notify.xrefLoadFailed", { name: file.name }));
+            } finally {
+                setLoading(false);
+            }
+        },
+        [activeFile, commitAction, getElements, setLoading, setSelection, showNotification, t],
     );
 
     // Load user and projects on mount（放在 loadUserAndProjects 定义之后，避免 TDZ 访问）
@@ -464,15 +555,36 @@ function App() {
             setLoading(true);
             const userData = await apiService.getCurrentUser();
             setCurrentUser(userData.user);
+            await indexedDBService.saveUser({
+                ...userData.user,
+                updatedAt: userData.user.updatedAt ?? userData.user.createdAt,
+            }).catch((error) => {
+                console.error("Failed to cache user:", error);
+            });
             const projectsData = await apiService.getProjects();
             setFiles(projectsData.projects);
             setLoggedIn(true);
             await syncService.refreshStatus();
             syncService.requestFlush();
-        } catch (error) {
-            console.error("Failed to load user data:", error);
-            apiService.clearToken();
-            setLoggedIn(false);
+        } catch (error: any) {
+            const status = typeof error?.status === "number" ? error.status : undefined;
+            if (status === 401 || status === 404) {
+                console.error("Failed to load user data:", error);
+                apiService.clearToken();
+                setLoggedIn(false);
+                return;
+            }
+
+            // 网络或服务端故障不应把有效登录态判成失效：保留 token，进入本地图纸模式
+            console.error("Failed to load user data; using local projects:", error);
+            const [localProjects, localUser] = await Promise.all([
+                indexedDBService.getAllProjects(),
+                indexedDBService.getCurrentUser(),
+            ]);
+            setFiles(localProjects);
+            if (localUser) setCurrentUser(localUser);
+            setLoggedIn(true);
+            showNotification(t("notify.offlineProjectsLoaded"));
         } finally {
             setLoading(false);
         }
@@ -547,16 +659,28 @@ function App() {
         setSettingsSection(section);
     }, []);
 
-    /** 把当前图纸导出为 DXF 文件 */
+    /** 把当前图纸导出为 DXF 文件（坐标按图纸单位换算，$INSUNITS 同步声明） */
     const handleExportDXF = useCallback(() => {
-        const blob = new Blob([exportToDXF(getElements())], { type: "application/dxf" });
+        const { dxf, report } = exportToDXFWithReport(getElements(), {
+            units: canvasState.drawingSettings.units,
+        });
+        const blob = new Blob([dxf], { type: "application/dxf" });
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
         anchor.href = url;
         anchor.download = `drawing-${Date.now()}.dxf`;
         anchor.click();
         URL.revokeObjectURL(url);
-    }, [getElements]);
+        const skippedCount = report.skipped.reduce((sum, entry) => sum + entry.count, 0);
+        if (skippedCount > 0) {
+            showNotification(
+                t("notify.dxfExportSkipped", {
+                    count: skippedCount,
+                    types: report.skipped.map((entry) => entry.type).join(", "),
+                }),
+            );
+        }
+    }, [getElements, canvasState.drawingSettings.units, showNotification, t]);
 
     /** F3 / F7 / F8 / F10 分别切换捕捉、栅格、正交与极轴（沿用 AutoCAD 键位） */
     const toggleCanvasMode = useCallback(
@@ -1419,35 +1543,6 @@ function App() {
         setActiveTool(ToolType.SELECT);
     };
 
-    // File Management
-    /** 持久化图纸快照；自动保存与手动保存共用，不触发通知或 UI 状态更新 */
-    const persistFile = useCallback(async (file: ProjectFile, snapshot: CADElement[]) => {
-        const updatedFile = {
-            ...file,
-            elements: snapshot,
-            lastModified: new Date().toISOString(),
-            elementCount: snapshot.length,
-        };
-        await indexedDBService.saveProject(updatedFile);
-        await indexedDBService.saveElements(snapshot, file.id);
-        syncService.requestFlush();
-        lastSavedRef.current = { fileId: file.id, elements: snapshot };
-        return updatedFile;
-    }, []);
-
-    const handleSave = useCallback(async () => {
-        if (!activeFile) return;
-        flushPropertyCommit();
-        telemetryService.recordAction("save", { fileId: activeFile.id });
-        try {
-            const updatedFile = await persistFile(activeFile, elements);
-            updateFile(updatedFile);
-            showNotification(t("notify.saved"));
-        } catch (error: any) {
-            showNotification(t("notify.saveFailed", { message: error.message }));
-        }
-    }, [activeFile, elements, flushPropertyCommit, persistFile, updateFile, showNotification, t]);
-
     // handleCommand 每次渲染重建；keydown 闭包经 ref 取最新
     useEffect(() => {
         handleCommandRef.current = handleCommand;
@@ -1605,284 +1700,8 @@ function App() {
         t,
     ]);
 
-    /** 手动保存一个版本；AI 的 save_version 工具复用同一快照结构 */
-    const handleSaveVersion = useCallback(async () => {
-        if (!activeFile) {
-            showNotification(t("notify.openDrawingFirst"));
-            return;
-        }
-        if (!isLoggedIn) {
-            showNotification(t("notify.signInForVersions"));
-            return;
-        }
-        const snapshot = buildVersionSnapshot(
-            getElements(),
-            {
-                layerOrder: canvasState.layerOrder,
-                layerColors: canvasState.layerColors,
-                hiddenLayers: canvasState.hiddenLayers,
-                lockedLayers: canvasState.lockedLayers,
-            },
-            canvasState.drawingSettings,
-        );
-        try {
-            const result = await apiService.createProjectVersion(
-                activeFile.id,
-                snapshot,
-                `Manual · ${new Date().toLocaleString()}`,
-            );
-            showNotification(t("notify.versionSaved", { version: result.version.versionNumber }));
-        } catch (error) {
-            showNotification(
-                t("notify.versionSaveFailed", {
-                    message: error instanceof Error ? error.message : String(error),
-                }),
-            );
-        }
-    }, [
-        activeFile,
-        isLoggedIn,
-        canvasState.layerOrder,
-        canvasState.layerColors,
-        canvasState.hiddenLayers,
-        canvasState.lockedLayers,
-        canvasState.drawingSettings,
-        getElements,
-        showNotification,
-        t,
-    ]);
-
-    const handleOpenVersionHistory = useCallback(() => {
-        if (!activeFile) {
-            showNotification(t("notify.openDrawingFirst"));
-            return;
-        }
-        if (!isLoggedIn) {
-            showNotification(t("notify.signInForVersions"));
-            return;
-        }
-        setShowVersionHistory(true);
-    }, [activeFile, isLoggedIn, showNotification, t]);
-
-    /**
-     * 恢复版本：图元通过 commitAction 写入撤销历史，图层与设置同步替换。
-     * 随后立即持久化，避免自动保存延迟窗口内刷新丢失恢复结果。
-     */
-    const handleRestoreVersion = useCallback(
-        (snapshot: ProjectVersion["snapshotData"]) => {
-            flushPropertyCommit();
-            const restoredElements = snapshot.elements ?? [];
-            commitAction(restoredElements);
-
-            const layers = snapshot.layers ?? [];
-            if (layers.length > 0) {
-                loadLayerState({
-                    layerOrder: layers.map((layer) => layer.name),
-                    layerColors: Object.fromEntries(
-                        layers.map((layer) => [layer.name, layer.color]),
-                    ),
-                    hiddenLayers: layers
-                        .filter((layer) => !layer.isVisible)
-                        .map((layer) => layer.name),
-                    lockedLayers: layers
-                        .filter((layer) => layer.isLocked)
-                        .map((layer) => layer.name),
-                });
-            }
-            if (snapshot.settings) setDrawingSettings(snapshot.settings);
-
-            showNotification(t("notify.restored", { count: restoredElements.length }));
-
-            if (activeFile) {
-                void persistFile(activeFile, restoredElements)
-                    .then(updateFile)
-                    .catch((error) => {
-                        console.error("Restore save failed", error);
-                    });
-            }
-        },
-        [
-            flushPropertyCommit,
-            commitAction,
-            loadLayerState,
-            setDrawingSettings,
-            showNotification,
-            activeFile,
-            persistFile,
-            updateFile,
-        ],
-    );
-
-    // Auto-save：仅在图形内容真正变化后触发，选择/工具等瞬态状态不会引起写盘
-    useEffect(() => {
-        if (!activeFile) return;
-        const saved = lastSavedRef.current;
-        if (saved && saved.fileId === activeFile.id && saved.elements === elements) return;
-        const timer = setTimeout(async () => {
-            try {
-                await persistFile(activeFile, elements);
-            } catch (e) {
-                console.error("Auto-save failed", e);
-            }
-        }, 3000);
-        return () => clearTimeout(timer);
-    }, [elements, activeFile, persistFile]);
-
-    // 自动版本：按提交次数触发，与自动保存解耦，避免每次写盘都产生版本
-    useEffect(() => {
-        if (!activeFile || !isLoggedIn) {
-            autoVersionBaselineRef.current = null;
-            return;
-        }
-
-        const baseline = autoVersionBaselineRef.current;
-        if (!baseline || baseline.projectId !== activeFile.id) {
-            autoVersionBaselineRef.current = {
-                projectId: activeFile.id,
-                revision: canvasState.revision,
-            };
-            return;
-        }
-        if (canvasState.revision - baseline.revision < AUTO_VERSION_INTERVAL) return;
-
-        const now = Date.now();
-        if (now - autoVersionAttemptRef.current < AUTO_VERSION_RETRY_MS) return;
-        autoVersionAttemptRef.current = now;
-
-        const revision = canvasState.revision;
-        const snapshot = buildVersionSnapshot(
-            getElements(),
-            {
-                layerOrder: canvasState.layerOrder,
-                layerColors: canvasState.layerColors,
-                hiddenLayers: canvasState.hiddenLayers,
-                lockedLayers: canvasState.lockedLayers,
-            },
-            canvasState.drawingSettings,
-        );
-
-        void apiService
-            .createProjectVersion(activeFile.id, snapshot, `Auto · ${revision} edits`)
-            .then((result) => {
-                if (autoVersionBaselineRef.current?.projectId !== activeFile.id) return;
-                autoVersionBaselineRef.current = { projectId: activeFile.id, revision };
-                showNotification(
-                    t("notify.autoVersionSaved", { version: result.version.versionNumber }),
-                );
-            })
-            .catch(() => {
-                // 离线或服务不可用时保留基线，后续提交按退避重试
-            });
-    }, [
-        activeFile,
-        isLoggedIn,
-        canvasState.revision,
-        canvasState.layerOrder,
-        canvasState.layerColors,
-        canvasState.hiddenLayers,
-        canvasState.lockedLayers,
-        canvasState.drawingSettings,
-        getElements,
-        showNotification,
-        t,
-    ]);
-
-    const handleLoadFile = async (file: ProjectFile) => {
-        if (activeFile && activeFile.id === file.id) return;
-        try {
-            if (activeFile && elements.length > 0) {
-                await persistFile(activeFile, elements);
-            }
-            let loadedElements: CADElement[] = [];
-            let loadedConventions = file.designConventions ?? null;
-            if (apiService.isAuthenticated()) {
-                await apiService.openProject(file.id);
-                const projectData = await apiService.getProject(file.id);
-                void syncService.setServerCursor(file.id, projectData.project.updatedAt);
-                loadedElements =
-                    (projectData.project.elements || []).map((el: any) => ({
-                        ...el.geometryData,
-                    })) || [];
-                loadedConventions =
-                    (projectData.project.designConventions as ProjectFile["designConventions"]) ??
-                    loadedConventions;
-            } else {
-                loadedElements = await indexedDBService.getElementsByProject(file.id);
-            }
-            loadedElements = stripLegacySelection(loadedElements);
-            setElements(loadedElements);
-            loadHistory([loadedElements], 0);
-            setHiddenIds([]);
-            setActiveFile({ ...file, designConventions: loadedConventions });
-            lastSavedRef.current = { fileId: file.id, elements: loadedElements };
-            showNotification(t("notify.fileLoaded", { name: file.name }));
-        } catch (error: any) {
-            showNotification(error.message || t("notify.fileLoadFailed"));
-        }
-    };
-
-    const handleCreateFile = async (name: string) => {
-        try {
-            setLoading(true);
-            const newFile: ProjectFile = {
-                id: Math.random().toString(36).substr(2, 9),
-                name,
-                lastModified: new Date().toISOString(),
-                elements: [],
-                elementCount: 0,
-            };
-            await indexedDBService.saveNewProject(newFile);
-            setFiles([...files, newFile]);
-            setActiveFile(newFile);
-            setElements(EMPTY_ELEMENTS);
-            loadHistory([EMPTY_ELEMENTS], 0);
-            setHiddenIds([]);
-            lastSavedRef.current = { fileId: newFile.id, elements: EMPTY_ELEMENTS };
-            syncService.requestFlush();
-            showNotification(t("notify.fileCreated", { name }));
-        } catch (error: any) {
-            showNotification(error.message || t("notify.fileCreateFailed"));
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleRenameFile = async (id: string, newName: string) => {
-        try {
-            const project = await indexedDBService.getProject(id);
-            if (project) {
-                await indexedDBService.saveProject({ ...project, name: newName });
-                syncService.requestFlush();
-            }
-            const updatedFiles = files.map((f: ProjectFile) =>
-                f.id === id ? { ...f, name: newName } : f,
-            );
-            setFiles(updatedFiles);
-            if (activeFile?.id === id) {
-                setActiveFile({ ...activeFile, name: newName });
-            }
-            showNotification(t("notify.fileRenamed", { name: newName }));
-        } catch (error: any) {
-            showNotification(error.message || t("notify.fileRenameFailed"));
-        }
-    };
-
-    const handleDeleteFile = async (id: string) => {
-        try {
-            await indexedDBService.deleteProject(id);
-            syncService.requestFlush();
-            setFiles(files.filter((f: ProjectFile) => f.id !== id));
-            if (activeFile?.id === id) {
-                setActiveFile(null);
-                setElements([]);
-                loadHistory([[]], 0);
-                setHiddenIds([]);
-            }
-            showNotification(t("notify.fileDeleted"));
-        } catch (error: any) {
-            showNotification(error.message || t("notify.fileDeleteFailed"));
-        }
-    };
+    // 图纸文件管理（保存 / 版本 / 加载 / 新建 / 自动保存）已抽至 useDrawingFiles，
+    // 统一基于 ProjectDocument 持久化图元、图层、绘图设置与设计约定
 
     const handleImport = (importedElements: CADElement[]) => {
         commitAction(importedElements);
@@ -2077,7 +1896,7 @@ function App() {
 
     /**
      * 打开内置示例：解析 DXF 后作为新文件落库并激活，
-     * 与导入共用同一套 IndexedDB + 同步流程。
+     * 与新建共用同一套 IndexedDB + 文档快照 + 同步流程。
      */
     const handleOpenExample = async (exampleId: string) => {
         const example = getExampleDrawing(exampleId);
@@ -2091,15 +1910,10 @@ function App() {
                 lastModified: new Date().toISOString(),
                 elements,
                 elementCount: elements.length,
+                layers: createDefaultLayers(),
+                drawingSettings: createDefaultDrawingSettings(),
             };
-            await indexedDBService.saveNewProject(newFile);
-            setFiles([...files, newFile]);
-            setActiveFile(newFile);
-            setElements(elements);
-            loadHistory([elements], 0);
-            setHiddenIds([]);
-            lastSavedRef.current = { fileId: newFile.id, elements };
-            syncService.requestFlush();
+            await activateNewFile(newFile);
             showNotification(t("notify.exampleOpened", { name: example.name }));
         } catch (error) {
             showNotification(
@@ -2119,7 +1933,7 @@ function App() {
 
         setIsImporting(true);
         try {
-            const imported = await parseDrawingFile(file);
+            const { elements: imported, report } = await parseDrawingFileWithReport(file);
             if (imported.length === 0) {
                 showNotification(
                     isDwgFile(file.name) ? t("notify.dwgNoElements") : t("notify.dxfNoElements"),
@@ -2128,6 +1942,16 @@ function App() {
             }
             handleImport(imported);
             showNotification(t("notify.imported", { name: file.name, count: imported.length }));
+            if (report.unitScale !== 1) {
+                showNotification(t("notify.dxfUnitsConverted"));
+            }
+            if (report.unsupported.length > 0) {
+                showNotification(
+                    t("notify.dxfUnsupportedSkipped", {
+                        types: report.unsupported.map((entry) => entry.type).join(", "),
+                    }),
+                );
+            }
         } catch (error) {
             showNotification(error instanceof Error ? error.message : t("notify.importFailed"));
         } finally {
@@ -2323,11 +2147,13 @@ function App() {
                     onOpenSettings={openSettings}
                     onOpenReview={() => setShowReview(true)}
                     onOpenDrawings={() => setShowDrawings(true)}
+                    onInsertBlock={handleInsertBlock}
                     currentUser={currentUser}
                 />
                 <Canvas
                     onRequestTextEntry={handleRequestTextEntry}
                     onRequestAdvancedShape={handleRequestAdvancedShape}
+                    onRequestHatch={handleRequestHatch}
                     onNotification={showNotification}
                     onBlockDrop={handleBlockDrop}
                     aiPreview={aiPreview}
@@ -2353,6 +2179,7 @@ function App() {
                     selectedIds={selectedIds}
                     units={drawingSettings.units}
                     conventions={activeFile?.designConventions ?? null}
+                    projectDrawings={drawingFacts}
                     projectName={activeFile?.name}
                     blockCount={activeFile?.blockReferences?.length ?? 0}
                     hiddenObjectCount={hiddenIds.length}
@@ -2383,6 +2210,8 @@ function App() {
                     <DrawingReviewPanel
                         elements={elements}
                         conventions={activeFile?.designConventions ?? null}
+                        drawings={drawingFacts}
+                        activeDrawingId={activeFile?.id}
                         onLocate={handleLocateReviewIssue}
                         onAskAI={handleAskAIFix}
                     />
@@ -2407,6 +2236,10 @@ function App() {
                         onCreateFile={(name) => void handleCreateFile(name)}
                         onRenameFile={(id, name) => void handleRenameFile(id, name)}
                         onDeleteFile={(id) => void handleDeleteFile(id)}
+                        onInsertIntoActive={(file) => {
+                            setShowDrawings(false);
+                            void handleInsertDrawingSnapshot(file);
+                        }}
                     />
                 </FullScreenShell>
             )}

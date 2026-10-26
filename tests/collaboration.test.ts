@@ -2,15 +2,20 @@
  * collaboration.test.ts — 协作差集与补丁合并的单元测试
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { collaborationSocketPath } from "../services/collaborationService";
 import {
     MAX_PATCH_ELEMENTS,
+    MAX_STATE_ELEMENTS,
     applyElementPatches,
+    applyElementSnapshot,
+    broadcastPendingChanges,
+    capElementSnapshot,
     diffElementPatches,
     isEmptyPatch,
     isCollaborationProjectId,
     parseCursor,
+    parseElementList,
     parseElementPatch,
 } from "../lib/collaboration";
 import {
@@ -124,6 +129,92 @@ describe("parseCursor / isCollaborationProjectId", () => {
         expect(isCollaborationProjectId("0f8fad5b-d9cb-469f-a165-70867728950e")).toBe(true);
         expect(isCollaborationProjectId("abc123xyz")).toBe(false);
         expect(isCollaborationProjectId(null)).toBe(false);
+    });
+});
+
+describe("房间快照对账", () => {
+    it("超限快照截断并标记", () => {
+        const elements = Array.from({ length: MAX_STATE_ELEMENTS + 1 }, (_, i) =>
+            line(`el-${i}`, i),
+        );
+        const snapshot = capElementSnapshot(elements);
+
+        expect(snapshot.elements).toHaveLength(MAX_STATE_ELEMENTS);
+        expect(snapshot.truncated).toBe(true);
+        expect(elements).toHaveLength(MAX_STATE_ELEMENTS + 1);
+    });
+
+    it("未超限时原样返回但不共享数组引用", () => {
+        const elements = [line("a", 0)];
+        const snapshot = capElementSnapshot(elements);
+
+        expect(snapshot.truncated).toBe(false);
+        expect(snapshot.elements).toEqual(elements);
+        expect(snapshot.elements).not.toBe(elements);
+    });
+
+    it("快照合并只覆盖 / 追加，不删除本地独有图元", () => {
+        const merged = applyElementSnapshot(
+            [line("local", 1), line("shared", 2)],
+            [line("shared", 99), line("remote", 3)],
+        );
+
+        expect(merged.map((el) => el.id)).toEqual(["local", "shared", "remote"]);
+        expect((merged[1] as { start: { x: number } }).start.x).toBe(99);
+    });
+
+    it("parseElementList 拒绝非数组、缺字段与超限", () => {
+        expect(parseElementList([{ id: "a", type: "LINE" }])).toHaveLength(1);
+        expect(parseElementList(null)).toBeNull();
+        expect(parseElementList({})).toBeNull();
+        expect(parseElementList([{ type: "LINE" }])).toBeNull();
+        expect(
+            parseElementList(
+                Array.from({ length: MAX_STATE_ELEMENTS + 1 }, (_, i) => ({
+                    id: String(i),
+                    type: "LINE",
+                })),
+            ),
+        ).toBeNull();
+    });
+});
+
+describe("broadcastPendingChanges", () => {
+    it("发送成功时推进基线", () => {
+        const baseline = [line("a", 0)];
+        const next = [line("a", 5)];
+        const send = vi.fn(() => true);
+
+        const updated = broadcastPendingChanges(baseline, next, send);
+
+        expect(send).toHaveBeenCalledTimes(1);
+        expect(updated).toBe(next);
+    });
+
+    it("发送失败时保持旧基线，重连后可补发同一批修改", () => {
+        const baseline = [line("a", 0)];
+        const next = [line("a", 5)];
+        const send = vi.fn(() => false);
+
+        const updated = broadcastPendingChanges(baseline, next, send);
+
+        expect(updated).toBe(baseline);
+        // 再次 flush 仍然会带上这次修改
+        const retry = vi.fn(() => true);
+        expect(broadcastPendingChanges(updated, next, retry)).toBe(next);
+        expect(retry).toHaveBeenCalledWith(
+            expect.objectContaining({ upserts: [next[0]], deletes: [] }),
+        );
+    });
+
+    it("没有差异时不发包，直接推进基线", () => {
+        const elements = [line("a", 0)];
+        const send = vi.fn(() => true);
+
+        const updated = broadcastPendingChanges(elements, elements, send);
+
+        expect(send).not.toHaveBeenCalled();
+        expect(updated).toBe(elements);
     });
 });
 

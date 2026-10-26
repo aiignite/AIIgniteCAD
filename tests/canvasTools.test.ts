@@ -54,6 +54,7 @@ function createHarness(options: HarnessOptions = {}) {
     const commits: CADElement[][] = [];
     const textRequests: Point[] = [];
     const advancedRequests: Array<{ tool: ToolType; point: Point }> = [];
+    const hatchRequests: number[] = [];
     const toolSwitches: ToolType[] = [];
     /** 按下时命中的图元；跨按下 / 松开保留 */
     const pressTargetRef: { current: CADElement | undefined } = { current: undefined };
@@ -139,6 +140,7 @@ function createHarness(options: HarnessOptions = {}) {
         onNotification: message => notifications.push(message),
         onRequestTextEntry: position => textRequests.push(position),
         onRequestAdvancedShape: (tool, position) => advancedRequests.push({ tool, point: position }),
+        onRequestHatch: () => hatchRequests.push(1),
     };
 
     const use = (tool: ToolType) => {
@@ -178,6 +180,7 @@ function createHarness(options: HarnessOptions = {}) {
         commits,
         textRequests,
         advancedRequests,
+        hatchRequests,
         toolSwitches,
         use,
         moveTo,
@@ -736,12 +739,24 @@ describe("占位与弹窗工具", () => {
         expect(h.advancedRequests).toEqual([{ tool: ToolType.GEAR, point: { x: 5, y: 6 } }]);
     });
 
-    it("HATCH 给出待后端实现的提示", () => {
+    it("HATCH 请求打开填充对话框", () => {
         const h = createHarness();
         h.use(ToolType.HATCH);
         h.click(0, 0);
 
-        expect(h.notifications[0]).toContain("requires backend implementation");
+        expect(h.hatchRequests).toHaveLength(1);
+        expect(h.notifications).toHaveLength(0);
+    });
+
+    it("HATCH 未接线对话框时给出明确提示", () => {
+        const h = createHarness();
+        h.use(ToolType.HATCH);
+        // 摘掉对话框回调，模拟未接线场景
+        (h.ctx as { onRequestHatch?: () => void }).onRequestHatch = undefined;
+        h.click(0, 0);
+
+        expect(h.hatchRequests).toHaveLength(0);
+        expect(h.notifications[0]).toContain("hatch dialog is unavailable");
     });
 
     it("注册表覆盖所有交互工具", () => {

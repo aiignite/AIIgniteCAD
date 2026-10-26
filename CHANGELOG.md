@@ -6,6 +6,81 @@
 
 ### Added
 
+- 计划预检（`lib/planReview.ts`）：计划确认前按当前选择集逐步模拟执行写步骤，用与预览门禁同源的确定性规则对比改动前后，得出「这份计划会引入哪些问题」，并按 `changedIds` 把问题归因到具体步骤；计划卡逐步骤显示风险徽标与整体预检摘要，失败步骤单独计数。只模拟不落图，不占撤销步。
+- 跨图纸一致性检查（`lib/projectConsistency.ts`）：比较项目内各图纸的单位、字高、尺寸精度、制图标准与约定图层清单，另有重名图纸、空图纸、约定缺失三条清单级规则；只吃清单事实，不加载图元正文。图纸检查面板新增「当前图纸 / 项目一致性」范围切换，支持复制一致性摘要。
+- 跨图纸快照插入（`lib/crossDrawing.ts` + `services/drawingLoader.ts`）：图纸列表可把另一张图纸一次性复制进当前图纸——包围盒左下角对齐、图元重新编号并共享 `groupId`，块引用因依赖来源块定义而跳过并计数，单次上限 2000 图元。读取源图纸不调用 `openProject`，不改变服务端的「最近打开」。
+- AI 变更的可解释说明（`lib/changeExplanation.ts`）：预览弹窗新增「变更明细」，逐条列出 `+ / ~ / −` 图元类型、图层与几何摘要（修改类给出前后对照），并按图层聚合增删改数量；可一键复制整份变更说明，条数超限时截断并注明剩余数量。
+- `check_drawing` 新增 `scope=project`：跨图纸一致性检查接入 AI 只读工具，返回结构为 `{ scope, drawings, summary, issues }`；项目图纸清单不可用时明确回报失败，而不是当成「没有图纸」。
+- AI 上下文新增「项目图纸」行：项目内存在多张图纸时点名其他图纸的名称、图元数与约定单位，让模型知道跨图纸问题该问什么。
+- 设计约定与 AI 计划联动：约定此前只影响提示词与事后门禁，现在计划阶段就能看到「这一步会违反哪条约定」。
+- DXF 解析移入 Web Worker：新增 `workers/dxfParser.worker.ts` 与 `services/dxfWorker.ts`，大文件导入不再冻结主线程；请求带自增 id 支持并发，Worker 不可用（Node / 测试环境）时回退主线程，Worker 崩溃时挂起请求自动改走主线程重试一次，超时则终止线程并报错。解析实现仍只有一份（`services/dxfService`），两条路径结果一致。
+- 空间索引视口查询 `SpatialGrid.queryVisible`：构建索引时缓存包围盒，查询时返回与视口精确相交、且按原始叠放顺序排列的图元，替代每帧全量过滤与重复包围盒计算。
+- 协作加入时图纸对账：新成员向房间请求状态（`state-request` / `state-snapshot`），服务端把请求转给房间内一个现有成员，由该成员回传快照；快照上限 2000 图元，超出部分截断并标记 `truncated`。合并时只覆盖同 id、追加新 id，不删除本地独有图元。
+- 协作断线补发：广播基线只在补丁真正发出时推进，重连后自动把断线期间的本地修改补发出去。
+
+### Changed
+
+- `reviewIssueKey` 的判等加入问题描述：把图元从图层 0 移到另一个未登记图层时，规则与图元都没变但问题内容已变，旧实现会把它当成同一条问题漏报。
+- `createDraft` 新增第五参 `projectDrawings`；`AgentDraft` 同步增加该字段，供 `check_drawing` 的项目范围读取。
+- 图纸管理详情的图元数量改用列表接口的 `elementCount`：此前读 `elements.length`，而列表不返回图元正文，永远显示 0。
+- `collaborationService.sendPatch` 改为返回是否实际发出；新增 `requestState` / `sendStateSnapshot`，socket 工厂可注入以便测试。
+- 服务端新增 `state-request` / `state-snapshot` 事件，并抽出 `sanitizeStateSnapshot` / `pickPeerSocket` 做载荷校验与应答成员选择。
+- 视口裁剪从「空间索引取候选 + 遍历全部图元精确过滤」改为索引内的精确查询，10000 图元平移帧基准约 0.03ms（索引构建 3.6ms）。
+
+### Fixed
+
+- 断线期间的协作修改不再丢失：此前补丁发送失败时基线仍被推进，重连后这些修改无法补发。
+- 新成员加入协作房间后能看到已有成员的图纸：此前只能收到加入之后的增量补丁，加入前的内容为空。
+
+### Added
+
+- 偏移几何正确性重做（`services/offsetService.ts`）：线段按法向平移、相邻偏移段顶点取交——凹角不再出现穿越尖刺、开放多段线不再被多算一条闭合边；矩形按边长直接推导并在越过边线时判定退化，不再对自交多边形取包围盒得到「假矩形」；新增 `offsetElements` 返回 `{ elements, failures }`，不支持的图元类型与退化几何显式报告，工具与命令行提示「已复制 N、跳过 M（原因）」，不再静默复制原对象。
+- 统一几何容差模块 `lib/geometryTolerance.ts`：点 / 线段 / 半径 / 偏移距离 / 多边形面积 / 角度容差与退化判定收敛一处，偏移、参数重算与 DXF 换算共用，替换散落的魔法数。
+- 参数化图元「参数—几何」一致性：`advancedShapesService` 新增 `isParamBasedShape` / `regenerateElement` / `reconcileElement`——仅移动中心时平移轮廓，齿数 / 模数 / 圈数等形状参数变化时按参数重算 points；齿轮补读图元上的 `addendum` / `dedendum`（原先写死不读），螺旋起始半径显式持久化（`CADElement.startRadius`，旧存档从首点推导）；属性面板与夹点拖拽两条路径统一在 `canvasStore.updateElement` 收口。
+- DXF 单位体系：导入按 `$INSUNITS` 换算到 mm，导出按图纸单位换算并在 HEADER 声明 `$INSUNITS`；新增 `parseDXFWithReport` / `exportToDXFWithReport`，不支持的实体与块展开深度超限进入报告而非静默丢弃，导入单位非 mm 或存在跳过项时通知用户。
+- 图案填充渲染闭环：HATCH 图元按边界多边形渲染——SOLID 半透明填充，其他图案生成斜线并以 `clipPath` 裁切；填充工具点击即打开填充对话框（未接线时明确提示），DXF 导出输出边界 LWPOLYLINE。
+- 块插入产品路线落地为「符号展开复制」：块库条目一键插入到视口中心、拖拽放入画布与 AI `insert_block` 统一走 `createBlockReference` + `explodeBlockReference`（平移量 = 插入点 − 基点，共享 `groupId` 便于整组选中），替代此前拖拽路径手写克隆平移。
+
+### Changed
+
+- `offsetElement` / `offsetElements` 返回值改为 `CADElement | null` 与 `{ elements, failures }`，`aiActions` 偏移与 `OFFSET` 命令同步适配：全部失败时返回明确原因，不再把原对象复制充当偏移结果。
+- DXF 入口调整为带报告的 `parseDrawingFileWithReport` / `exportToDXFWithReport(elements, { units })`；旧 `parseDXF` / `exportToDXF` 保留为兼容包装。
+
+### Fixed
+
+- 偏移不再产生错误几何：零长线段、零 / 负半径与零距离统一前置拒绝；轴对齐矩形偏移越过边线时判定退化并跳过而不是返回自交「假矩形」。
+- 夹点拖拽参数化图元中心不再只改参数不改轮廓：拖拽结果经 `reconcileElement` 同步，弹簧 / 齿轮 / 螺旋 / 椭圆的参数编辑在属性面板确认后立即重算轮廓。
+- 螺旋起始半径丢失导致无法重算：`CADElement` 新增 `startRadius` 并在生成时存储，旧存档从首点推导，属性面板新增「起始半径」字段。
+- DXF 导入单位不再被静默忽略（按米导入的图形不再被当成 mm 放大 1000 倍）；导出不再固定 mm，按图纸单位换算并声明 `$INSUNITS`。
+- 填充图元从「不可见占位」变为可渲染、可导出边界；块拖拽放入画布不再走手写平移，插入语义与块库按钮、AI 插入一致。
+
+### Added
+
+- 统一 ProjectDocument 文档模型（`lib/projectDocument.ts`）：图元、图层、绘图设置、块引用与设计约定收敛为同一份版本化文档，日常保存、版本快照、离线同步与 AI 工具共用；旧存档缺省字段自动迁移为默认图层与设置，服务端 Decimal 字符串与非法载荷被收敛。
+- 本地文档级原子保存：`indexedDBService.saveDocument` / `loadDocument` 在同一事务内替换项目元数据、图元、块引用、图层快照并 upsert 绘图设置，任一 store 失败整体回滚；删除项目连带清除设置行。
+- 图层与绘图设置进入日常保存与同步链路：自动保存纳入图层顺序 / 颜色 / 隐藏 / 锁定与设置变化；`PUT /api/projects/:id` 在同一事务内整份替换图层并 upsert 绘图设置（含载荷校验：图层名非空且不重复、设置为正数、精度 0–8、单位限 mm/cm/m/in/ft）。
+- 新建图纸与内置示例按默认文档初始化（默认图层与设置，不继承上一张图的画布状态）；打开图纸时服务端响应中的图层、设置与设计约定一并恢复，服务端失败回退本地文档，纯图元快照的旧存档按默认文档迁移。
+- 版本快照新增设计约定：恢复版本时制图标准不会退回旧值。
+
+### Changed
+
+- `App.tsx` 图纸文件管理（保存 / 版本 / 加载 / 新建 / 重命名 / 删除 / 自动保存 / 自动版本）抽至 `hooks/useDrawingFiles.ts`，主组件只做组装。
+- 升级需执行 `npx prisma migrate deploy`；`PUT /api/projects/:id` 新增可选的 `layers` 与 `drawingSettings` 字段，旧客户端不发送则行为不变。
+
+### Fixed
+
+- 本地保存不再复活已删除图元：IndexedDB 元素快照改为同一事务内按项目替换，删除、清空与刷新重载结果一致；新增跨项目隔离回归测试。
+- 云端元素保存不再整图软删除重插：新增稳定 `element_id` 与活动元素唯一约束（迁移 `20261025223000_stable_element_ids`），按图元 id 增量创建 / 更新 / 软删除；项目列表 `elementCount` 只统计活动元素。
+- 账户资料与修改密码路由补齐鉴权中间件，未登录 / 非法 token 直接返回 401，不再依赖未填充的 `req.user`。
+- 网络故障不再清空有效登录态：启动拉取用户或项目失败时保留 token 并回退本地图纸列表；打开项目服务端失败时回退本地元素快照，401 仍会清理登录态。
+- 生产环境 Prisma 迁移失败时拒绝启动，避免新代码继续跑在旧 schema 上。
+
+### Changed
+
+- `POST /api/projects/:id/elements` 要求元素带非空且不重复的 `id` 与 `type`，返回 `created` / `updated` / `deleted` 计数；升级需先执行 `npx prisma migrate deploy`。
+
+### Added
+
 - 快捷键自定义：设置页新增「快捷键」分区，单键键位（工具切换与编辑动作）可视化重绑——点击键帽按下新键，Backspace 清除（该命令停用单键），冲突时提示占用者；一键恢复默认，本地保存立即生效，速查表与工具栏提示同步显示生效键位。
 - 新增 AutoCAD 系快捷键：Ctrl+1 开关右侧属性面板、F2 聚焦命令行、Space 重复上一条命令（动态输入键入期间自动让位）；视图菜单新增对应入口。
 

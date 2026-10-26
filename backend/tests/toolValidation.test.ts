@@ -257,8 +257,18 @@ describe("validateToolCall 只读设计工具", () => {
     ).toBe(false);
   });
 
-  it("measure_geometry 仅接受四种测量类型", () => {
-    expect(ok({ name: "measure_geometry", arguments: { kind: "length" } }).arguments).toEqual({
+  it("check_drawing 的 scope 只接受 drawing / project", () => {
+    expect(ok({ name: "check_drawing", arguments: { scope: "project" } }).arguments).toEqual({
+      scope: "project",
+    });
+    // 省略 scope 表示检查当前图纸，保持向后兼容
+    expect(validateToolCall({ name: "check_drawing", arguments: {} }).ok).toBe(true);
+    expect(validateToolCall({ name: "check_drawing", arguments: { scope: "apartment" } }).ok).toBe(
+      false,
+    );
+  });
+
+  it("measure_geometry 仅接受四种测量类型", () => {    expect(ok({ name: "measure_geometry", arguments: { kind: "length" } }).arguments).toEqual({
       kind: "length",
     });
     expect(

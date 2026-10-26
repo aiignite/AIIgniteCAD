@@ -4,6 +4,7 @@
 
 import { dist } from "../lib/canvasGeometry";
 import { applyGripDrag } from "../lib/grip";
+import { reconcileElement } from "../services/advancedShapesService";
 import type { CanvasTool } from "./BaseTool";
 import { finishMoveOrNarrow, finishSelectionBox, handleSelectionPress } from "./BaseTool";
 
@@ -20,7 +21,10 @@ const SelectTool: CanvasTool = {
             if (moved && ctx.elements.some(element => element.id === grip.elementId)) {
                 ctx.commitAction(
                     ctx.elements.map(element =>
-                        element.id === grip.elementId ? applyGripDrag(element, grip, ctx.point) : element,
+                        element.id === grip.elementId
+                            ? // 参数化图元夹点改中心后同步派生轮廓，避免参数与显示几何脱节
+                              reconcileElement(element, applyGripDrag(element, grip, ctx.point))
+                            : element,
                     ),
                 );
             }

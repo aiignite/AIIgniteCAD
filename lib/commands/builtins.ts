@@ -177,10 +177,25 @@ export const BUILTIN_COMMANDS: CommandDefinition[] = [
                 return { message: "Usage: OFFSET <distance>, e.g. OFFSET 20", error: true };
             }
 
-            const copies = offsetElements(ctx.selectedElements, distance);
+            const { elements: copies, failures } = offsetElements(ctx.selectedElements, distance);
+            if (copies.length === 0) {
+                return {
+                    message:
+                        failures.length > 0
+                            ? `Offset not supported for ${failures.length} selected object(s)`
+                            : "Usage: OFFSET <distance>, e.g. OFFSET 20",
+                    error: true,
+                };
+            }
             ctx.commitAction([...ctx.elements, ...copies]);
             ctx.setSelection(copies.map((element) => element.id));
-            return { message: `Offset by ${distance}` };
+            const skipped = failures.length;
+            return {
+                message:
+                    skipped > 0
+                        ? `Offset by ${distance} · ${copies.length} copied, ${skipped} skipped`
+                        : `Offset by ${distance}`,
+            };
         },
     },
     {

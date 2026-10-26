@@ -52,6 +52,7 @@ import { effectiveMaxRounds, needsToolResults, rejectionResults } from "../lib/a
 import { shouldProposePlan, type PlanProposal, type PlanStatus } from "../lib/aiPlan";
 import { shouldProposeVariants, type VariantProposal } from "../lib/aiVariants";
 import { zoomViewportToBounds } from "../store/viewport";
+import type { DrawingFacts } from "../lib/projectConsistency";
 
 export interface TurnMeta {
     sessionId: string | null;
@@ -72,6 +73,8 @@ export interface UseAIChatOptions {
     contextMeta?: DesignContextMeta;
     /** 项目设计约定；进入草稿后供确定性检查读取 */
     conventions?: DesignConventions | null;
+    /** 项目内图纸清单：check_drawing scope=project 用它做跨图纸一致性检查 */
+    projectDrawings?: DrawingFacts[];
     assistant: Assistant | null;
     /** 会话级模型覆盖；传 undefined 表示跟随会话绑定的模型，null 表示由服务端解析链选择 */
     modelId?: string | null;
@@ -133,6 +136,7 @@ export function useAIChat(options: UseAIChatOptions) {
     const pinnedRef = useRef(pinnedSkillCodes);
     const contextMetaRef = useRef(contextMeta);
     const conventionsRef = useRef(options.conventions);
+    const projectDrawingsRef = useRef(options.projectDrawings);
     const previewRef = useRef(onPreviewActions);
     const runningRef = useRef(false);
     const abortRef = useRef<AbortController | null>(null);
@@ -151,6 +155,7 @@ export function useAIChat(options: UseAIChatOptions) {
     projectScopeRef.current = scopeKey;
     contextMetaRef.current = contextMeta;
     conventionsRef.current = options.conventions;
+    projectDrawingsRef.current = options.projectDrawings;
     const boundModelId = sessions.find((session) => session.id === sessionId)?.modelId ?? null;
     modelRef.current = modelId === undefined ? boundModelId : modelId;
     sessionRef.current = sessionId;
@@ -328,6 +333,7 @@ export function useAIChat(options: UseAIChatOptions) {
                     [...selectedRef.current],
                     blockCatalog,
                     conventionsRef.current ?? undefined,
+                    projectDrawingsRef.current,
                 );
             } catch (catalogError) {
                 runningRef.current = false;

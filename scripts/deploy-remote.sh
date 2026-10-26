@@ -48,6 +48,7 @@ rsync -az \
     --exclude 'scripts/deploy.env' \
     --exclude 'dist' \
     --exclude 'coverage' \
+    --exclude '.backups' \
     --exclude 'playwright-report' \
     --exclude '.demo-frames' \
     --exclude '.test-results' \

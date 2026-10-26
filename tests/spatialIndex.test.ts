@@ -111,3 +111,88 @@ describe("SpatialGrid", () => {
         );
     });
 });
+
+describe("SpatialGrid.queryVisible", () => {
+    it("按原始数组顺序返回精确相交的元素", () => {
+        // 故意打乱空间顺序，验证返回顺序来自数组下标而非单元格遍历顺序
+        const a = line("a", 300, 300);
+        const b = line("b", 10, 10);
+        const c = line("c", 200, 200);
+        const grid = new SpatialGrid([a, b, c], 128);
+
+        const ids = grid.queryVisible(0, 0, 400, 400).map((el) => el.id);
+
+        expect(ids).toEqual(["a", "b", "c"]);
+    });
+
+    it("排除仅单元格相交、包围盒不相交的元素", () => {
+        // 两者都在单元格 (0,0)，但只有 near 与查询矩形相交
+        const near = line("near", 10, 10);
+        const sameCellButFar = line("same-cell", 120, 120);
+        const grid = new SpatialGrid([near, sameCellButFar], 128);
+
+        const ids = grid.queryVisible(0, 0, 100, 100).map((el) => el.id);
+
+        expect(ids).toEqual(["near"]);
+    });
+
+    it("退化包围盒元素保守保留", () => {
+        const blockRef: CADElement = {
+            id: "block-1",
+            type: "BLOCK_REFERENCE",
+            layer: "0",
+            color: "#fff",
+        };
+        const visible = line("visible", 10, 10);
+        const grid = new SpatialGrid([blockRef, visible], 128);
+
+        const ids = grid.queryVisible(0, 0, 50, 50).map((el) => el.id);
+
+        expect(ids).toEqual(["block-1", "visible"]);
+    });
+
+    it("与 queryRect + 全量过滤的结果一致", () => {
+        // 确定性伪随机，固定数据集避免偶发差异
+        let state = 20261026;
+        const random = () => {
+            state = (state * 1664525 + 1013904223) >>> 0;
+            return state / 0xffffffff;
+        };
+        const elements: CADElement[] = [];
+        for (let i = 0; i < 400; i++) {
+            const x = random() * 2000;
+            const y = random() * 2000;
+            elements.push(line(`el-${i}`, x, y));
+        }
+        const grid = new SpatialGrid(elements, 128);
+
+        const windows = [
+            { minX: 0, minY: 0, maxX: 400, maxY: 300 },
+            { minX: 500, minY: 500, maxX: 900, maxY: 900 },
+            { minX: -100, minY: 1500, maxX: 600, maxY: 2100 },
+        ];
+        for (const window of windows) {
+            const expected = elements
+                .filter((el) => {
+                    const box = getElementBoundingBox(el);
+                    return (
+                        Math.max(box.minX, box.maxX) >= window.minX &&
+                        Math.min(box.minX, box.maxX) <= window.maxX &&
+                        Math.max(box.minY, box.maxY) >= window.minY &&
+                        Math.min(box.minY, box.maxY) <= window.maxY
+                    );
+                })
+                .map((el) => el.id);
+            expect(grid.queryVisible(window.minX, window.minY, window.maxX, window.maxY).map((el) => el.id))
+                .toEqual(expected);
+        }
+    });
+
+    it("rebuild 后可见查询使用新几何", () => {
+        const grid = new SpatialGrid([line("old", 0, 0)], 128);
+        grid.rebuild([line("new", 5000, 5000)]);
+
+        expect(grid.queryVisible(0, 0, 100, 100)).toHaveLength(0);
+        expect(grid.queryVisible(4900, 4900, 5100, 5100).map((el) => el.id)).toEqual(["new"]);
+    });
+});

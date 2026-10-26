@@ -6,6 +6,7 @@
 import React, { createContext, useContext, useReducer, useCallback, useEffect, useRef, useState, ReactNode } from "react";
 import { ToolType, CADElement, DrawingSettings } from "../types";
 import { BulkUpdateCommand, CommandHistory, type CommandHistoryEntry } from "../lib/command";
+import { reconcileElement } from "../services/advancedShapesService";
 
 /* ─── State ─────────────────────────────────────────────────── */
 
@@ -606,8 +607,12 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
 
   const updateElement = useCallback(
     (el: CADElement) => {
-      elementsRef.current = elementsRef.current.map((item) => (item.id === el.id ? el : item));
-      dispatch({ type: "UPDATE_ELEMENT", element: el });
+      const previous = elementsRef.current.find((item) => item.id === el.id);
+      // 参数化图元（椭圆 / 齿轮 / 螺旋 / 弹簧）修改参数或移动中心后，
+      // 同步派生轮廓，保证属性面板、渲染与命中测试使用同一份几何
+      const next = previous ? reconcileElement(previous, el) : el;
+      elementsRef.current = elementsRef.current.map((item) => (item.id === next.id ? next : item));
+      dispatch({ type: "UPDATE_ELEMENT", element: next });
     },
     []
   );

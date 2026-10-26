@@ -7,11 +7,15 @@ import {
     BlockDefinition,
     BlockReference,
     Layer,
-    DrawingSettings,
     ChatMessage,
     SyncQueueItem,
     User
 } from '../types';
+import {
+    normalizeProjectDocument,
+    projectFileFromDocument,
+    type ProjectDocument
+} from '../lib/projectDocument';
 
 const DB_NAME = 'AIIgniteCAD';
 const DB_VERSION = 1;
@@ -343,6 +347,13 @@ class IndexedDBService {
             }
         }
 
+        // 绘图设置行以项目 id 为主键，回填服务端 id 时需要整体迁移
+        const settings = await this.get<any>(STORES.DRAWING_SETTINGS, oldId);
+        if (settings) {
+            await this.delete(STORES.DRAWING_SETTINGS, oldId);
+            await this.update(STORES.DRAWING_SETTINGS, { ...settings, id: newId, projectId: newId });
+        }
+
         const queued = await this.getAll<SyncQueueItem>(STORES.SYNC_QUEUE);
         for (const item of queued) {
             if (item.entityType === 'PROJECT' && item.entityId === oldId) {
@@ -386,6 +397,9 @@ class IndexedDBService {
             await this.delete(STORES.LAYERS, layer.id);
         }
 
+        // Delete drawing settings row
+        await this.delete(STORES.DRAWING_SETTINGS, projectId);
+
         await this.enqueueProjectDelete(projectId);
     }
 
@@ -421,24 +435,180 @@ class IndexedDBService {
         await this.update(STORES.ELEMENTS, elemWithProject);
     }
 
+    /**
+     * 用当前快照替换项目元素：先删除该项目旧记录，再写入新快照。
+     * 删除与写入在同一事务内完成，避免失败后留下半份快照或复活已删除图元。
+     */
     async saveElements(elements: CADElement[], projectId: string): Promise<void> {
         const db = await this.init();
         const transaction = db.transaction([STORES.ELEMENTS], 'readwrite');
         const store = transaction.objectStore(STORES.ELEMENTS);
+        const index = store.index('projectId');
+        const staleKeys: IDBValidKey[] = [];
 
-        for (const element of elements) {
-            const elemWithProject = { ...element, projectId };
-            store.put(elemWithProject);
-        }
+        index.openCursor(IDBKeyRange.only(projectId)).onsuccess = (event) => {
+            const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+            if (!cursor) {
+                for (const key of staleKeys) {
+                    store.delete(key);
+                }
+                for (const element of elements) {
+                    store.put({ ...element, projectId });
+                }
+                return;
+            }
+
+            staleKeys.push(cursor.primaryKey);
+            cursor.continue();
+        };
 
         return new Promise((resolve, reject) => {
             transaction.oncomplete = () => resolve();
             transaction.onerror = () => reject(transaction.error);
+            transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB transaction aborted'));
         });
     }
 
     async getElementsByProject(projectId: string): Promise<CADElement[]> {
         return this.getAllByIndex<CADElement>(STORES.ELEMENTS, 'projectId', projectId);
+    }
+
+    /** 把 IDBRequest 包成 Promise，供文档级多 store 事务使用 */
+    private request<T>(request: IDBRequest<T>): Promise<T> {
+        return new Promise((resolve, reject) => {
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    /**
+     * 在同一事务内把某个索引范围内的旧记录全部收集为待删主键。
+     * 游标走完成后再统一删除并写入新快照，避免边遍历边写导致漏删。
+     */
+    private collectStaleKeys(
+        store: IDBObjectStore,
+        indexName: string,
+        value: IDBValidKey,
+    ): Promise<IDBValidKey[]> {
+        return new Promise((resolve, reject) => {
+            const staleKeys: IDBValidKey[] = [];
+            const cursorRequest = store.index(indexName).openCursor(IDBKeyRange.only(value));
+            cursorRequest.onsuccess = (event) => {
+                const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+                if (!cursor) {
+                    resolve(staleKeys);
+                    return;
+                }
+                staleKeys.push(cursor.primaryKey);
+                cursor.continue();
+            };
+            cursorRequest.onerror = () => reject(cursorRequest.error);
+        });
+    }
+
+    /**
+     * 保存完整文档：项目元数据、图元、块引用、图层快照与绘图设置在同一事务内替换写入。
+     * 任一 store 失败整体回滚，不会留下"图元新、图层旧"的半份文档。
+     * 同步入队由调用方决定（saveProject 的既有行为保持不变）。
+     */
+    async saveDocument(doc: ProjectDocument): Promise<void> {
+        const db = await this.init();
+        const transaction = db.transaction(
+            [
+                STORES.PROJECTS,
+                STORES.ELEMENTS,
+                STORES.BLOCK_REFERENCES,
+                STORES.LAYERS,
+                STORES.DRAWING_SETTINGS
+            ],
+            'readwrite'
+        );
+
+        const projectStore = transaction.objectStore(STORES.PROJECTS);
+        const elementStore = transaction.objectStore(STORES.ELEMENTS);
+        const blockRefStore = transaction.objectStore(STORES.BLOCK_REFERENCES);
+        const layerStore = transaction.objectStore(STORES.LAYERS);
+        const settingsStore = transaction.objectStore(STORES.DRAWING_SETTINGS);
+
+        // 项目记录只存元数据：图元等正文以快照形式存在各自 store，避免同一份数据写两遍
+        const metadata = projectFileFromDocument(doc);
+        delete (metadata as { elements?: unknown }).elements;
+        projectStore.put({ ...metadata, elementCount: doc.elements.length });
+
+        // 图元 / 块引用 / 图层都是"按项目整份替换"的快照语义
+        const staleElementKeys = await this.collectStaleKeys(elementStore, 'projectId', doc.id);
+        for (const key of staleElementKeys) elementStore.delete(key);
+        for (const element of doc.elements) {
+            elementStore.put({ ...element, projectId: doc.id });
+        }
+
+        const staleBlockRefKeys = await this.collectStaleKeys(blockRefStore, 'projectId', doc.id);
+        for (const key of staleBlockRefKeys) blockRefStore.delete(key);
+        for (const reference of doc.blockReferences ?? []) {
+            blockRefStore.put({ ...reference, projectId: doc.id });
+        }
+
+        const staleLayerKeys = await this.collectStaleKeys(layerStore, 'projectId', doc.id);
+        for (const key of staleLayerKeys) layerStore.delete(key);
+        for (const layer of doc.layers) {
+            layerStore.put({ ...layer, projectId: doc.id });
+        }
+
+        // 设置行以项目 id 作为主键：单次 put 即完成 upsert，无需先读后写
+        settingsStore.put({
+            id: doc.id,
+            projectId: doc.id,
+            ...doc.drawingSettings
+        });
+
+        return new Promise((resolve, reject) => {
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+            transaction.onabort = () =>
+                reject(transaction.error ?? new Error('IndexedDB transaction aborted'));
+        });
+    }
+
+    /**
+     * 读取完整文档：项目记录 + 图元 / 块引用 / 图层快照 + 绘图设置。
+     * 旧存档缺少图层或设置时由 normalizeProjectDocument 补默认值。
+     */
+    async loadDocument(projectId: string): Promise<ProjectDocument | null> {
+        const db = await this.init();
+        const transaction = db.transaction(
+            [
+                STORES.PROJECTS,
+                STORES.ELEMENTS,
+                STORES.BLOCK_REFERENCES,
+                STORES.LAYERS,
+                STORES.DRAWING_SETTINGS
+            ],
+            'readonly'
+        );
+
+        const projectStore = transaction.objectStore(STORES.PROJECTS);
+        const elementStore = transaction.objectStore(STORES.ELEMENTS);
+        const blockRefStore = transaction.objectStore(STORES.BLOCK_REFERENCES);
+        const layerStore = transaction.objectStore(STORES.LAYERS);
+        const settingsStore = transaction.objectStore(STORES.DRAWING_SETTINGS);
+
+        const [project, elements, blockReferences, layers, settings] = await Promise.all([
+            this.request(projectStore.get(projectId)),
+            this.request(elementStore.index('projectId').getAll(projectId)),
+            this.request(blockRefStore.index('projectId').getAll(projectId)),
+            this.request(layerStore.index('projectId').getAll(projectId)),
+            this.request(settingsStore.index('projectId').get(projectId))
+        ]);
+
+        if (!project) return null;
+
+        return normalizeProjectDocument({
+            ...(project as Record<string, unknown>),
+            elements,
+            blockReferences,
+            layers,
+            drawingSettings: settings ?? undefined
+        });
     }
 
     // Layer operations

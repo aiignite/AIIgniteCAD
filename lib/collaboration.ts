@@ -18,6 +18,15 @@ export const EMPTY_PATCH: ElementPatch = { upserts: [], deletes: [] };
 /** 单次补丁的图元上限，防止恶意或异常客户端撑爆房间 */
 export const MAX_PATCH_ELEMENTS = 2000;
 
+/** 房间状态快照的图元上限，与单次补丁上限一致 */
+export const MAX_STATE_ELEMENTS = MAX_PATCH_ELEMENTS;
+
+/** 加入房间时回传的图纸快照；超出上限时截断并标记 */
+export interface ElementSnapshot {
+    elements: CADElement[];
+    truncated: boolean;
+}
+
 const UUID_PATTERN =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -119,4 +128,60 @@ export function parseCursor(value: unknown): { x: number; y: number } | null {
     if (typeof x !== "number" || typeof y !== "number") return null;
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
     return { x, y };
+}
+
+/**
+ * 截断房间快照到上限。
+ * 加入房间时一次性传输整张超大图纸会撑爆房间，截断后由 truncated 标记提示。
+ */
+export function capElementSnapshot(
+    elements: readonly CADElement[],
+    limit = MAX_STATE_ELEMENTS,
+): ElementSnapshot {
+    if (elements.length <= limit) {
+        return { elements: [...elements], truncated: false };
+    }
+    return { elements: elements.slice(0, limit), truncated: true };
+}
+
+/**
+ * 合并房间快照：只覆盖同 id、追加新 id，**不删除**本地独有图元。
+ * 新加入者的本地可能还有尚未广播的编辑，直接以远端为准会丢数据。
+ */
+export function applyElementSnapshot(
+    elements: readonly CADElement[],
+    snapshot: readonly CADElement[],
+): CADElement[] {
+    return applyElementPatches(elements, { upserts: [...snapshot], deletes: [] });
+}
+
+/**
+ * 广播「基线 → 当前」的差异，并返回新的基线。
+ *
+ * 只有补丁真正发出时才推进基线：断线期间 send 返回 false，基线保持不动，
+ * 重连后的下一次 flush 才能把这些修改补发出去。无差异时直接推进基线。
+ */
+export function broadcastPendingChanges(
+    baseline: readonly CADElement[],
+    next: readonly CADElement[],
+    send: (patch: ElementPatch) => boolean,
+): readonly CADElement[] {
+    const patch = diffElementPatches(baseline, next);
+    if (isEmptyPatch(patch)) return next;
+    return send(patch) ? next : baseline;
+}
+
+/** 传输层边界校验：只接受形状合法、数量不超限的图元数组 */
+export function parseElementList(value: unknown): CADElement[] | null {
+    if (!Array.isArray(value)) return null;
+    if (value.length > MAX_STATE_ELEMENTS) return null;
+
+    const elements: CADElement[] = [];
+    for (const item of value) {
+        if (!item || typeof item !== "object") return null;
+        const el = item as Partial<CADElement>;
+        if (typeof el.id !== "string" || typeof el.type !== "string") return null;
+        elements.push(el as CADElement);
+    }
+    return elements;
 }

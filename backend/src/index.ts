@@ -19,8 +19,10 @@ import { parseAllowedOrigins } from "./lib/cors";
 import {
   canJoinProject,
   isUuid,
+  pickPeerSocket,
   sanitizeCursor,
   sanitizePatch,
+  sanitizeStateSnapshot,
 } from "./lib/collaborationProtocol";
 
 const PORT = process.env.PORT || 3225;
@@ -149,6 +151,40 @@ io.on("connection", (socket) => {
     });
   });
 
+  // 初始图纸对账：新加入者请求状态，转发给房间内一个现有成员应答
+  socket.on("state-request", (data: { projectId?: unknown }) => {
+    const projectId = socket.data.projectId;
+    if (!projectId || data?.projectId !== projectId) return;
+    const peerId = pickPeerSocket(
+      io.sockets.adapter.rooms.get(roomOf(projectId)),
+      socket.id,
+    );
+    if (!peerId) return;
+    io.to(peerId).emit("state-request", { requesterId: socket.id });
+  });
+
+  // 初始图纸快照：只定向转发给请求方，不在房间内广播整张图纸
+  socket.on(
+    "state-snapshot",
+    (data: {
+      projectId?: unknown;
+      targetId?: unknown;
+      elements?: unknown;
+      truncated?: unknown;
+    }) => {
+      const projectId = socket.data.projectId;
+      if (!projectId || data?.projectId !== projectId) return;
+      const snapshot = sanitizeStateSnapshot(data);
+      if (!snapshot) return;
+      const room = io.sockets.adapter.rooms.get(roomOf(projectId));
+      if (!room || !room.has(snapshot.targetId)) return;
+      io.to(snapshot.targetId).emit("state-snapshot", {
+        elements: snapshot.elements,
+        truncated: snapshot.truncated,
+      });
+    },
+  );
+
   // 单元素广播（保留给旧客户端），同样要求已加入对应房间
   const relayElement = (
     event: string,
@@ -254,6 +290,12 @@ async function startServer() {
       execSync("npx prisma migrate deploy", { stdio: "inherit" });
       logger.info("Database migrations applied");
     } catch (error) {
+      if (process.env.NODE_ENV === "production") {
+        logger.error("Database migration failed; refusing to start with a stale schema", {
+          error,
+        });
+        throw error;
+      }
       logger.warn("Failed to apply migrations; continuing with current schema", {
         error,
       });

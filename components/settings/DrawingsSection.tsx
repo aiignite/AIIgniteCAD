@@ -16,6 +16,8 @@ export interface DrawingsSectionProps {
     onCreateFile: (name: string) => void;
     onRenameFile: (id: string, newName: string) => void;
     onDeleteFile: (id: string) => void;
+    /** 把选中的图纸作为快照插入当前图纸（一次性复制，不是持续引用） */
+    onInsertIntoActive?: (file: ProjectFile) => void;
 }
 
 const DrawingsSection: React.FC<DrawingsSectionProps> = ({
@@ -25,6 +27,7 @@ const DrawingsSection: React.FC<DrawingsSectionProps> = ({
     onCreateFile,
     onRenameFile,
     onDeleteFile,
+    onInsertIntoActive,
 }) => {
     const { t } = useI18n();
     const [searchQuery, setSearchQuery] = useState("");
@@ -187,7 +190,7 @@ const DrawingsSection: React.FC<DrawingsSectionProps> = ({
                             <dd className="text-cad-text font-mono">{selected.lastModified}</dd>
                             <dt className="text-cad-muted">{t("panel.elementCount")}</dt>
                             <dd className="text-cad-text font-mono">
-                                {selected.elements?.length ?? 0}
+                                {selected.elementCount ?? selected.elements?.length ?? 0}
                             </dd>
                         </dl>
 
@@ -210,6 +213,19 @@ const DrawingsSection: React.FC<DrawingsSectionProps> = ({
                                 <span className="material-symbols-outlined text-[16px]">edit</span>
                                 {t("panel.editFile")}
                             </button>
+                            {onInsertIntoActive && selected.id !== activeFileId && (
+                                <button
+                                    data-action="insert-drawing-snapshot"
+                                    onClick={() => onInsertIntoActive(selected)}
+                                    title={t("panel.insertDrawingHint")}
+                                    className="h-8 px-3 rounded border border-cad-border text-cad-text text-xs font-medium hover:bg-cad-text/10 transition-colors flex items-center gap-1.5"
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">
+                                        content_copy
+                                    </span>
+                                    {t("panel.insertDrawing")}
+                                </button>
+                            )}
                             {confirmDelete ? (
                                 <div className="h-8 flex items-center gap-2 rounded border border-red-500/40 bg-red-500/10 px-2.5">
                                     <span className="text-[11px] text-red-500 dark:text-red-300">

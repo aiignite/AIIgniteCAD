@@ -461,6 +461,13 @@ const SpiralProperties: React.FC<{
         min={1}
       />
       <PropertyNumber
+        label={t("property.startRadius")}
+        value={element.startRadius || 10}
+        onChange={(startRadius) => onUpdateElement({ ...element, startRadius })}
+        min={0.5}
+        step={0.5}
+      />
+      <PropertyNumber
         label={t("property.radiusIncrement")}
         value={element.radiusIncrement || 10}
         onChange={(radiusIncrement) => onUpdateElement({ ...element, radiusIncrement })}

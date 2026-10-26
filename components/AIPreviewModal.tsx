@@ -11,11 +11,21 @@ import { diffElementSets, summarizeElementTypes } from "../lib/versionDiff";
 import { AI_GHOST_COLORS } from "../lib/aiGhost";
 import { reviewSeverityLabel } from "../lib/designReview";
 import { reviewPreview } from "../lib/previewReview";
+import { explainChanges, type ChangeKind } from "../lib/changeExplanation";
 import ElementPreview from "./ElementPreview";
 import { useI18n, type Translate } from "../lib/i18n";
 
 const BULK_DELETE_THRESHOLD = 5;
 const MAX_REVIEW_ITEMS = 5;
+/** 变更明细默认展示条数 */
+const MAX_CHANGE_PREVIEW = 6;
+
+const CHANGE_SIGNS: Record<ChangeKind, string> = { added: "+", modified: "~", removed: "−" };
+const CHANGE_STYLES: Record<ChangeKind, string> = {
+    added: "text-emerald-500",
+    modified: "text-amber-400",
+    removed: "text-red-400",
+};
 
 interface AIPreviewModalProps {
     actions: AIActionResponse[];
@@ -103,6 +113,20 @@ export const AIPreviewModal: React.FC<AIPreviewModalProps> = ({
     const canApplyWithoutChanges = sideEffects.length > 0;
     const [confirmed, setConfirmed] = useState(!destructive);
     const [reviewAcknowledged, setReviewAcknowledged] = useState(false);
+    // 明细展开与复制状态：默认只给一屏能读完的条数
+    const [showAllChanges, setShowAllChanges] = useState(false);
+    const [copiedChanges, setCopiedChanges] = useState(false);
+    const explanation = useMemo(
+        () =>
+            explainChanges(diff, {
+                operations: actions.map((action) => action.operation),
+                maxEntries: 60,
+            }),
+        [diff, actions],
+    );
+    const visibleChanges = showAllChanges
+        ? explanation.entries
+        : explanation.entries.slice(0, MAX_CHANGE_PREVIEW);
     // 收起为底部工具条，让幽灵层在真实图纸上可见
     const [peek, setPeek] = useState(false);
 
@@ -343,6 +367,81 @@ export const AIPreviewModal: React.FC<AIPreviewModalProps> = ({
                                 {t("preview.totalAfter", { count: afterElements.length })}
                             </p>
                         </div>
+
+                        {explanation.entries.length > 0 && (
+                            <div className="rounded border border-cad-border bg-cad-bg/60 p-3 space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-bold uppercase text-cad-muted">
+                                        {t("preview.changesTitle")}
+                                    </span>
+                                    <button
+                                        onClick={() =>
+                                            void navigator.clipboard
+                                                .writeText(explanation.text)
+                                                .then(() => {
+                                                    setCopiedChanges(true);
+                                                    setTimeout(() => setCopiedChanges(false), 2000);
+                                                })
+                                        }
+                                        className="text-[10px] text-cad-primary hover:underline"
+                                    >
+                                        {copiedChanges
+                                            ? t("preview.copied")
+                                            : t("preview.copyChanges")}
+                                    </button>
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                    {explanation.byLayer.map((item) => (
+                                        <span
+                                            key={item.layer}
+                                            className="px-1.5 py-px rounded bg-cad-text/5 text-[10px] text-cad-muted font-mono"
+                                            title={t("preview.changesLayerHint")}
+                                        >
+                                            {item.layer}
+                                            <span className="text-emerald-500"> +{item.added}</span>
+                                            <span className="text-amber-400"> ~{item.modified}</span>
+                                            <span className="text-red-400"> −{item.removed}</span>
+                                        </span>
+                                    ))}
+                                </div>
+                                <ul className="space-y-0.5">
+                                    {visibleChanges.map((entry) => (
+                                        <li
+                                            key={`${entry.kind}-${entry.id}`}
+                                            className="text-[10px] font-mono text-cad-text flex items-start gap-1.5"
+                                        >
+                                            <span className={CHANGE_STYLES[entry.kind]}>
+                                                {CHANGE_SIGNS[entry.kind]}
+                                            </span>
+                                            <span className="min-w-0 break-words">
+                                                {entry.type}
+                                                <span className="text-cad-muted"> [{entry.layer}]</span>{" "}
+                                                {entry.detail ?? entry.summary}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                                {explanation.entries.length > MAX_CHANGE_PREVIEW && (
+                                    <button
+                                        onClick={() => setShowAllChanges((prev) => !prev)}
+                                        className="text-[10px] text-cad-primary hover:underline"
+                                    >
+                                        {showAllChanges
+                                            ? t("preview.changesCollapse")
+                                            : t("preview.changesMore", {
+                                                  count: explanation.entries.length,
+                                              })}
+                                    </button>
+                                )}
+                                {explanation.truncated && (
+                                    <p className="text-[10px] text-cad-muted">
+                                        {t("preview.changesTruncated", {
+                                            count: explanation.entries.length,
+                                        })}
+                                    </p>
+                                )}
+                            </div>
+                        )}
 
                         {review.introduced.length > 0 && (
                             <div

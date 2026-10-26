@@ -73,6 +73,8 @@ export interface ToolContext {
     onNotification: (message: string) => void;
     onRequestTextEntry: (position: Point) => void;
     onRequestAdvancedShape?: (tool: ToolType, position: Point) => void;
+    /** 请求打开填充对话框（HATCH 工具）；由 App 的模态流程承接 */
+    onRequestHatch?: () => void;
 }
 
 export interface ToolResult {
