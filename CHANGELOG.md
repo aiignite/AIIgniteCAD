@@ -21,6 +21,8 @@
 
 ### Changed
 
+- `pre-push` 钩子从「历史仅告警」升级为**全历史检测**：待推送引用的历史里只要有提交碰过 `.env` / `.env.*` 就阻断，需显式 `CAD_ALLOW_DIRTY_HISTORY=1` 认领本次推送。判定按「pathspec 取候选提交 → 文件名再过一遍判定」，避免 `.env.*` 把只含 `.env.example` 的仓库误拦；新增 `scripts/test-pre-push-hook.sh` 覆盖 7 个场景（含上述误拦用例与「认领也不能放过新增 `.env`」）。
+- 远端地址不再内嵌凭据：`.git/config` 里的明文 token 已移除，改由系统凭据助手（Keychain）提供；仓库历史中 `.env` 的清理方案（含本地预演实测数据、执行步骤、验收与回滚）见 [docs/guides/SECRET_HISTORY_REMEDIATION.md](docs/guides/SECRET_HISTORY_REMEDIATION.md)。
 - `reviewIssueKey` 的判等加入问题描述：把图元从图层 0 移到另一个未登记图层时，规则与图元都没变但问题内容已变，旧实现会把它当成同一条问题漏报。
 - `createDraft` 新增第五参 `projectDrawings`；`AgentDraft` 同步增加该字段，供 `check_drawing` 的项目范围读取。
 - 图纸管理详情的图元数量改用列表接口的 `elementCount`：此前读 `elements.length`，而列表不返回图元正文，永远显示 0。

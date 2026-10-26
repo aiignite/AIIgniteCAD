@@ -148,6 +148,14 @@ import { exportToDXF } from "../services/dxfService";
 - 生产环境必须提供 `JWT_SECRET`；禁止恢复默认密钥回退。
 - CI 会执行 `npm audit --omit=dev --audit-level=high`，引入生产依赖后先本地跑一遍。
 - 不跳过 Git hooks，不使用 `--no-verify` 或关闭签名。
+- `pre-push` 会扫描**待推送引用的全部历史**：历史里出现过 `.env` / `.env.*` 即阻断。历史未清理前用
+  `CAD_ALLOW_DIRTY_HISTORY=1 git push` 显式认领本次推送；判定逻辑的回归用例在
+  `scripts/test-pre-push-hook.sh`，改钩子后必须跑。清理历史的方案见
+  [docs/guides/SECRET_HISTORY_REMEDIATION.md](docs/guides/SECRET_HISTORY_REMEDIATION.md)。
+- 凭据不写进 remote URL、不写进任何会被提交的文件：GitHub 走系统凭据助手（Keychain）或 SSH；
+  服务器凭据只存在于服务器仓库根目录的 `.env`（rsync 已排除）。
+- 密钥一旦进入远端历史即视为泄露：**先轮换**（`JWT_SECRET` / `GEMINI_API_KEY` / 数据库口令），
+  再谈清历史。`ENCRYPTION_KEY` 不可更换——库内 LLM Key 密文依赖它解密。
 
 ## 7. 文档
 

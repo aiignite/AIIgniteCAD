@@ -2,19 +2,31 @@
 #
 # pre-push 钩子 — 阻止把环境变量/密钥文件推送到远端
 #
-# 检查策略：
-#   1. 检查待推送引用的最新树（必查）：包含 .env / .env.* 直接拦截。
-#   2. 检查本次推送范围内的新增提交：任何提交新增了密钥文件即拦截。
-#   3. 历史提交中已存在的密钥文件仅告警，不阻断（避免无法推送，历史需单独清理）。
+# 检查策略（前两道硬阻断，第三道需显式认领才放行）：
+#   1. 待推送引用的最新树：包含 .env / .env.* 直接拦截。
+#   2. 本次推送范围内的新增提交：任何提交新增了密钥文件即拦截。
+#   3. 待推送引用的**全部历史**：只要历史里曾经出现过密钥文件即拦截，
+#      除非设置 CAD_ALLOW_DIRTY_HISTORY=1 明确认领。
+#
+# 为什么第三道要拦而不是只告警：历史里的密钥没法靠一次提交抹掉，
+# 「只告警」等于每次推送都提醒一遍、然后人人点过去，问题会长期潜伏。
+# 2026-10-26 就是这么发现 .env 已经躺在公开仓库历史里的——此前一直是告警。
+# 认领式放行保证：不修历史也能继续推送，但每次都得知道自己在推什么。
 #
 # 启用方式（每个克隆执行一次）：
 #   git config core.hooksPath .githooks
+#
+# 清理历史的完整方案见 docs/guides/SECRET_HISTORY_REMEDIATION.md
 #
 
 set -uo pipefail
 
 EXIT_CODE=0
 ZERO="0000000000000000000000000000000000000000"
+# 与 is_secret_path 保持一致的路径集合，供 rev-list 过滤
+SECRET_PATHSPECS=(.env '.env.*' '*/.env' '*/.env.*')
+# 历史命中的展示条数上限，避免长历史刷屏
+HISTORY_SHOWN=5
 
 # 判断给定路径是否为需要拦截的密钥文件
 # 参数：$1 文件路径
@@ -61,11 +73,47 @@ while read -r local_ref local_sha remote_ref remote_sha; do
         done <<< "$files"
     done
 
-    # 策略 3：历史中已存在的密钥文件仅告警
-    historical=$(git log --format='%h' -1 "$local_sha" -- .env '.env.*' '**/.env' '**/.env.*' 2>/dev/null)
-    if [ -n "$historical" ]; then
-        echo "⚠️  警告：当前分支历史中曾提交过 .env 文件，请尽快轮换其中所有凭据。" >&2
-        echo "    如需彻底清除，请使用 git filter-repo 后强制推送（需团队协商）。" >&2
+    # 策略 3：全历史扫描——经过这些路径的提交一个都不放过
+    # rev-list/log 带 pathspec 时只走「确实改过这些路径」的提交，长历史也不会拖慢推送。
+    # 注意 pathspec 的 `.env.*` 会把 `.env.example` 也算成候选，所以候选提交里的文件
+    # 还要再过一遍 is_secret_path——否则只留示例文件的项目会被误拦。
+    dirty_commits=""
+    current_commit=""
+    while IFS= read -r line; do
+        case "$line" in
+            C*) current_commit=${line#C} ;;
+            "") continue ;;
+            *)
+                if is_secret_path "$line"; then
+                    dirty_commits="$dirty_commits $current_commit"
+                fi
+                ;;
+        esac
+    done <<< "$(git log --format='C%H' --name-only "$local_sha" -- "${SECRET_PATHSPECS[@]}" 2>/dev/null)"
+
+    # 一个提交可能同时改了路径下多个文件，去重后再计数
+    dirty_commits=$(printf '%s\n' $dirty_commits | awk 'NF && !seen[$0]++')
+    dirty_count=$(printf '%s\n' $dirty_commits | grep -c . )
+
+    if [ "$dirty_count" -gt 0 ]; then
+        echo "" >&2
+        echo "❌ 阻止推送：$local_ref 的历史中有 $dirty_count 个提交涉及密钥文件" >&2
+        printf '%s\n' $dirty_commits | head -"$HISTORY_SHOWN" |
+            while read -r commit; do
+                echo "      ${commit:0:8} $(git log -1 --format='%ad %s' --date=short "$commit" 2>/dev/null)" >&2
+            done
+        if [ "$dirty_count" -gt "$HISTORY_SHOWN" ]; then
+            echo "      ……（另有 $((dirty_count - HISTORY_SHOWN)) 个提交）" >&2
+        fi
+        if [ "${CAD_ALLOW_DIRTY_HISTORY:-0}" = "1" ]; then
+            echo "      ⚠️  CAD_ALLOW_DIRTY_HISTORY=1：本次已认领，放行。" >&2
+            echo "         历史未清理之前，密钥始终视为已泄露——请先轮换再清历史。" >&2
+        else
+            echo "      这些提交里的凭据已在远端视为泄露。要么轮换并清理历史，" >&2
+            echo "      要么用 CAD_ALLOW_DIRTY_HISTORY=1 git push 明确认领本次推送。" >&2
+            echo "      方案：docs/guides/SECRET_HISTORY_REMEDIATION.md" >&2
+            EXIT_CODE=1
+        fi
     fi
 done
 
@@ -77,6 +125,7 @@ if [ "$EXIT_CODE" -ne 0 ]; then
   2. 确认 .gitignore 已包含 .env / .env.*
   3. 用 git commit --amend 或交互式 rebase 从待推送提交中移除该文件
   4. 密钥一旦进入远端历史即视为泄露，请立即轮换 JWT_SECRET / GEMINI_API_KEY / 数据库口令
+     （历史清理只是收尾，轮换才是止损；清理方案见 docs/guides/SECRET_HISTORY_REMEDIATION.md）
 EOF
 fi
 
