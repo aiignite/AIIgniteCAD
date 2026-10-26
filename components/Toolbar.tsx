@@ -17,9 +17,21 @@ import { useI18n, type TranslationKey } from "../lib/i18n";
 import { getEffectiveShortcutKey } from "../lib/shortcuts";
 import { useShortcutOverrides } from "../hooks/useShortcuts";
 
-/** 面板整体收起 / 各分组折叠状态的本地偏好 */
+/** 面板整体收起 / 各分组折叠状态 / 当前页签的本地偏好 */
 const COLLAPSED_KEY = "cad_palette_collapsed_v1";
 const CLOSED_GROUPS_KEY = "cad_palette_groups_v1";
+const TAB_KEY = "cad_palette_tab_v1";
+
+/**
+ * 展开态的两个页签：工具与图块库。
+ * 折叠态不显示页签，统一回到工具图标条——12px 宽放不下页签切换，
+ * 图块库入口改为图标条末尾的一个按钮（点开即展开并切到图块库）。
+ */
+type PaletteTab = "tools" | "blocks";
+
+function readTab(): PaletteTab {
+    return localStorage.getItem(TAB_KEY) === "blocks" ? "blocks" : "tools";
+}
 
 /** 面板分组：右侧面板的快捷入口，与顶部菜单指向同一批界面 */
 interface PanelEntry {
@@ -69,6 +81,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenSettings, onOpenReview, 
     const { state: appState, setSidePanelOpen, showNotification } = useApp();
     const [collapsed, setCollapsed] = useState(readCollapsed);
     const [closedGroups, setClosedGroups] = useState<Set<string>>(readClosedGroups);
+    const [tab, setTab] = useState<PaletteTab>(readTab);
 
     useEffect(() => {
         localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
@@ -77,6 +90,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenSettings, onOpenReview, 
     useEffect(() => {
         localStorage.setItem(CLOSED_GROUPS_KEY, JSON.stringify([...closedGroups]));
     }, [closedGroups]);
+
+    useEffect(() => {
+        localStorage.setItem(TAB_KEY, tab);
+    }, [tab]);
 
     const toggleGroup = useCallback((key: string) => {
         setClosedGroups((prev) => {
@@ -344,6 +361,46 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenSettings, onOpenReview, 
         [avatar, panelEntries],
     );
 
+    const paletteTabs = useMemo(
+        () => [
+            {
+                key: "tools" as const,
+                icon: "build",
+                labelKey: "toolbar.tabTools" as TranslationKey,
+            },
+            {
+                key: "blocks" as const,
+                icon: "deployed_code",
+                labelKey: "toolbar.blocks" as TranslationKey,
+            },
+        ],
+        [],
+    );
+
+    /** 折叠态不显示页签，图块库收成图标条末尾的一个按钮：点开即展开并切到图块库 */
+    const renderBlocksShortcut = () => {
+        const label = t("toolbar.blocks");
+        return (
+            <button
+                key="shortcut-blocks"
+                data-action="palette-blocks"
+                onClick={() => {
+                    setCollapsed(false);
+                    setTab("blocks");
+                }}
+                title={label}
+                aria-label={label}
+                className={`flex size-9 shrink-0 items-center justify-center rounded transition-all ${
+                    tab === "blocks"
+                        ? "bg-cad-primary/15 text-cad-primary"
+                        : "text-cad-muted hover:bg-cad-text/10 hover:text-cad-text"
+                }`}
+            >
+                <span className="material-symbols-outlined text-[20px]">deployed_code</span>
+            </button>
+        );
+    };
+
     return (
         <aside
             className={`flex shrink-0 flex-col z-10 overflow-hidden border-r border-cad-border bg-cad-panel transition-[width] duration-150 ${
@@ -374,29 +431,73 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenSettings, onOpenReview, 
                     </span>
                 </button>
             </div>
-            <div
-                className={`flex-1 overflow-y-auto py-1 ${
-                    collapsed ? "flex flex-col items-center gap-1" : "flex flex-col gap-0.5 px-1.5"
-                }`}
-            >
-                {TOOL_GROUPS.map((group) => (
-                    <React.Fragment key={group.key}>
-                        {renderGroupHeader(group.key, group.labelKey)}
-                        {groupOpen(group.key) && group.tools.map(renderTool)}
-                    </React.Fragment>
-                ))}
 
-                {renderGroupHeader("blocks", "toolbar.blocks")}
-                {groupOpen("blocks") && (
+            {!collapsed && (
+                <div
+                    role="tablist"
+                    aria-label={t("toolbar.paletteTabs")}
+                    className="mx-1.5 mb-1 mt-1 flex shrink-0 gap-0.5 rounded border border-cad-border bg-cad-bg p-0.5"
+                >
+                    {paletteTabs.map((item) => {
+                        const active = tab === item.key;
+                        return (
+                            <button
+                                key={item.key}
+                                role="tab"
+                                data-tab={item.key}
+                                aria-selected={active}
+                                onClick={() => setTab(item.key)}
+                                className={`flex flex-1 items-center justify-center gap-1 rounded px-1.5 py-1 text-[11px] transition-colors ${
+                                    active
+                                        ? "bg-cad-primary font-medium text-white shadow-sm"
+                                        : "text-cad-muted hover:bg-cad-text/10 hover:text-cad-text"
+                                }`}
+                            >
+                                <span className="material-symbols-outlined text-[16px]">
+                                    {item.icon}
+                                </span>
+                                <span className="truncate">{t(item.labelKey)}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+
+            {collapsed ? (
+                <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto py-1">
+                    {TOOL_GROUPS.map((group) => (
+                        <React.Fragment key={group.key}>
+                            {renderGroupHeader(group.key, group.labelKey)}
+                            {group.tools.map(renderTool)}
+                        </React.Fragment>
+                    ))}
+                    {renderGroupHeader("blocks", "toolbar.blocks")}
+                    {renderBlocksShortcut()}
+                    {renderGroupHeader("organize", "toolbar.organize")}
+                    {organizeEntries.map(renderAction)}
+                    {renderGroupHeader("panel", "toolbar.panel")}
+                    {panelEntriesWithAvatar.map(renderAction)}
+                </div>
+            ) : tab === "tools" ? (
+                <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1.5 py-1">
+                    {TOOL_GROUPS.map((group) => (
+                        <React.Fragment key={group.key}>
+                            {renderGroupHeader(group.key, group.labelKey)}
+                            {groupOpen(group.key) && group.tools.map(renderTool)}
+                        </React.Fragment>
+                    ))}
+
+                    {renderGroupHeader("organize", "toolbar.organize")}
+                    {groupOpen("organize") && organizeEntries.map(renderAction)}
+
+                    {renderGroupHeader("panel", "toolbar.panel")}
+                    {groupOpen("panel") && panelEntriesWithAvatar.map(renderAction)}
+                </div>
+            ) : (
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-1">
                     <BlockLibraryPanel currentElements={elements} onInsertBlock={onInsertBlock} />
-                )}
-
-                {renderGroupHeader("organize", "toolbar.organize")}
-                {groupOpen("organize") && organizeEntries.map(renderAction)}
-
-                {renderGroupHeader("panel", "toolbar.panel")}
-                {groupOpen("panel") && panelEntriesWithAvatar.map(renderAction)}
-            </div>
+                </div>
+            )}
         </aside>
     );
 };

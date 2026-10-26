@@ -5,7 +5,7 @@
  * 这里不再手工维护第二份键位表，否则帮助内容和真实行为会分叉。
  */
 
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { buildShortcutSections, type ShortcutSection } from "../lib/menus";
 import { modifierKeyLabel } from "../lib/shortcuts";
 import { useI18n } from "../lib/i18n";
@@ -56,13 +56,20 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ onClose }) => {
     const { t } = useI18n();
     const sections = buildShortcutSections();
 
+    // 监听器只注册一次：调用方传的是内联箭头函数，若把它写进依赖数组，
+    // 画布每次重渲染都会 remove + add，Esc 落在重挂的空档就被吞掉。
+    const onCloseRef = useRef(onClose);
+    useEffect(() => {
+        onCloseRef.current = onClose;
+    }, [onClose]);
+
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
-            if (event.key === "Escape") onClose();
+            if (event.key === "Escape") onCloseRef.current();
         };
         window.addEventListener("keydown", handler);
         return () => window.removeEventListener("keydown", handler);
-    }, [onClose]);
+    }, []);
 
     return (
         <div

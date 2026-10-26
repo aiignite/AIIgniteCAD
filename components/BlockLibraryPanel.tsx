@@ -1,8 +1,9 @@
 /**
  * BlockLibraryPanel.tsx — 图块库
  *
- * 内容插入类面板，放在左侧工具面板（与绘图工具相邻）；
+ * 左侧面板「图块库」页签的内容：与「工具」页签平级，切页签即换内容；
  * 图块 / 分类树支持拖入画布，建块取自当前选择集。
+ * 高度由页签内容区决定（flex 撑满，列表自己滚），不再固定 max-h。
  */
 
 import React, { useEffect, useState } from "react";
@@ -241,7 +242,7 @@ export const BlockLibraryPanel: React.FC<BlockLibraryPanelProps> = ({ currentEle
     };
 
     return (
-        <div className="flex flex-col gap-2 px-1.5 pb-2" data-testid="block-library">
+        <div className="flex min-h-0 flex-1 flex-col gap-2 px-1.5 pb-2" data-testid="block-library">
             <div className="flex gap-1.5">
                 <button
                     onClick={handleCreateBlock}
@@ -272,7 +273,7 @@ export const BlockLibraryPanel: React.FC<BlockLibraryPanelProps> = ({ currentEle
             />
 
             <div
-                className="max-h-64 overflow-y-auto -mx-1 px-1"
+                className="min-h-0 flex-1 overflow-y-auto -mx-1 px-1"
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
                     e.preventDefault();
