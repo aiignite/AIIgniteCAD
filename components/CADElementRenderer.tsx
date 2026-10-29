@@ -9,7 +9,7 @@ import { CADElement, Point } from '../types';
 import { add, distance, dot, subtract } from '../lib/geometry';
 import { AI_GHOST_COLORS } from '../lib/aiGhost';
 import { dashArrayForLineType, lineWeightToScreenPx } from '../lib/lineStyle';
-import { generateHatchPattern } from '../services/hatchService';
+import { generateHatchPattern, hatchSpacingOf } from '../services/hatchService';
 
 /** 打印 / 图框渲染覆盖项；未提供时保持屏幕渲染行为 */
 export interface CADElementRenderOverrides {
@@ -250,12 +250,12 @@ const CADElementRenderer: React.FC<CADElementRendererProps> = ({
 
     if (el.type === 'HATCH' && el.points && el.points.length > 2) {
         // 填充：边界多边形 + 图案线（clipPath 裁到边界内）。
-        // 间距取 hatchScale × 10，角度取 hatchAngle 或图案自带角度。
+        // 间距取用户设定的 hatchPattern.spacing，旧存档回落 hatchScale × 默认间距。
         const pointsAttr = el.points.map(p => `${p.x},${p.y}`).join(' ');
         const patternType = el.hatchPattern?.type ?? 'SOLID';
         const hatchColor = el.hatchColor ?? el.color;
         const angle = el.hatchAngle ?? el.hatchPattern?.angle ?? 0;
-        const spacing = 10 * (el.hatchScale && el.hatchScale > 0 ? el.hatchScale : 1);
+        const spacing = hatchSpacingOf(el);
 
         let minX = Infinity;
         let minY = Infinity;

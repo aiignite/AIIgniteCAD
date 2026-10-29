@@ -1,26 +1,13 @@
 import React, { useState } from 'react';
 import { HatchPattern, HatchPatternType } from '../types';
-import { useI18n, type TranslationKey } from '../lib/i18n';
+import { useI18n } from '../lib/i18n';
+import { HATCH_PATTERN_OPTIONS } from '../lib/hatchPatterns';
 
 interface HatchModalProps {
   visible: boolean;
   onConfirm: (pattern: HatchPattern, color: string) => void;
   onCancel: () => void;
 }
-
-const patternOptions: { value: HatchPatternType; labelKey: TranslationKey; icon: string }[] = [
-  { value: 'SOLID', labelKey: 'hatch.pattern.solid', icon: 'square' },
-  { value: 'HORIZONTAL', labelKey: 'hatch.pattern.horizontal', icon: 'horizontal_rule' },
-  { value: 'VERTICAL', labelKey: 'hatch.pattern.vertical', icon: 'vertical_align_center' },
-  { value: 'DIAGONAL_RIGHT', labelKey: 'hatch.pattern.diagonalRight', icon: 'remove' },
-  { value: 'DIAGONAL_LEFT', labelKey: 'hatch.pattern.diagonalLeft', icon: 'add' },
-  { value: 'CROSS', labelKey: 'hatch.pattern.cross', icon: 'close' },
-  { value: 'GRID', labelKey: 'hatch.pattern.grid', icon: 'grid_on' },
-  { value: 'DOT', labelKey: 'hatch.pattern.dot', icon: 'radio_button_unchecked' },
-  { value: 'ANSI31', labelKey: 'hatch.pattern.ansi31', icon: 'format_overline' },
-  { value: 'ANSI32', labelKey: 'hatch.pattern.ansi32', icon: 'vertical_align_top' },
-  { value: 'ISO02W100', labelKey: 'hatch.pattern.iso02w100', icon: 'architecture' },
-];
 
 const colorOptions = [
   '#4a5568', '#e53e3e', '#dd6b20', '#d69e2e', '#38a169',
@@ -53,7 +40,7 @@ export const HatchModal: React.FC<HatchModalProps> = ({ visible, onConfirm, onCa
           <div>
             <label className="text-xs text-cad-muted mb-2 block">{t('hatch.pattern')}</label>
             <div className="grid grid-cols-4 gap-2 max-h-32 overflow-y-auto">
-              {patternOptions.map(opt => (
+              {HATCH_PATTERN_OPTIONS.map(opt => (
                 <button
                   key={opt.value}
                   onClick={() => setSelectedPattern(opt.value)}
@@ -76,17 +63,21 @@ export const HatchModal: React.FC<HatchModalProps> = ({ visible, onConfirm, onCa
               <label className="text-xs text-cad-muted mb-1 block">{t('hatch.spacing')}</label>
               <input
                 type="number"
-                min="1"
-                max="100"
+                data-field="hatch-spacing"
+                min="0.1"
+                max="10000"
+                step="1"
                 value={spacing}
                 onChange={(e) => setSpacing(Number(e.target.value))}
                 className="w-full bg-white dark:bg-black/20 border border-cad-border rounded px-2 py-1.5 text-sm outline-none focus:border-cad-primary"
               />
+              <p className="mt-1 text-[10px] text-cad-muted">{t('hatch.spacingHint')}</p>
             </div>
             <div>
               <label className="text-xs text-cad-muted mb-1 block">{t('hatch.angle')}</label>
               <input
                 type="number"
+                data-field="hatch-angle"
                 min="0"
                 max="360"
                 value={angle}

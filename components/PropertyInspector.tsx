@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
-import { CADElement, LineType, Point } from "../types";
+import { CADElement, HatchPattern, HatchPatternType, LineType, Point } from "../types";
 import { useI18n, type TranslationKey } from "../lib/i18n";
 import {
   LINE_TYPES,
@@ -8,6 +8,8 @@ import {
   lineWeightToScreenPx,
   normalizeLineType,
 } from "../lib/lineStyle";
+import { HATCH_PATTERN_OPTIONS } from "../lib/hatchPatterns";
+import { hatchSpacingOf } from "../services/hatchService";
 import { useAlignDistribute, ALIGN_MENU_ITEMS } from "../hooks/useAlignDistribute";
 
 /** 属性面板可触发的批量变换操作 */
@@ -48,7 +50,7 @@ export const PropertyInspector: React.FC<PropertyInspectorProps> = ({
 }) => {
   const { t } = useI18n();
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(["general", "lineStyle", "geometry"])
+    new Set(["general", "lineStyle", "geometry", "hatch"])
   );
 
   if (selectedElements.length === 0) {
@@ -159,6 +161,12 @@ export const PropertyInspector: React.FC<PropertyInspectorProps> = ({
         {(element.type === "RECTANGLE") && (
           <Section title={t("property.rectangleSection")} section="rectangle" expanded={expandedSections} setExpanded={setExpandedSections}>
             <RectangleProperties element={element} onUpdateElement={onUpdateElement} />
+          </Section>
+        )}
+
+        {(element.type === "HATCH") && (
+          <Section title={t("property.hatchSection")} section="hatch" expanded={expandedSections} setExpanded={setExpandedSections}>
+            <HatchProperties element={element} onUpdateElement={onUpdateElement} />
           </Section>
         )}
 
@@ -417,6 +425,84 @@ const RectangleProperties: React.FC<{
           onChange={(start) => onUpdateElement({ ...element, start })}
         />
       )}
+    </div>
+  );
+};
+
+// ===== HATCH PROPERTIES =====
+const HatchProperties: React.FC<{
+  element: CADElement;
+  onUpdateElement: (e: CADElement) => void;
+}> = ({ element, onUpdateElement }) => {
+  const { t } = useI18n();
+  const patternType = element.hatchPattern?.type ?? "SOLID";
+  const spacing = hatchSpacingOf(element);
+  const angle = element.hatchAngle ?? element.hatchPattern?.angle ?? 0;
+
+  const update = (patch: Partial<Pick<HatchPattern, "type" | "spacing" | "angle">>) => {
+    onUpdateElement({
+      ...element,
+      hatchPattern: {
+        type: patch.type ?? patternType,
+        spacing: patch.spacing ?? spacing,
+        angle: patch.angle ?? angle,
+      },
+      ...(patch.angle !== undefined ? { hatchAngle: patch.angle } : {}),
+    });
+  };
+
+  return (
+    <div className="space-y-2 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <label
+          className="text-cad-text-secondary whitespace-nowrap"
+          htmlFor="property-hatch-pattern"
+        >
+          {t("hatch.pattern")}:
+        </label>
+        <select
+          id="property-hatch-pattern"
+          value={patternType}
+          onChange={(e) => update({ type: e.target.value as HatchPatternType })}
+          className="bg-cad-bg border border-cad-border rounded px-2 py-1 text-xs flex-1 max-w-[128px]"
+        >
+          {HATCH_PATTERN_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {t(opt.labelKey)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <label className="text-cad-text-secondary" htmlFor="property-hatch-spacing">
+          {t("hatch.spacing")}:
+        </label>
+        <input
+          id="property-hatch-spacing"
+          type="number"
+          min={0.1}
+          step={1}
+          value={spacing}
+          onChange={(e) => update({ spacing: Math.max(0.1, parseFloat(e.target.value) || 0.1) })}
+          className="bg-cad-bg border border-cad-border rounded px-2 py-1 text-xs flex-1 max-w-[140px]"
+        />
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <label className="text-cad-text-secondary" htmlFor="property-hatch-angle">
+          {t("hatch.angle")}:
+        </label>
+        <input
+          id="property-hatch-angle"
+          type="number"
+          min={0}
+          max={360}
+          step={1}
+          value={angle}
+          onChange={(e) => update({ angle: parseFloat(e.target.value) || 0 })}
+          className="bg-cad-bg border border-cad-border rounded px-2 py-1 text-xs flex-1 max-w-[140px]"
+        />
+      </div>
+      <p className="text-[11px] text-cad-muted leading-relaxed">{t("hatch.spacingHint")}</p>
     </div>
   );
 };
