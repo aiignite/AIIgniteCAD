@@ -18,7 +18,8 @@
     "test:e2e:ui": "playwright test --ui",
     "docs:screenshots": "playwright test --config playwright.screenshots.config.ts",
     "docs:frames": "playwright test --config playwright.demo.config.ts",
-    "docs:gif": "npm run docs:frames && bash scripts/make-demo-gif.sh"
+    "docs:gif": "npm run docs:frames && bash scripts/make-demo-gif.sh",
+    "favicons": "node scripts/generate-favicons.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.37.0",

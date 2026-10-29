@@ -6,7 +6,7 @@
  * 交互预览图形集中在 CanvasPreview，避免工具分支继续堆积在本文件。
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { CADElement, Point, ToolType } from '../types';
 import { useCanvasInteraction } from '../hooks/useCanvasInteraction';
 import CADElementRenderer from './CADElementRenderer';
@@ -18,55 +18,11 @@ import { MiniMap } from './MiniMap';
 import { useCanvas } from '../store/canvasStore';
 import { updateCanvasStatus } from '../store/canvasStatus';
 import { ZOOM_STEP } from '../lib/viewport';
-import { getCombinedBoundingBox } from '../lib/transform';
 import { planAIGhostPreview } from '../lib/aiGhost';
 import { snapTypeLabel } from '../lib/snapping';
 import { describeToolHint } from '../lib/toolHints';
-import { useI18n, type TranslationKey } from '../lib/i18n';
+import { useI18n } from '../lib/i18n';
 import { dynamicFieldLabel, dynamicFieldSuffix } from '../lib/dynamicInput';
-import { useAlignDistribute, ALIGN_MENU_ITEMS } from '../hooks/useAlignDistribute';
-
-/** 选中集迷你工具栏：全部复用左侧工具栏的工具态，参数仍由各自工具收集；文案走右键菜单同一批 key */
-const SELECTION_TOOLS: ReadonlyArray<{ tool: ToolType; icon: string; labelKey: TranslationKey }> = [
-    { tool: ToolType.SELECT, icon: 'open_with', labelKey: 'context.move' },
-    { tool: ToolType.COPY, icon: 'content_copy', labelKey: 'context.copy' },
-    { tool: ToolType.ROTATE, icon: 'rotate_right', labelKey: 'context.rotate' },
-    { tool: ToolType.SCALE, icon: 'aspect_ratio', labelKey: 'context.scale' },
-    { tool: ToolType.MIRROR, icon: 'flip', labelKey: 'context.mirror' },
-    { tool: ToolType.OFFSET, icon: 'format_indent_increase', labelKey: 'context.offset' },
-    { tool: ToolType.ARRAY, icon: 'grid_view', labelKey: 'context.array' },
-];
-
-/** 迷你工具栏的近似尺寸，用于把浮层夹在画布内（10 个按钮 + 分隔线 + 内边距） */
-const SELECTION_BAR_W = 360;
-const SELECTION_BAR_H = 44;
-
-/**
- * 迷你工具栏按钮
- * 模块级组件，避免每次渲染都产生新的组件类型
- */
-const BarButton: React.FC<{
-    icon: string;
-    label: string;
-    action?: string;
-    tool?: string;
-    active?: boolean;
-    onClick: () => void;
-}> = ({ icon, label, action, tool, active = false, onClick }) => (
-    <button
-        onClick={onClick}
-        data-action={action}
-        data-tool={tool}
-        title={label}
-        className={`group relative flex size-8 items-center justify-center rounded-md transition-colors
-        ${active ? 'bg-cad-primary/15 text-cad-primary' : 'text-cad-muted hover:bg-cad-text/10 hover:text-cad-text'}`}
-    >
-        <span className="material-symbols-outlined text-[18px]">{icon}</span>
-        <span className="absolute top-9 left-1/2 -translate-x-1/2 bg-black text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 select-none">
-            {label}
-        </span>
-    </button>
-);
 
 /** Canvas 组件入参：由 App 注入的跨组件回调 */
 interface CanvasProps {
@@ -84,10 +40,6 @@ interface CanvasProps {
     aiPreview?: { beforeElements: CADElement[]; afterElements: CADElement[] } | null;
     /** 刚被 AI 改动的图元 id，用于落图后的脉冲高亮 */
     flashIds?: Set<string> | null;
-    /** 删除当前选择集（超过阈值时由 App 要求显式确认） */
-    onRequestDeleteSelection: () => void;
-    /** 以当前选择集为上下文向 AI 提问 */
-    onAskAboutSelection: () => void;
     /** 隔离 / 隐藏对象的临时隐藏集 */
     hiddenObjectIds?: ReadonlySet<string>;
     /** 右键点击画布：请求弹出上下文菜单 */
@@ -106,16 +58,11 @@ export const Canvas: React.FC<CanvasProps> = ({
     onBlockDrop,
     aiPreview,
     flashIds,
-    onRequestDeleteSelection,
-    onAskAboutSelection,
     hiddenObjectIds,
     onRequestContextMenu,
 }) => {
     const { state } = useCanvas();
     const { activeTool, drawingSettings, gridMode } = state;
-    const { applyAlign, applyDistribute, canAlign, canDistribute } = useAlignDistribute();
-    // 迷你工具栏的对齐/分布弹出面板开关
-    const [alignMenuOpen, setAlignMenuOpen] = useState(false);
 
     const {
         svgRef,
@@ -210,14 +157,6 @@ export const Canvas: React.FC<CanvasProps> = ({
         ? visibleElements.filter((el) => !ghost.outgoingIds.has(el.id))
         : visibleElements;
 
-    /** 选择集外接框：仅在选择工具、空闲、无 AI 预览时用于定位迷你工具栏 */
-    const selectionBounds = useMemo(() => {
-        if (activeTool !== ToolType.SELECT || dragMode !== null || aiPreview) return null;
-        const selected = visibleElements.filter((el) => selectedIds.has(el.id));
-        if (selected.length === 0) return null;
-        return getCombinedBoundingBox(selected);
-    }, [activeTool, dragMode, aiPreview, visibleElements, selectedIds]);
-
     /** 世界坐标 → 画布内屏幕坐标，供跟随光标的 HTML 浮层定位 */
     const toScreen = (point: Point) =>
         svgRenderer.toScreen(point, {
@@ -225,22 +164,6 @@ export const Canvas: React.FC<CanvasProps> = ({
             width: viewportSize.width,
             height: viewportSize.height,
         });
-
-    /** 迷你工具栏贴在选框上方居中，越界时夹回画布内 */
-    const selectionBar = (() => {
-        if (!selectionBounds) return null;
-        const anchor = toScreen({
-            x: (selectionBounds.minX + selectionBounds.maxX) / 2,
-            y: selectionBounds.minY,
-        });
-        return {
-            left: Math.min(
-                Math.max(8, anchor.x - SELECTION_BAR_W / 2),
-                Math.max(8, viewportSize.width - SELECTION_BAR_W - 8),
-            ),
-            top: Math.max(8, anchor.y - SELECTION_BAR_H),
-        };
-    })();
 
     /** 光标旁的动态输入：随缩放保持屏幕尺寸，显示坐标与当前操作尺寸 */
     const dynamicInput = (() => {
@@ -476,78 +399,6 @@ export const Canvas: React.FC<CanvasProps> = ({
                             )}
                         </div>
                     )}
-                </div>
-            )}
-
-            {/* 选中集迷你工具栏：贴在选择结果上方，Esc 或取消选择即消失 */}
-            {selectionBar && (
-                <div
-                    className="absolute z-20 flex items-center gap-0.5 rounded-lg border border-cad-border bg-cad-panel/95 backdrop-blur px-1 py-1 shadow-lg"
-                    style={{ left: selectionBar.left, top: selectionBar.top }}
-                >
-                    {SELECTION_TOOLS.map(item => (
-                        <BarButton
-                            key={item.tool}
-                            tool={item.tool}
-                            icon={item.icon}
-                            label={t(item.labelKey)}
-                            active={activeTool === item.tool}
-                            onClick={() => setActiveTool(item.tool)}
-                        />
-                    ))}
-                    <span className="w-px h-5 bg-cad-border mx-1"></span>
-                    <div className="relative">
-                        <BarButton
-                            action="align"
-                            icon="align_justify_space_between"
-                            label={t('context.alignGroup')}
-                            active={alignMenuOpen}
-                            onClick={() => setAlignMenuOpen(v => !v)}
-                        />
-                        {alignMenuOpen && (
-                            <>
-                                <div className="fixed inset-0 z-20" onClick={() => setAlignMenuOpen(false)} />
-                                <div className="absolute left-0 top-full z-30 mt-1 grid grid-cols-4 gap-0.5 rounded-lg border border-cad-border bg-cad-panel/95 p-1 shadow-lg backdrop-blur animate-in fade-in zoom-in-95 duration-100">
-                                    {ALIGN_MENU_ITEMS.map(item => {
-                                        const disabled = item.distribute ? !canDistribute : !canAlign;
-                                        return (
-                                            <button
-                                                key={item.labelKey}
-                                                disabled={disabled}
-                                                title={t(item.labelKey)}
-                                                onClick={() => {
-                                                    setAlignMenuOpen(false);
-                                                    if (item.align) applyAlign(item.align);
-                                                    if (item.distribute) applyDistribute(item.distribute);
-                                                }}
-                                                className={`flex size-8 items-center justify-center rounded-md transition-colors ${
-                                                    disabled
-                                                        ? 'cursor-not-allowed text-cad-muted/40'
-                                                        : 'text-cad-text hover:bg-cad-text/10'
-                                                }`}
-                                            >
-                                                <span className={`material-symbols-outlined text-[18px] ${item.rotate ? 'rotate-90' : ''}`}>
-                                                    {item.icon}
-                                                </span>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </>
-                        )}
-                    </div>
-                    <BarButton
-                        action="delete"
-                        icon="delete"
-                        label={t('context.delete')}
-                        onClick={onRequestDeleteSelection}
-                    />
-                    <BarButton
-                        action="ask-ai"
-                        icon="smart_toy"
-                        label={t('context.askAi')}
-                        onClick={onAskAboutSelection}
-                    />
                 </div>
             )}
 

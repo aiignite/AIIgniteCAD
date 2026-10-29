@@ -1,7 +1,7 @@
 /**
  * useAlignDistribute.ts — 对齐 / 分布的统一执行入口
  *
- * 右键菜单、选中集迷你工具栏与属性面板共用这一份实现，
+ * 右键菜单与属性面板共用这一份实现，
  * 全部走 commitAction 单步撤销；数量不足时给出提示。
  */
 
@@ -16,7 +16,7 @@ import {
 } from "../lib/designOps";
 import { useI18n, type TranslationKey } from "../lib/i18n";
 
-/** 对齐/分布菜单项：右键菜单外的迷你工具栏与属性面板共用（分布共用图标，垂直旋转 90°） */
+/** 对齐/分布菜单项：右键菜单与属性面板共用（分布共用图标，垂直旋转 90°） */
 export const ALIGN_MENU_ITEMS: ReadonlyArray<{
     icon: string;
     labelKey: TranslationKey;

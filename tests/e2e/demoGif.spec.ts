@@ -70,7 +70,7 @@ test("capture demo frames", async ({ page }) => {
   await page.waitForTimeout(250);
   await shot(page, 3);
 
-  // 5. 选取图元，露出迷你工具栏
+  // 5. 选取图元，展示选中态
   await page.locator('[data-tool="SELECT"]').click();
   const box = await canvasBox(page);
   await page.mouse.click(box.x + box.width * 0.3, box.y + box.height * 0.3);

@@ -866,7 +866,7 @@ function App() {
 
     const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
-    // 对齐 / 分布：右键菜单、迷你工具栏与属性面板共用的执行入口
+    // 对齐 / 分布：右键菜单与属性面板共用的执行入口
     const { applyAlign, applyDistribute } = useAlignDistribute();
 
     /** 右键菜单：按当前选择集组装菜单项 */
@@ -2158,8 +2158,6 @@ function App() {
                     onBlockDrop={handleBlockDrop}
                     aiPreview={aiPreview}
                     flashIds={flashIds}
-                    onRequestDeleteSelection={requestDeleteSelection}
-                    onAskAboutSelection={handleAskAboutSelection}
                     hiddenObjectIds={hiddenObjectIds}
                     onRequestContextMenu={openContextMenu}
                 />

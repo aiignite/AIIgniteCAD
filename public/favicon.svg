@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="cad-favicon-bg" x1="0" y1="0" x2="200" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#137fec"/>
+      <stop offset="100%" stop-color="#0b63c1"/>
+    </linearGradient>
+    <radialGradient id="cad-favicon-halo" cx="100" cy="110" r="60" gradientUnits="userSpaceOnUse">
+      <stop offset="20%" stop-color="white" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="white" stop-opacity="0"/>
+    </radialGradient>
+    <mask id="cad-favicon-fire">
+      <path d="M100 142 C 78 142, 70 115, 88 92 C 98 80, 115 65, 105 40 C 128 65, 138 100, 122 128 C 115 140, 110 142, 100 142Z" fill="white"/>
+      <path d="M101 142 C 94 130, 92 115, 96 100 C 100 85, 108 75, 106 40 H 102 C 104 75, 96 85, 92 100 C 88 115, 90 130, 97 142 Z" fill="black"/>
+    </mask>
+  </defs>
+
+  <rect width="200" height="200" rx="40" fill="url(#cad-favicon-bg)"/>
+  <path d="M100 148 C 65 148, 55 115, 80 85 C 95 65, 125 55, 105 25 C 135 55, 150 95, 130 125 C 120 142, 115 148, 100 148Z" fill="url(#cad-favicon-halo)"/>
+  <path d="M100 142 C 78 142, 70 115, 88 92 C 98 80, 115 65, 105 40 C 128 65, 138 100, 122 128 C 115 140, 110 142, 100 142Z" fill="white" mask="url(#cad-favicon-fire)"/>
+  <circle cx="100.5" cy="138" r="3" fill="white"/>
+</svg>

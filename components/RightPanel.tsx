@@ -2,6 +2,7 @@
  * RightPanel.tsx — 右侧属性面板
  *
  * 常规布局：常驻右侧、可折叠的属性检查器（属性 / 结构两个页签）。
+ * 收起时保留一条窄栏作为展开入口；展开后收起按钮固定在页签栏右侧。
  * 图块库在左侧工具面板，图纸检查 / 设计约定分别收进满屏窗体与设置页，
  * 本面板只承担「看选中、改属性」这一件事。
  */
@@ -17,7 +18,7 @@ interface RightPanelProps {
     currentElements: CADElement[];
     onUpdateElement: (el: CADElement) => void;
     onApplyAIAction: (operation: string, elements?: CADElement[], params?: any) => void;
-    /** 右侧面板是否展开；收起时不渲染，把画布面积让给绘图 */
+    /** 右侧面板是否展开；收起时保留窄条入口，展开按钮常驻可见 */
     collapsed?: boolean;
 }
 
@@ -38,23 +39,32 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         toggleSelection(elementId);
     };
 
-    // 收起时不渲染整块面板，把画布面积完全让给绘图
-    if (collapsed) return null;
+    // 收起时保留一条窄栏：展开入口常驻可见，不再靠悬停浮出的把手
+    if (collapsed) {
+        return (
+            <div className="relative flex h-full w-9 shrink-0 flex-col items-center gap-2 border-l border-cad-border bg-cad-panel z-20">
+                <button
+                    data-action="expand-side-panel"
+                    onClick={() => setSidePanelOpen(true)}
+                    title={t("panel.expand")}
+                    aria-label={t("panel.expand")}
+                    className="mt-2 flex h-8 w-8 items-center justify-center rounded-md text-cad-muted transition-colors hover:bg-cad-text/10 hover:text-cad-text"
+                >
+                    <span className="material-symbols-outlined text-[20px]">chevron_left</span>
+                </button>
+                <span
+                    className="material-symbols-outlined text-[18px] text-cad-muted/70"
+                    aria-hidden="true"
+                >
+                    tune
+                </span>
+            </div>
+        );
+    }
 
     return (
-        <div className="relative group flex h-full w-64 shrink-0 z-20 shadow-xl shadow-black/10 dark:shadow-black/50 border-l border-cad-border bg-cad-panel flex-col">
-            {/* 收起把手：悬停面板时浮现 */}
-            <button
-                data-action="collapse-side-panel"
-                onClick={() => setSidePanelOpen(false)}
-                title={t("panel.collapse")}
-                aria-label={t("panel.collapse")}
-                className="absolute -left-3 top-1/2 z-30 flex h-12 w-6 -translate-y-1/2 items-center justify-center rounded-l border border-r-0 border-cad-border bg-cad-panel text-cad-muted opacity-0 shadow transition-opacity group-hover:opacity-100 hover:text-cad-text"
-            >
-                <span className="material-symbols-outlined text-[16px]">chevron_right</span>
-            </button>
-
-            <div className="flex border-b border-cad-border bg-cad-panel">
+        <div className="relative flex h-full w-64 shrink-0 z-20 shadow-xl shadow-black/10 dark:shadow-black/50 border-l border-cad-border bg-cad-panel flex-col">
+            <div className="flex items-stretch border-b border-cad-border bg-cad-panel">
                 <button
                     onClick={() => setPropTab("INSPECTOR")}
                     className={`flex-1 py-2.5 text-xs font-bold transition-colors border-b-2 ${propTab === "INSPECTOR" ? "text-cad-primary border-cad-primary bg-cad-primary/10" : "text-cad-muted border-transparent hover:text-cad-text"}`}
@@ -66,6 +76,16 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                     className={`flex-1 py-2.5 text-xs font-bold transition-colors border-b-2 ${propTab === "STRUCTURE" ? "text-cad-primary border-cad-primary bg-cad-primary/10" : "text-cad-muted border-transparent hover:text-cad-text"}`}
                 >
                     {t("panel.structure")}
+                </button>
+                {/* 收起按钮常驻顶部，不做悬停显示 */}
+                <button
+                    data-action="collapse-side-panel"
+                    onClick={() => setSidePanelOpen(false)}
+                    title={t("panel.collapse")}
+                    aria-label={t("panel.collapse")}
+                    className="flex w-9 shrink-0 items-center justify-center border-l border-cad-border text-cad-muted transition-colors hover:bg-cad-text/10 hover:text-cad-text"
+                >
+                    <span className="material-symbols-outlined text-[18px]">chevron_right</span>
                 </button>
             </div>
 

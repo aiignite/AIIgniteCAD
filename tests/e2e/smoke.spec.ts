@@ -488,13 +488,12 @@ test("刷新后从服务端恢复图纸", async ({ page }) => {
     ).toBeVisible();
 });
 
-test("选中集迷你工具栏：切换工具、问 AI 草稿与删除", async ({ page }) => {
+test("选中对象不再弹出浮动工具栏，操作由右键菜单接管", async ({ page }) => {
     await openLoggedInApp(page);
-    await createDrawing(page, "Selection Bar");
-    const lineCount = await drawLine(page);
+    await createDrawing(page, "Selection Menu");
+    await drawLine(page);
     await page.locator('[data-tool="SELECT"]').click();
 
-    const svg = page.locator("#drawing-surface svg");
     const [x1, y1, x2, y2] = await lineEnds(firstElementLine(page));
     const from = await worldToScreen(page, Math.min(x1, x2) - 40, Math.min(y1, y2) - 40);
     const to = await worldToScreen(page, Math.max(x1, x2) + 40, Math.max(y1, y2) + 40);
@@ -503,23 +502,21 @@ test("选中集迷你工具栏：切换工具、问 AI 草稿与删除", async (
     await page.mouse.move(to.x, to.y, { steps: 6 });
     await page.mouse.up();
 
-    const askAI = page.locator('main [data-action="ask-ai"]');
-    await expect(askAI).toBeVisible();
+    // 选中后画布上不再浮出工具栏，避免遮住刚选中的对象
+    await expect(page.locator('main [data-action="ask-ai"]')).toHaveCount(0);
+    await expect(page.locator('main [data-action="delete"]')).toHaveCount(0);
+    await expect(page.locator('main [data-tool="ROTATE"]')).toHaveCount(0);
 
-    // 工具按钮沿用工具态：切到旋转后迷你工具栏让位，Esc 回到选择再出现
-    await page.locator('main [data-tool="ROTATE"]').click();
-    await expect(askAI).toHaveCount(0);
-    await page.keyboard.press("Escape");
-    await expect(askAI).toBeVisible();
+    // 右键菜单提供同样的变换、问 AI 与删除入口
+    const mid = await worldToScreen(page, (x1 + x2) / 2, (y1 + y2) / 2);
+    await page.mouse.click(mid.x, mid.y, { button: "right" });
+    await expect(page.getByRole("menu")).toBeVisible();
+    await expect(page.locator('[data-menu-item="rotate"]')).toBeVisible();
+    await expect(page.locator('[data-menu-item="delete"]')).toBeVisible();
 
-    // 问 AI：切到对话面板，选择集摘要作为草稿写进输入框，用户改完再发
-    await askAI.click();
+    // 问 AI：选择集摘要作为草稿写进输入框，用户改完再发
+    await page.locator('[data-menu-item="askAi"]').click();
     await expect(page.getByPlaceholder(/让 AI 画图/)).toHaveValue(/检查选中的 1 个图元（LINE ×1）/);
-
-    await page.locator('main [data-action="delete"]').click();
-    await expect(page.getByText("已删除 1 个图元 · Ctrl+Z 可撤销")).toBeVisible();
-    await expect(svg.locator("line")).toHaveCount(lineCount - 1);
-    await expect(askAI).toHaveCount(0);
 });
 
 test("隔离与选择同类：临时隐藏集只影响屏幕显示", async ({ page }) => {

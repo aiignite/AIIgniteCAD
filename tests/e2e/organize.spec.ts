@@ -76,8 +76,9 @@ async function drawLine(
 test("右侧属性面板默认收起，左栏开关与检查窗体各自独立", async ({ page }) => {
     await openApp(page);
 
-    // 默认收起：画布右侧没有属性面板
+    // 默认收起：画布右侧没有属性面板，只留一条可点开的窄条
     await expect(page.getByText("属性", { exact: true })).toBeHidden();
+    await expect(page.locator('[data-action="expand-side-panel"]')).toBeVisible();
 
     // 图纸检查入口打开满屏窗体，Esc 返回
     await page.locator('aside [data-action="panel-review"]').click();
@@ -88,6 +89,13 @@ test("右侧属性面板默认收起，左栏开关与检查窗体各自独立",
 
     // 左栏开关展开右侧属性面板
     await page.locator('aside [data-action="panel-toggle"]').click();
+    await expect(page.getByText("属性", { exact: true })).toBeVisible();
+
+    // 顶部收起按钮常驻可见；收起后仍能从窄条展开
+    await page.locator('[data-action="collapse-side-panel"]').click();
+    await expect(page.getByText("属性", { exact: true })).toBeHidden();
+    await expect(page.locator('[data-action="expand-side-panel"]')).toBeVisible();
+    await page.locator('[data-action="expand-side-panel"]').click();
     await expect(page.getByText("属性", { exact: true })).toBeVisible();
 });
 
