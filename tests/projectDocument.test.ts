@@ -104,6 +104,20 @@ describe("normalizeProjectDocument", () => {
         expect(elements.map((el) => el.id)).toEqual(["a", "c"]);
     });
 
+    it("图元线型/线宽收敛：非法值剔除，合法值保留", () => {
+        const elements = normalizeElements([
+            { ...line("dashed"), lineType: "DASHED", lineWeight: 0.35 },
+            { ...line("wave"), lineType: "WAVE", lineWeight: "abc" },
+            { ...line("zero"), lineWeight: 0 },
+        ]);
+
+        expect(elements[0].lineType).toBe("DASHED");
+        expect(elements[0].lineWeight).toBe(0.35);
+        expect(elements[1]).not.toHaveProperty("lineType");
+        expect(elements[1]).not.toHaveProperty("lineWeight");
+        expect(elements[2]).not.toHaveProperty("lineWeight");
+    });
+
     it("图层规范化去重、补默认值并拒绝空名", () => {
         const layers = normalizeLayers([
             { name: "0", color: "#fff", isVisible: false, isLocked: true },

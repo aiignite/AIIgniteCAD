@@ -202,6 +202,22 @@ describe("DXF 导出", () => {
         const block = entityBlock(dxf, "LWPOLYLINE");
         expect(block).toContain("90\n3\n70\n1\n");
     });
+
+    it("图元线型写入实体组码 6，线宽写入 370（1/100 mm）", () => {
+        const dxf = exportToDXF([
+            makeElement({
+                type: "LINE",
+                start: { x: 0, y: 0 },
+                end: { x: 10, y: 0 },
+                lineType: "DASHDOT",
+                lineWeight: 0.35,
+            }),
+        ]);
+
+        const block = entityBlock(dxf, "LINE");
+        expect(block).toContain("6\nDASHDOT\n");
+        expect(block).toContain("370\n35\n");
+    });
 });
 
 describe("DXF 导入", () => {
@@ -231,6 +247,29 @@ describe("DXF 导入", () => {
         expect(parsed[0].layer).toBe("WALLS");
         expect(parsed[0].start).toEqual({ x: 0, y: 0 });
         expect(parsed[0].end).toEqual({ x: 100, y: -50 });
+    });
+
+    it("导入实体线型与线宽", () => {
+        const dxf = externalDxf([
+            "0", "LINE", "8", "0", "6", "DASHED", "370", "50",
+            "10", "0", "20", "0", "11", "100", "21", "50",
+        ]);
+
+        const parsed = parseDXF(dxf);
+        expect(parsed).toHaveLength(1);
+        expect(parsed[0].lineType).toBe("DASHED");
+        expect(parsed[0].lineWeight).toBe(0.5);
+    });
+
+    it("BYLAYER 线型与 370=-1 视为未设置", () => {
+        const dxf = externalDxf([
+            "0", "LINE", "8", "0", "6", "BYLAYER", "370", "-1",
+            "10", "0", "20", "0", "11", "100", "21", "50",
+        ]);
+
+        const parsed = parseDXF(dxf);
+        expect(parsed[0]).not.toHaveProperty("lineType");
+        expect(parsed[0]).not.toHaveProperty("lineWeight");
     });
 
     it("读取闭合标志并丢弃重复末点", () => {

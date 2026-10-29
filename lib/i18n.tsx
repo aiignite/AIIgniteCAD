@@ -996,6 +996,20 @@ export const zh = {
     "property.columnGap": "列距",
     "property.makeArray": "生成矩形阵列",
     "property.transformHint": "缩放与偏移以选中对象的形心为基点；阵列会保留原对象并选中新副本。",
+    "property.lineStyleSection": "线型与线宽",
+    "property.lineType": "线型",
+    "property.lineTypeContinuous": "实线",
+    "property.lineTypeDashed": "虚线",
+    "property.lineTypeDotted": "点线",
+    "property.lineTypeDashDot": "点划线",
+    "property.lineTypeMixed": "多种线型",
+    "property.lineWeight": "线宽",
+    "property.lineWeightDefault": "默认",
+    "property.lineWeightMixed": "多种线宽",
+    "property.lineStyleHint": "线型与线宽随图纸保存，并在导出 DXF 时写入实体属性。",
+    "property.colorAuto": "主题色",
+    "property.colorCustom": "自定义颜色",
+    "property.colorMixed": "多种颜色",
 } as const;
 
 export type TranslationKey = keyof typeof zh;
@@ -2012,6 +2026,21 @@ export const en: Record<TranslationKey, string> = {
     "property.makeArray": "Create rectangular array",
     "property.transformHint":
         "Scale and offset use the selection centroid; arrays keep the original and select the copies.",
+    "property.lineStyleSection": "Linetype & lineweight",
+    "property.lineType": "Linetype",
+    "property.lineTypeContinuous": "Continuous",
+    "property.lineTypeDashed": "Dashed",
+    "property.lineTypeDotted": "Dotted",
+    "property.lineTypeDashDot": "Dash-dot",
+    "property.lineTypeMixed": "Mixed linetypes",
+    "property.lineWeight": "Lineweight",
+    "property.lineWeightDefault": "Default",
+    "property.lineWeightMixed": "Mixed weights",
+    "property.lineStyleHint":
+        "Linetype and lineweight are saved with the drawing and written to DXF entities on export.",
+    "property.colorAuto": "Theme color",
+    "property.colorCustom": "Custom color",
+    "property.colorMixed": "Mixed colors",
 };
 
 const format = (template: string, params?: Record<string, string | number>): string =>

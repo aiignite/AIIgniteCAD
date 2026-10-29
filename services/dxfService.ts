@@ -12,7 +12,12 @@
  * 导入汇总为 unsupported 报告，导出汇总为 skipped 报告。
  */
 
-import { CADElement, Point, UnitType } from '../types';
+import { CADElement, LineType, Point, UnitType } from '../types';
+import {
+    dxfHundredthsToLineWeight,
+    lineWeightToDxfHundredths,
+    normalizeLineType,
+} from '../lib/lineStyle';
 
 const uid = () => Math.random().toString(36).substr(2, 9);
 
@@ -268,8 +273,21 @@ const buildTables = (elements: CADElement[]): string => {
     return out;
 };
 
-const entityHeader = (type: string, layer: string, color: string): string =>
-    `0\n${type}\n8\n${layer || '0'}\n${colorFields(color)}`;
+/** 实体级线型 / 线宽（导出读，导入写回） */
+interface DxfLineStyle {
+    lineType?: LineType;
+    lineWeight?: number;
+}
+
+const lineStyleFields = (style?: DxfLineStyle): string => {
+    let out = `6\n${normalizeLineType(style?.lineType)}\n`;
+    const hundredths = lineWeightToDxfHundredths(style?.lineWeight);
+    if (hundredths !== undefined) out += `370\n${hundredths}\n`;
+    return out;
+};
+
+const entityHeader = (type: string, layer: string, color: string, style?: DxfLineStyle): string =>
+    `0\n${type}\n8\n${layer || '0'}\n${colorFields(color)}${lineStyleFields(style)}`;
 
 /** 导出 LWPOLYLINE；closed 时去掉与起点重合的末点，由 70 标志表达闭合 */
 const writePolyline = (
@@ -277,6 +295,7 @@ const writePolyline = (
     color: string,
     sourcePoints: Point[],
     closed: boolean,
+    style?: DxfLineStyle,
     format: (value: number) => string = num,
 ): string => {
     const points = sourcePoints.map(dxfPoint);
@@ -288,7 +307,7 @@ const writePolyline = (
         }
     }
     if (points.length < 2) return '';
-    let out = entityHeader('LWPOLYLINE', layer, color);
+    let out = entityHeader('LWPOLYLINE', layer, color, style);
     out += `90\n${points.length}\n70\n${closed ? 1 : 0}\n`;
     points.forEach((point) => {
         out += `10\n${format(point.x)}\n20\n${format(point.y)}\n`;
@@ -380,11 +399,11 @@ export const exportToDXFWithReport = (
         if (el.type === 'LINE' && el.start && el.end) {
             const start = dxfPoint(el.start);
             const end = dxfPoint(el.end);
-            dxf += entityHeader('LINE', layer, color);
+            dxf += entityHeader('LINE', layer, color, el);
             dxf += `10\n${length(start.x)}\n20\n${length(start.y)}\n11\n${length(end.x)}\n21\n${length(end.y)}\n`;
         } else if (el.type === 'CIRCLE' && el.center && el.radius) {
             const center = dxfPoint(el.center);
-            dxf += entityHeader('CIRCLE', layer, color);
+            dxf += entityHeader('CIRCLE', layer, color, el);
             dxf += `10\n${length(center.x)}\n20\n${length(center.y)}\n40\n${length(el.radius)}\n`;
         } else if (el.type === 'RECTANGLE' && el.start && el.width && el.height) {
             const x = Math.min(el.start.x, el.start.x + el.width);
@@ -396,18 +415,18 @@ export const exportToDXFWithReport = (
                 { x: x + w, y },
                 { x: x + w, y: y + h },
                 { x, y: y + h },
-            ], true, length);
+            ], true, el, length);
         } else if (el.type === 'TEXT' && el.start && el.text) {
             const start = dxfPoint(el.start);
             const safeText = el.text.replace(/\r?\n/g, ' ');
-            dxf += entityHeader('TEXT', layer, color);
+            dxf += entityHeader('TEXT', layer, color, el);
             dxf += `10\n${length(start.x)}\n20\n${length(start.y)}\n30\n0\n40\n${length(el.fontSize || 12)}\n`;
             if (el.rotation && Math.abs(el.rotation) > 1e-9) {
                 dxf += `50\n${num(el.rotation)}\n`;
             }
             dxf += `1\n${safeText}\n`;
         } else if (el.type === 'LWPOLYLINE' && el.points) {
-            dxf += writePolyline(layer, color, el.points, Boolean(el.closed), length);
+            dxf += writePolyline(layer, color, el.points, Boolean(el.closed), el, length);
         } else if (el.type === 'ARC' && el.center && el.radius && el.startAngle !== undefined && el.endAngle !== undefined) {
             // 屏幕上顺时针(θ 增大)对应 DXF 的顺时针；DXF ARC 固定逆时针绘制
             const startScreen = normalizeAngle(el.startAngle);
@@ -415,7 +434,7 @@ export const exportToDXFWithReport = (
             const dxfStart = el.clockwise ? -endScreen : -startScreen;
             const dxfEnd = el.clockwise ? -startScreen : -endScreen;
             const center = dxfPoint(el.center);
-            dxf += entityHeader('ARC', layer, color);
+            dxf += entityHeader('ARC', layer, color, el);
             dxf += `10\n${length(center.x)}\n20\n${length(center.y)}\n40\n${length(el.radius)}\n`;
             dxf += `50\n${num(normalizeAngle(dxfStart))}\n51\n${num(normalizeAngle(dxfEnd))}\n`;
         } else if (el.type === 'ELLIPSE' && el.center && el.radiusX && el.radiusY) {
@@ -427,7 +446,7 @@ export const exportToDXFWithReport = (
             const axisAngle = majorIsX ? rotation : rotation + Math.PI / 2;
             const majorX = major * Math.cos(axisAngle);
             const majorY = -major * Math.sin(axisAngle);
-            dxf += entityHeader('ELLIPSE', layer, color);
+            dxf += entityHeader('ELLIPSE', layer, color, el);
             dxf += `10\n${length(center.x)}\n20\n${length(center.y)}\n30\n0\n`;
             dxf += `11\n${length(majorX)}\n21\n${length(majorY)}\n31\n0\n`;
             // 40 为长短轴之比，不随单位缩放
@@ -438,11 +457,11 @@ export const exportToDXFWithReport = (
             el.points.length > 1
         ) {
             // 高级曲线以多段线输出，外部 CAD 可直接查看/编辑
-            dxf += writePolyline(layer, color, el.points, el.type === 'GEAR', length);
+            dxf += writePolyline(layer, color, el.points, el.type === 'GEAR', el, length);
         } else if (el.type === 'HATCH' && el.points && el.points.length > 1) {
             // DXF HATCH 的图案定义依赖目标环境的图案表，这里只导出边界轮廓，
             // 保证填充区域不丢失；图案本身在报告中说明
-            dxf += writePolyline(layer, color, el.points, true, length);
+            dxf += writePolyline(layer, color, el.points, true, el, length);
         } else {
             // DIMENSION 等未适配 DXF 语义的图元：计入报告，不静默丢弃
             noteSkipped(el.type);
@@ -506,6 +525,10 @@ interface RawDxfEntity {
     closed?: boolean;
     aci?: number;
     trueColor?: number;
+    /** 实体级线型（LTYPE 名称），BYLAYER/BYBLOCK 归一为 CONTINUOUS */
+    lineType?: LineType;
+    /** 实体级线宽，已从 370（1/100 mm）换算为毫米 */
+    lineWeight?: number;
     majorX?: number;
     majorY?: number;
     ratio?: number;
@@ -987,6 +1010,13 @@ function parseEntityProp(entity: RawDxfEntity, code: number, value: string) {
         case 62:
             entity.aci = Number.parseInt(value, 10);
             break;
+        case 6:
+            // BYLAYER / BYBLOCK 与未知线型统一落为实线，避免渲染器读到不存在的虚线图案
+            entity.lineType = normalizeLineType(value);
+            break;
+        case 370:
+            entity.lineWeight = dxfHundredthsToLineWeight(Number.parseInt(value, 10));
+            break;
         case 70:
             if (entity.type === 'LWPOLYLINE') {
                 entity.closed = (Number.parseInt(value, 10) & 1) === 1;
@@ -1295,10 +1325,14 @@ function finalizeEntity(
     resolveColor: (record: { aci?: number; trueColor?: number }, layer: string) => string,
 ): CADElement | null {
     const color = resolveColor({ aci: entity.aci, trueColor: entity.trueColor }, entity.layer || '0');
+    const lineStyle: Pick<CADElement, "lineType" | "lineWeight"> = {};
+    if (entity.lineType && entity.lineType !== 'CONTINUOUS') lineStyle.lineType = entity.lineType;
+    if (entity.lineWeight !== undefined) lineStyle.lineWeight = entity.lineWeight;
     const base = {
         id: uid(),
         layer: entity.layer || '0',
         color,
+        ...lineStyle,
     };
 
     if (entity.type === 'LINE') {

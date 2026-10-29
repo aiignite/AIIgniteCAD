@@ -1,6 +1,13 @@
-import React, { useState, useCallback } from "react";
-import { CADElement, Point } from "../types";
-import { useI18n } from "../lib/i18n";
+import React, { useMemo, useRef, useState } from "react";
+import { CADElement, LineType, Point } from "../types";
+import { useI18n, type TranslationKey } from "../lib/i18n";
+import {
+  LINE_TYPES,
+  LINE_WEIGHT_PRESETS,
+  dashArrayForLineType,
+  lineWeightToScreenPx,
+  normalizeLineType,
+} from "../lib/lineStyle";
 import { useAlignDistribute, ALIGN_MENU_ITEMS } from "../hooks/useAlignDistribute";
 
 /** 属性面板可触发的批量变换操作 */
@@ -41,7 +48,7 @@ export const PropertyInspector: React.FC<PropertyInspectorProps> = ({
 }) => {
   const { t } = useI18n();
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(["general", "geometry"])
+    new Set(["general", "lineStyle", "geometry"])
   );
 
   if (selectedElements.length === 0) {
@@ -68,6 +75,9 @@ export const PropertyInspector: React.FC<PropertyInspectorProps> = ({
           elements={selectedElements}
           onUpdateElement={onUpdateElement}
         />
+        <Section title={t("property.lineStyleSection")} section="lineStyle" expanded={expandedSections} setExpanded={setExpandedSections}>
+          <MultiLineStyleControls elements={selectedElements} onUpdateElement={onUpdateElement} />
+        </Section>
         {onApplyTransform && (
           <Section title={t("property.transform")} section="transform" expanded={expandedSections} setExpanded={setExpandedSections}>
             <TransformOperations onApplyTransform={onApplyTransform} />
@@ -86,6 +96,17 @@ export const PropertyInspector: React.FC<PropertyInspectorProps> = ({
         <Section title={t("property.basic")} section="general" expanded={expandedSections} setExpanded={setExpandedSections}>
           <GeneralProperties element={element} onUpdateElement={onUpdateElement} />
         </Section>
+
+        {/* Line style: 文本没有描边，不提供线型设置 */}
+        {element.type !== "TEXT" && (
+          <Section title={t("property.lineStyleSection")} section="lineStyle" expanded={expandedSections} setExpanded={setExpandedSections}>
+            <LineStyleControls
+              lineType={normalizeLineType(element.lineType)}
+              lineWeight={element.lineWeight}
+              onChange={(patch) => onUpdateElement({ ...element, ...patch })}
+            />
+          </Section>
+        )}
 
         {/* Geometry Properties */}
         <Section title={t("property.geometry")} section="geometry" expanded={expandedSections} setExpanded={setExpandedSections}>
@@ -587,6 +608,152 @@ const DimensionProperties: React.FC<{
   );
 };
 
+// ===== LINE STYLE =====
+const LINE_TYPE_LABEL_KEYS: Record<LineType, TranslationKey> = {
+  CONTINUOUS: "property.lineTypeContinuous",
+  DASHED: "property.lineTypeDashed",
+  DOTTED: "property.lineTypeDotted",
+  DASHDOT: "property.lineTypeDashDot",
+};
+
+interface LineStyleControlsProps {
+  /** null 表示多选且线型不一致 */
+  lineType: LineType | null;
+  /** null 表示多选且线宽不一致；undefined 表示未设置（默认线宽） */
+  lineWeight: number | null | undefined;
+  onChange: (patch: { lineType?: LineType; lineWeight?: number }) => void;
+}
+
+const LineStyleControls: React.FC<LineStyleControlsProps> = ({
+  lineType,
+  lineWeight,
+  onChange,
+}) => {
+  const { t } = useI18n();
+  // 从 DXF 导入的线宽可能不在预设档位内，补一个只读当前值的选项，避免下拉框显示空白
+  const weightOptions = useMemo(() => {
+    const presets = [...LINE_WEIGHT_PRESETS];
+    if (typeof lineWeight === "number" && !presets.includes(lineWeight)) {
+      presets.push(lineWeight);
+      presets.sort((a, b) => a - b);
+    }
+    return presets;
+  }, [lineWeight]);
+
+  const weightValue =
+    lineWeight === null ? "mixed" : lineWeight === undefined ? "default" : String(lineWeight);
+  const previewDash = dashArrayForLineType(lineType ?? "CONTINUOUS");
+  const previewWidth = lineWeightToScreenPx(lineWeight ?? undefined) ?? 2;
+
+  return (
+    <div className="space-y-2 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <label className="text-cad-text-secondary" htmlFor="property-line-type">
+          {t("property.lineType")}:
+        </label>
+        <select
+          id="property-line-type"
+          value={lineType ?? "mixed"}
+          onChange={(e) => {
+            if (e.target.value === "mixed") return;
+            onChange({ lineType: normalizeLineType(e.target.value) });
+          }}
+          className="bg-cad-bg border border-cad-border rounded px-2 py-1 text-xs flex-1 max-w-[140px]"
+        >
+          {lineType === null && (
+            <option value="mixed" disabled>
+              {t("property.lineTypeMixed")}
+            </option>
+          )}
+          {LINE_TYPES.map((type) => (
+            <option key={type} value={type}>
+              {t(LINE_TYPE_LABEL_KEYS[type])}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="flex items-center justify-between gap-2">
+        <label className="text-cad-text-secondary" htmlFor="property-line-weight">
+          {t("property.lineWeight")}:
+        </label>
+        <select
+          id="property-line-weight"
+          value={weightValue}
+          onChange={(e) => {
+            const next = e.target.value;
+            if (next === "mixed") return;
+            onChange({ lineWeight: next === "default" ? undefined : Number(next) });
+          }}
+          className="bg-cad-bg border border-cad-border rounded px-2 py-1 text-xs flex-1 max-w-[140px]"
+        >
+          {lineWeight === null && (
+            <option value="mixed" disabled>
+              {t("property.lineWeightMixed")}
+            </option>
+          )}
+          <option value="default">{t("property.lineWeightDefault")}</option>
+          {weightOptions.map((weight) => (
+            <option key={weight} value={String(weight)}>
+              {weight.toFixed(2)} mm
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="rounded border border-cad-border bg-cad-bg px-2 py-1.5">
+        <svg
+          className="h-4 w-full text-cad-text"
+          viewBox="0 0 120 8"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <line
+            x1="0"
+            y1="4"
+            x2="120"
+            y2="4"
+            stroke="currentColor"
+            strokeWidth={previewWidth}
+            strokeDasharray={previewDash}
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+      </div>
+
+      <p className="text-[11px] text-cad-muted leading-relaxed">
+        {t("property.lineStyleHint")}
+      </p>
+    </div>
+  );
+};
+
+const MultiLineStyleControls: React.FC<{
+  elements: CADElement[];
+  onUpdateElement: (e: CADElement) => void;
+}> = ({ elements, onUpdateElement }) => {
+  const first = elements[0];
+  const firstType = normalizeLineType(first.lineType);
+  const commonLineType = elements.every(
+    (el) => normalizeLineType(el.lineType) === firstType,
+  )
+    ? firstType
+    : null;
+  const commonLineWeight = elements.every((el) => el.lineWeight === first.lineWeight)
+    ? first.lineWeight
+    : null;
+
+  return (
+    <LineStyleControls
+      lineType={commonLineType}
+      lineWeight={commonLineWeight}
+      onChange={(patch) => {
+        elements.forEach((el) => onUpdateElement({ ...el, ...patch }));
+      }}
+    />
+  );
+};
+
 // ===== TRANSFORM OPERATIONS =====
 /**
  * 批量变换入口。
@@ -759,10 +926,14 @@ const CommonPropertiesPanel: React.FC<{
     });
   };
 
+  const onlyColor = elements.every((el) => el.color === elements[0].color)
+    ? elements[0].color
+    : "";
+
   return (
     <div className="space-y-2 text-sm">
       <PropertySelect label={t("property.layer")} value="0" onChange={handleLayerChange} />
-      <PropertyColorPicker label={t("property.color")} value="#000000" onChange={handleColorChange} />
+      <PropertyColorPicker label={t("property.color")} value={onlyColor} onChange={handleColorChange} />
     </div>
   );
 };
@@ -889,33 +1060,106 @@ const PropertySelect: React.FC<PropertySelectProps> = ({
 
 interface PropertyColorPickerProps {
   label: string;
+  /** 空字符串表示多选且颜色不一致 */
   value: string;
   onChange: (value: string) => void;
 }
+
+/** 常用色板：主题色、黑白与制图常用高对比色，最后一档通过调色板细选 */
+const COMMON_COLORS: Array<{ value: string; labelKey?: TranslationKey }> = [
+  { value: "#e6edf3", labelKey: "property.colorAuto" },
+  { value: "#ffffff" },
+  { value: "#000000" },
+  { value: "#ef4444" },
+  { value: "#f97316" },
+  { value: "#fbbf24" },
+  { value: "#4ade80" },
+  { value: "#00c8c8" },
+  { value: "#137fec" },
+  { value: "#6366f1" },
+  { value: "#a855f7" },
+  { value: "#94a3b8" },
+];
 
 const PropertyColorPicker: React.FC<PropertyColorPickerProps> = ({
   label,
   value,
   onChange,
-}) => (
-  <div className="flex items-center justify-between">
-    <label className="text-cad-text-secondary">{label}:</label>
-    <div className="flex gap-2 items-center ml-2">
+}) => {
+  const { t } = useI18n();
+  const pickerRef = useRef<HTMLInputElement>(null);
+  const normalized = value.trim().toLowerCase();
+  const hasColor = /^#[0-9a-f]{6}$/.test(normalized);
+  const pickerValue = hasColor ? normalized : "#000000";
+
+  const openPicker = () => {
+    const input = pickerRef.current;
+    if (!input) return;
+    const showPicker = (input as HTMLInputElement & { showPicker?: () => void }).showPicker;
+    if (typeof showPicker === "function") {
+      try {
+        showPicker.call(input);
+        return;
+      } catch {
+        // 部分浏览器在非用户手势下会拒绝，退回原生 click
+      }
+    }
+    input.click();
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <label className="text-cad-text-secondary">{label}:</label>
+        <button
+          type="button"
+          onClick={openPicker}
+          title={t("property.colorCustom")}
+          className="flex items-center gap-1.5 rounded border border-cad-border px-1.5 py-0.5 hover:bg-cad-hover transition-colors"
+        >
+          <span
+            className="h-3.5 w-3.5 rounded-sm border border-cad-border"
+            style={{ backgroundColor: hasColor ? normalized : "transparent" }}
+          />
+          <span className="font-mono text-[11px] text-cad-text">
+            {hasColor ? normalized.toUpperCase() : t("property.colorMixed")}
+          </span>
+          <span className="material-symbols-outlined text-[14px] text-cad-muted">palette</span>
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-1">
+        {COMMON_COLORS.map((color) => {
+          const active = hasColor && normalized === color.value;
+          const name = color.labelKey ? t(color.labelKey) : color.value;
+          return (
+            <button
+              key={color.value}
+              type="button"
+              title={name}
+              aria-label={name}
+              onClick={() => onChange(color.value)}
+              className={`h-5 w-5 rounded-sm border transition-transform hover:scale-110 ${
+                active ? "border-cad-text ring-1 ring-cad-primary" : "border-cad-border"
+              }`}
+              style={{ backgroundColor: color.value }}
+            />
+          );
+        })}
+      </div>
+
       <input
+        ref={pickerRef}
         type="color"
-        value={value}
+        value={pickerValue}
         onChange={(e) => onChange(e.target.value)}
-        className="w-8 h-8 rounded cursor-pointer"
-      />
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="bg-cad-bg border border-cad-border rounded px-2 py-1 text-xs w-20"
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
       />
     </div>
-  </div>
-);
+  );
+};
 
 interface PropertyToggleProps {
   label: string;

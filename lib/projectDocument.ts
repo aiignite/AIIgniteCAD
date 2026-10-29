@@ -22,6 +22,10 @@ import type {
     UnitType,
 } from "../types";
 import { SnapType as SnapTypeEnum, DEFAULT_SNAP_TYPES } from "../types";
+import {
+    normalizeLineType,
+    normalizeLineWeight,
+} from "./lineStyle";
 import { collectLayers, type LayerSnapshotInput } from "./versionSnapshot";
 
 /** 文档结构版本：结构不兼容变更时递增，加载链路按版本迁移 */
@@ -53,12 +57,6 @@ export const DEFAULT_LAYER_COLORS: Record<string, string> = {
 };
 
 const UNIT_TYPES: UnitType[] = ["mm", "cm", "m", "in", "ft"];
-const LINE_TYPES: Layer["lineType"][] = [
-    "CONTINUOUS",
-    "DASHED",
-    "DOTTED",
-    "DASHDOT",
-];
 const SNAP_TYPE_VALUES = new Set<string>(Object.values(SnapTypeEnum));
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -154,9 +152,7 @@ export function normalizeLayer(raw: unknown): Layer | null {
                 : DEFAULT_LAYER_COLOR,
         isVisible: raw.isVisible !== false,
         isLocked: raw.isLocked === true,
-        lineType: LINE_TYPES.includes(raw.lineType as Layer["lineType"])
-            ? (raw.lineType as Layer["lineType"])
-            : "CONTINUOUS",
+        lineType: normalizeLineType(raw.lineType),
     };
 
     if (typeof raw.lineWeight === "number" && Number.isFinite(raw.lineWeight)) {
@@ -195,7 +191,17 @@ export function normalizeElements(raw: unknown): CADElement[] {
         const type = typeof entry.type === "string" ? entry.type : "";
         if (!id || !type || seen.has(id)) continue;
         seen.add(id);
-        elements.push(entry as unknown as CADElement);
+
+        const element = { ...entry } as unknown as CADElement;
+        // 线型/线宽是后加的可选字段：非法值收敛为缺省，而不是让坏数据流到渲染器
+        const lineType = normalizeLineType(element.lineType);
+        if (lineType === "CONTINUOUS") delete element.lineType;
+        else element.lineType = lineType;
+        const lineWeight = normalizeLineWeight(element.lineWeight);
+        if (lineWeight === undefined) delete element.lineWeight;
+        else element.lineWeight = lineWeight;
+
+        elements.push(element);
     }
     return elements;
 }

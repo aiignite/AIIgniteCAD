@@ -8,6 +8,7 @@ import React, { useId } from 'react';
 import { CADElement, Point } from '../types';
 import { add, distance, dot, subtract } from '../lib/geometry';
 import { AI_GHOST_COLORS } from '../lib/aiGhost';
+import { dashArrayForLineType, lineWeightToScreenPx } from '../lib/lineStyle';
 import { generateHatchPattern } from '../services/hatchService';
 
 /** 打印 / 图框渲染覆盖项；未提供时保持屏幕渲染行为 */
@@ -16,6 +17,8 @@ export interface CADElementRenderOverrides {
     strokeWidth?: number;
     /** 是否使用 non-scaling-stroke；打印时传 false，让线宽随图纸比例缩放 */
     nonScalingStroke?: boolean;
+    /** 虚线图案的世界单位缩放系数；打印时按出图比例传入 */
+    dashScale?: number;
     /** 强制单色输出（白纸黑线） */
     monochrome?: boolean;
 }
@@ -147,6 +150,7 @@ export const renderDimension = (
               : (el.color === '#e6edf3' ? '#4ade80' : el.color);
     const strokeWidth = overrides?.strokeWidth ?? (ghost ? 2 : 1);
     const vectorEffect = overrides?.nonScalingStroke === false ? undefined : 'non-scaling-stroke';
+    const dash = dashArrayForLineType(el.lineType, overrides?.dashScale);
 
     const angle = Math.atan2(dimLineEnd.y - dimLineStart.y, dimLineEnd.x - dimLineStart.x);
     const arrowSize = 6 * scale;
@@ -160,10 +164,10 @@ export const renderDimension = (
     return (
         <g opacity={isSelected || ghost || overrides ? 1 : 0.9}>
             {/* 引出线 */}
-            <line x1={p1ExtStart.x} y1={p1ExtStart.y} x2={p1ExtEnd.x} y2={p1ExtEnd.y} stroke={color} strokeWidth={strokeWidth} vectorEffect={vectorEffect} />
-            <line x1={p2ExtStart.x} y1={p2ExtStart.y} x2={p2ExtEnd.x} y2={p2ExtEnd.y} stroke={color} strokeWidth={strokeWidth} vectorEffect={vectorEffect} />
+            <line x1={p1ExtStart.x} y1={p1ExtStart.y} x2={p1ExtEnd.x} y2={p1ExtEnd.y} stroke={color} strokeWidth={strokeWidth} strokeDasharray={dash} vectorEffect={vectorEffect} />
+            <line x1={p2ExtStart.x} y1={p2ExtStart.y} x2={p2ExtEnd.x} y2={p2ExtEnd.y} stroke={color} strokeWidth={strokeWidth} strokeDasharray={dash} vectorEffect={vectorEffect} />
             {/* 标注线 */}
-            <line x1={dimLineStart.x} y1={dimLineStart.y} x2={dimLineEnd.x} y2={dimLineEnd.y} stroke={color} strokeWidth={strokeWidth} vectorEffect={vectorEffect} />
+            <line x1={dimLineStart.x} y1={dimLineStart.y} x2={dimLineEnd.x} y2={dimLineEnd.y} stroke={color} strokeWidth={strokeWidth} strokeDasharray={dash} vectorEffect={vectorEffect} />
             {/* 箭头 */}
             <path d={arrow1} fill={color} />
             <path d={arrow2} fill={color} />
@@ -214,10 +218,19 @@ const CADElementRenderer: React.FC<CADElementRendererProps> = ({
             : isHovered
               ? '#38bdf8'
               : baseColor;
+    // 选择集用虚线勾边，但图元本身有线型时优先显示线型，方便属性面板即时预览效果
+    const dashPattern = dashArrayForLineType(el.lineType, overrides?.dashScale);
+    const lineWeightPx = lineWeightToScreenPx(el.lineWeight);
     const style = {
         stroke: color,
-        strokeWidth: overrides?.strokeWidth ?? (isSelected ? 3 : ghost || isHovered ? 2.5 : 2),
-        strokeDasharray: ghost ? '6,4' : isSelected ? '5,2' : 'none',
+        strokeWidth:
+            overrides?.strokeWidth ??
+            (isSelected
+                ? Math.max(3, lineWeightPx ?? 0)
+                : ghost || isHovered
+                  ? Math.max(2.5, lineWeightPx ?? 0)
+                  : lineWeightPx ?? 2),
+        strokeDasharray: ghost ? '6,4' : dashPattern ?? (isSelected ? '5,2' : undefined),
     };
     const vectorEffect = overrides?.nonScalingStroke === false ? undefined : 'non-scaling-stroke';
     const textFill = monochrome

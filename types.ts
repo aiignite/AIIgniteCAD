@@ -44,6 +44,9 @@ export interface Point {
     y: number;
 }
 
+/** 图元线型；与 DXF LTYPE 名称保持一致 */
+export type LineType = "CONTINUOUS" | "DASHED" | "DOTTED" | "DASHDOT";
+
 export interface CADElement {
     id: string;
     type:
@@ -62,6 +65,10 @@ export interface CADElement {
         | "HATCH";
     layer: string;
     color: string; // Hex or AutoCAD color index
+    /** 线型；缺省（含非法值）按实线处理 */
+    lineType?: LineType;
+    /** 线宽，单位毫米；缺省沿用屏幕默认线宽 */
+    lineWeight?: number;
     // Geometry properties
     start?: Point;
     end?: Point; // For Line, Dimension
@@ -178,7 +185,7 @@ export interface Layer {
     color: string;
     isVisible: boolean;
     isLocked: boolean;
-    lineType: "CONTINUOUS" | "DASHED" | "DOTTED" | "DASHDOT";
+    lineType: LineType;
     lineWeight?: number; // 线宽
 }
 

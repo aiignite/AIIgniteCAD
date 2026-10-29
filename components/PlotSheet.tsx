@@ -11,6 +11,7 @@ import {
     computePlotLayout,
     formatPlotScale,
     PAPER_SIZES,
+    PLOT_DASH_UNIT_MM,
     PLOT_LINE_WEIGHT_MM,
     PlotRect,
     PlotSettings,
@@ -182,8 +183,9 @@ const PlotSheet: React.FC<PlotSheetProps> = ({
             monochrome: settings.monochrome,
             strokeWidth: lineWidthWorld,
             nonScalingStroke: false,
+            dashScale: PLOT_DASH_UNIT_MM / layout.scale,
         }),
-        [settings.monochrome, lineWidthWorld],
+        [settings.monochrome, lineWidthWorld, layout.scale],
     );
 
     const { paper, drawingArea, titleBlockArea, viewBox } = layout;

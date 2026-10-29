@@ -51,6 +51,8 @@ export const MIN_PLOT_MARGIN_MM = 5;
 export const MAX_PLOT_MARGIN_MM = 30;
 /** 默认线宽（毫米），打印时换算成世界单位 */
 export const PLOT_LINE_WEIGHT_MM = 0.25;
+/** 虚线图案单位换算到纸面的毫米数，保持 1:100 出图时虚线仍清晰可见 */
+export const PLOT_DASH_UNIT_MM = 0.35;
 /** 适配模式四周留白比例，避免图形贴边 */
 export const FIT_PADDING_RATIO = 0.02;
 
